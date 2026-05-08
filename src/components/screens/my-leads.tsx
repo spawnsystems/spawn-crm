@@ -5,37 +5,16 @@ import { StatusBadge } from "@/components/status-badge";
 import { leads, sellerKpis, type Lead, type LeadStatus } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import {
-  AlertTriangle, ArrowDown, MessageCircle, Phone, ChevronRight, Clock, Target, TrendingDown, Plus,
+  AlertTriangle, ArrowDown, MessageCircle, Phone, ChevronRight, Clock, Target,
 } from "lucide-react";
 import { LeadDetail } from "./lead-detail";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 
 const filters = ["Todos", "Sin contactar", "En seguimiento", "En riesgo", "Cerrados"] as const;
-
-const MODELS = [
-  "Onix LT", "Onix Plus 1.2 Turbo", "Onix Plus Premier",
-  "Tracker LT", "Tracker Premier",
-  "Cruze 5 Premier",
-  "Spin LTZ 7as", "Spin Activ",
-  "S10 High Country", "S10 Midnight",
-];
-const SOURCES = ["Meta Ads", "Mercado Libre", "Web", "Referido", "Walk-in"];
-
-const emptyForm = { name: "", phone: "", email: "", model: "", source: "" };
 
 export function MyLeadsScreen() {
   const [filter, setFilter] = useState<typeof filters[number]>("Todos");
   const [openLead, setOpenLead] = useState<Lead | null>(null);
   const [leadList, setLeadList] = useState<Lead[]>(leads);
-  const [showNewLead, setShowNewLead] = useState(false);
-  const [form, setForm] = useState(emptyForm);
 
   const filtered = leadList.filter((l) => {
     if (filter === "Todos") return true;
@@ -51,28 +30,6 @@ export function MyLeadsScreen() {
     setOpenLead((prev) => (prev?.id === id ? { ...prev, status } : prev));
   };
 
-  const handleNewLead = () => {
-    if (!form.name || !form.phone || !form.model || !form.source) return;
-    const newLead: Lead = {
-      id: `new-${Date.now()}`,
-      name: form.name,
-      phone: form.phone,
-      email: form.email || `${form.name.toLowerCase().replace(/\s+/g, ".")}@gmail.com`,
-      model: form.model,
-      source: form.source,
-      lastContact: "Sin contactar",
-      lastContactCritical: true,
-      status: "Nuevo",
-      nextAction: "Primer contacto WhatsApp",
-      estValue: 0,
-      daysInStage: 0,
-      assignedTo: "Vos",
-    };
-    setLeadList((prev) => [newLead, ...prev]);
-    setShowNewLead(false);
-    setForm(emptyForm);
-  };
-
   return (
     <div className="p-8 max-w-[1400px] mx-auto">
       <div className="flex items-end justify-between mb-6">
@@ -80,9 +37,6 @@ export function MyLeadsScreen() {
           <h1 className="text-2xl font-semibold tracking-tight">Mis Leads</h1>
           <p className="text-sm text-muted-foreground mt-1">{leadList.filter(l => !["Cerrado","Perdido"].includes(l.status)).length} leads activos</p>
         </div>
-        <Button className="gap-2" onClick={() => setShowNewLead(true)}>
-          <Plus className="h-4 w-4" /> Nuevo Lead
-        </Button>
       </div>
 
       {/* KPIs */}
@@ -142,83 +96,6 @@ export function MyLeadsScreen() {
       </div>
 
       <LeadDetail lead={openLead} onClose={() => setOpenLead(null)} onStatusChange={handleStatusChange} />
-
-      {/* Nuevo Lead modal */}
-      <Dialog open={showNewLead} onOpenChange={setShowNewLead}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Nuevo Lead</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2 space-y-1.5">
-                <Label htmlFor="nl-name">Nombre completo *</Label>
-                <Input
-                  id="nl-name"
-                  placeholder="Ej: Martín Rodríguez"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="nl-phone">Teléfono *</Label>
-                <Input
-                  id="nl-phone"
-                  placeholder="+54 9 11 ..."
-                  value={form.phone}
-                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="nl-email">Email</Label>
-                <Input
-                  id="nl-email"
-                  placeholder="opcional"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Modelo de interés *</Label>
-                <Select value={form.model} onValueChange={(v) => setForm((f) => ({ ...f, model: v }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar modelo..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MODELS.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Origen *</Label>
-                <Select value={form.source} onValueChange={(v) => setForm((f) => ({ ...f, source: v }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="¿De dónde viene?" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SOURCES.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowNewLead(false); setForm(emptyForm); }}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleNewLead}
-              disabled={!form.name || !form.phone || !form.model || !form.source}
-            >
-              Crear lead
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
