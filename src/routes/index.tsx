@@ -11,12 +11,6 @@ import { AllLeadsScreen } from "@/components/screens/all-leads";
 import { PlaceholderScreen } from "@/components/screens/placeholder";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Spawn CRM — CRM para concesionarios de autos" },
-      { name: "description", content: "Spawn CRM: gestión de leads y pipeline para concesionarios. Velocidad de respuesta, métricas por vendedor y visibilidad total." },
-    ],
-  }),
   component: Index,
 });
 
