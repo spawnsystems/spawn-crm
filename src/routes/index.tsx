@@ -3,6 +3,7 @@ import { useState } from "react";
 import { AppShell, type Role, type SellerScreen, type ManagerScreen } from "@/components/app-shell";
 import { MyLeadsScreen } from "@/components/screens/my-leads";
 import { PipelineScreen } from "@/components/screens/pipeline";
+import { PerformanceScreen } from "@/components/screens/performance";
 import { ManagerDashboard } from "@/components/screens/manager-dashboard";
 import { TeamScreen } from "@/components/screens/team";
 import { AllLeadsScreen } from "@/components/screens/all-leads";
@@ -26,7 +27,7 @@ function Index() {
   if (role === "vendedor") {
     if (screen === "leads") content = <MyLeadsScreen />;
     else if (screen === "pipeline") content = <PipelineScreen />;
-    else if (screen === "performance") content = <PlaceholderScreen title="Mi Performance" description="Tus métricas individuales" />;
+    else if (screen === "performance") content = <PerformanceScreen />;
     else content = <PlaceholderScreen title="Configuración" description="Ajustes de tu cuenta" />;
   } else {
     if (screen === "dashboard") content = <ManagerDashboard />;

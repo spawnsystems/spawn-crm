@@ -2,20 +2,42 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
-import { leads, sellerKpis, type Lead } from "@/lib/mock-data";
+import { leads, sellerKpis, type Lead, type LeadStatus } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import {
-  AlertTriangle, ArrowDown, MessageCircle, Phone, ChevronRight, Clock, Target, TrendingDown,
+  AlertTriangle, ArrowDown, MessageCircle, Phone, ChevronRight, Clock, Target, TrendingDown, Plus,
 } from "lucide-react";
 import { LeadDetail } from "./lead-detail";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 const filters = ["Todos", "Sin contactar", "En seguimiento", "En riesgo", "Cerrados"] as const;
+
+const MODELS = [
+  "Onix LT", "Onix Plus 1.2 Turbo", "Onix Plus Premier",
+  "Tracker LT", "Tracker Premier",
+  "Cruze 5 Premier",
+  "Spin LTZ 7as", "Spin Activ",
+  "S10 High Country", "S10 Midnight",
+];
+const SOURCES = ["Meta Ads", "Mercado Libre", "Web", "Referido", "Walk-in"];
+
+const emptyForm = { name: "", phone: "", email: "", model: "", source: "" };
 
 export function MyLeadsScreen() {
   const [filter, setFilter] = useState<typeof filters[number]>("Todos");
   const [openLead, setOpenLead] = useState<Lead | null>(null);
+  const [leadList, setLeadList] = useState<Lead[]>(leads);
+  const [showNewLead, setShowNewLead] = useState(false);
+  const [form, setForm] = useState(emptyForm);
 
-  const filtered = leads.filter((l) => {
+  const filtered = leadList.filter((l) => {
     if (filter === "Todos") return true;
     if (filter === "Sin contactar") return l.status === "Nuevo";
     if (filter === "En seguimiento") return ["Contactado", "Cotizado", "Test drive", "Negociación"].includes(l.status);
@@ -24,13 +46,43 @@ export function MyLeadsScreen() {
     return true;
   });
 
+  const handleStatusChange = (id: string, status: LeadStatus) => {
+    setLeadList((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l)));
+    setOpenLead((prev) => (prev?.id === id ? { ...prev, status } : prev));
+  };
+
+  const handleNewLead = () => {
+    if (!form.name || !form.phone || !form.model || !form.source) return;
+    const newLead: Lead = {
+      id: `new-${Date.now()}`,
+      name: form.name,
+      phone: form.phone,
+      email: form.email || `${form.name.toLowerCase().replace(/\s+/g, ".")}@gmail.com`,
+      model: form.model,
+      source: form.source,
+      lastContact: "Sin contactar",
+      lastContactCritical: true,
+      status: "Nuevo",
+      nextAction: "Primer contacto WhatsApp",
+      estValue: 0,
+      daysInStage: 0,
+      assignedTo: "Vos",
+    };
+    setLeadList((prev) => [newLead, ...prev]);
+    setShowNewLead(false);
+    setForm(emptyForm);
+  };
+
   return (
     <div className="p-8 max-w-[1400px] mx-auto">
       <div className="flex items-end justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Mis Leads</h1>
-          <p className="text-sm text-muted-foreground mt-1">{sellerKpis.totalActive} leads activos</p>
+          <p className="text-sm text-muted-foreground mt-1">{leadList.filter(l => !["Cerrado","Perdido"].includes(l.status)).length} leads activos</p>
         </div>
+        <Button className="gap-2" onClick={() => setShowNewLead(true)}>
+          <Plus className="h-4 w-4" /> Nuevo Lead
+        </Button>
       </div>
 
       {/* KPIs */}
@@ -70,7 +122,7 @@ export function MyLeadsScreen() {
             {f}
             {f === "En riesgo" && (
               <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-                {leads.filter((l) => l.atRisk).length}
+                {leadList.filter((l) => l.atRisk).length}
               </span>
             )}
           </button>
@@ -82,14 +134,98 @@ export function MyLeadsScreen() {
         {filtered.map((lead) => (
           <LeadCard key={lead.id} lead={lead} onOpen={() => setOpenLead(lead)} />
         ))}
+        {filtered.length === 0 && (
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            No hay leads en esta categoría.
+          </div>
+        )}
       </div>
 
-      <LeadDetail lead={openLead} onClose={() => setOpenLead(null)} />
+      <LeadDetail lead={openLead} onClose={() => setOpenLead(null)} onStatusChange={handleStatusChange} />
+
+      {/* Nuevo Lead modal */}
+      <Dialog open={showNewLead} onOpenChange={setShowNewLead}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nuevo Lead</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="nl-name">Nombre completo *</Label>
+                <Input
+                  id="nl-name"
+                  placeholder="Ej: Martín Rodríguez"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="nl-phone">Teléfono *</Label>
+                <Input
+                  id="nl-phone"
+                  placeholder="+54 9 11 ..."
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="nl-email">Email</Label>
+                <Input
+                  id="nl-email"
+                  placeholder="opcional"
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Modelo de interés *</Label>
+                <Select value={form.model} onValueChange={(v) => setForm((f) => ({ ...f, model: v }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar modelo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODELS.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Origen *</Label>
+                <Select value={form.source} onValueChange={(v) => setForm((f) => ({ ...f, source: v }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="¿De dónde viene?" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SOURCES.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowNewLead(false); setForm(emptyForm); }}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleNewLead}
+              disabled={!form.name || !form.phone || !form.model || !form.source}
+            >
+              Crear lead
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function KpiCard({ icon, label, value, sub, accent }: { icon: React.ReactNode; label: string; value: string; sub: React.ReactNode; accent?: "destructive" }) {
+function KpiCard({ icon, label, value, sub, accent }: {
+  icon: React.ReactNode; label: string; value: string; sub: React.ReactNode; accent?: "destructive";
+}) {
   return (
     <Card className={cn("p-5 border-border", accent === "destructive" && "border-destructive/20 bg-destructive-soft/40")}>
       <div className="flex items-center justify-between text-xs text-muted-foreground">
