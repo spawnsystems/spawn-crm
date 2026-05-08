@@ -4,6 +4,7 @@ import { AppShell, type Role, type SellerScreen, type ManagerScreen } from "@/co
 import { MyLeadsScreen } from "@/components/screens/my-leads";
 import { PipelineScreen } from "@/components/screens/pipeline";
 import { PerformanceScreen } from "@/components/screens/performance";
+import { RescueScreen } from "@/components/screens/rescue";
 import { ManagerDashboard } from "@/components/screens/manager-dashboard";
 import { TeamScreen } from "@/components/screens/team";
 import { AllLeadsScreen } from "@/components/screens/all-leads";
@@ -33,6 +34,7 @@ function Index() {
     if (screen === "dashboard") content = <ManagerDashboard />;
     else if (screen === "all-leads") content = <AllLeadsScreen />;
     else if (screen === "team") content = <TeamScreen />;
+    else if (screen === "rescue") content = <RescueScreen />;
     else if (screen === "reports") content = <PlaceholderScreen title="Reportes" description="Reportes detallados del concesionario" />;
     else content = <PlaceholderScreen title="Configuración" description="Ajustes generales" />;
   }

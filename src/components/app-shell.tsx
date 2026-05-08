@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import {
   LayoutDashboard, Users, BarChart3, Settings, Inbox, Kanban,
   TrendingUp, UsersRound, ChevronsUpDown, Search, Bell,
-  AlertTriangle, Info,
+  AlertTriangle, Info, LifeBuoy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { alerts } from "@/lib/mock-data";
 
 export type Role = "vendedor" | "gerente";
 export type SellerScreen = "leads" | "pipeline" | "performance" | "config";
-export type ManagerScreen = "dashboard" | "all-leads" | "team" | "reports" | "config";
+export type ManagerScreen = "dashboard" | "all-leads" | "team" | "rescue" | "reports" | "config";
 
 const sellerNav: { id: SellerScreen; label: string; icon: any }[] = [
   { id: "leads", label: "Mis Leads", icon: Inbox },
@@ -24,10 +24,11 @@ const sellerNav: { id: SellerScreen; label: string; icon: any }[] = [
   { id: "config", label: "Configuración", icon: Settings },
 ];
 
-const managerNav: { id: ManagerScreen; label: string; icon: any }[] = [
+const managerNav: { id: ManagerScreen; label: string; icon: any; badge?: number }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "all-leads", label: "Todos los Leads", icon: Users },
   { id: "team", label: "Equipo", icon: UsersRound },
+  { id: "rescue", label: "Rescate", icon: LifeBuoy, badge: 12 },
   { id: "reports", label: "Reportes", icon: BarChart3 },
   { id: "config", label: "Configuración", icon: Settings },
 ];
@@ -83,7 +84,12 @@ export function AppShell({ role, setRole, screen, setScreen, children }: Props) 
                 )}
               >
                 <Icon className="h-4 w-4" />
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {"badge" in item && item.badge != null && (
+                  <span className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#9CA3AF]/25 px-1 text-[10px] font-semibold text-[#9CA3AF]">
+                    {item.badge}
+                  </span>
+                )}
               </button>
             );
           })}
