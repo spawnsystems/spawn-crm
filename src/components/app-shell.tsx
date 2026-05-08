@@ -86,7 +86,7 @@ export function AppShell({ role, setRole, screen, setScreen, children }: Props) 
                 <Icon className="h-4 w-4" />
                 <span className="flex-1">{item.label}</span>
                 {"badge" in item && item.badge != null && (
-                  <span className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#9CA3AF]/25 px-1 text-[10px] font-semibold text-[#9CA3AF]">
+                  <span className="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-warning text-warning-foreground px-1 text-[10px] font-bold">
                     {item.badge}
                   </span>
                 )}

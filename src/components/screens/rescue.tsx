@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Info, LifeBuoy, UserPlus, XCircle, Zap } from "lucide-react";
+import { Info, LifeBuoy, UserPlus, XCircle } from "lucide-react";
 
 type RescueCategory = "all" | "cotizado" | "nopresento" | "negociacion";
 
@@ -61,15 +61,6 @@ export function RescueScreen() {
         <p className="text-sm text-muted-foreground">
           Leads abandonados hace +15 días — Campaña de reactivación
         </p>
-      </div>
-
-      {/* Summary card */}
-      <div className="w-full rounded-xl border border-border bg-muted/30 p-6 mb-6">
-        <div className="grid grid-cols-3 divide-x divide-border">
-          <SummaryBlock value="12" label="leads en condición de rescate" />
-          <SummaryBlock value="~$540M" label="en pipeline frío" />
-          <SummaryBlock value="8%" label="tasa histórica de reactivación" />
-        </div>
       </div>
 
       {/* Filters */}
@@ -142,14 +133,6 @@ function RescueCard({ lead }: { lead: RescueLead }) {
 
         {/* Row 4 */}
         <div className="flex items-center justify-end gap-2">
-          <Button
-            size="sm"
-            className="gap-1.5 bg-[#0EA5E9] hover:bg-[#0284C7] text-white border-0"
-            onClick={() => {}}
-          >
-            <Zap className="h-3.5 w-3.5" />
-            Reactivar con descuento
-          </Button>
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => {}}>
             <UserPlus className="h-3.5 w-3.5" />
             Reasignar
