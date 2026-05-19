@@ -13,7 +13,7 @@ export function PreviewBanner({ tenantNombre }: PreviewBannerProps) {
   const [isPending, startTransition] = useTransition()
 
   return (
-    <div className="sticky top-0 z-50 flex items-center justify-between gap-3 bg-amber-500 px-4 py-2 text-amber-950">
+    <div className="flex items-center justify-between gap-3 bg-amber-500 px-4 py-2 text-amber-950">
       <div className="flex items-center gap-2 text-sm font-medium">
         <Eye className="size-4 shrink-0" />
         <span>
