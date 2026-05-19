@@ -1,0 +1,181 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
+import { useCurrentUser, useTenant } from '@/lib/tenant/context'
+import { signOut } from '@/app/actions/auth'
+import {
+  LayoutDashboard,
+  Users,
+  Users2,
+  GitBranch,
+  TrendingUp,
+  LifeBuoy,
+  Trophy,
+  Settings,
+  LogOut,
+  ChevronRight,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { useTransition } from 'react'
+
+// ── Nav items by role ─────────────────────────────────────────────
+
+interface NavItem {
+  href: string
+  label: string
+  icon: React.ReactNode
+  roles: string[] // which roles see this item
+}
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    href: '/dashboard',
+    label: 'Dashboard',
+    icon: <LayoutDashboard className="size-4" />,
+    roles: ['platform_admin', 'dueno', 'gerente', 'supervisor'],
+  },
+  {
+    href: '/all-leads',
+    label: 'Todos los Leads',
+    icon: <Users2 className="size-4" />,
+    roles: ['platform_admin', 'dueno', 'gerente', 'supervisor'],
+  },
+  {
+    href: '/equipo',
+    label: 'Equipo',
+    icon: <Trophy className="size-4" />,
+    roles: ['platform_admin', 'dueno', 'gerente', 'supervisor'],
+  },
+  {
+    href: '/rescate',
+    label: 'Rescate',
+    icon: <LifeBuoy className="size-4" />,
+    roles: ['platform_admin', 'dueno', 'gerente'],
+  },
+  {
+    href: '/leads',
+    label: 'Mis Leads',
+    icon: <Users className="size-4" />,
+    roles: ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
+  },
+  {
+    href: '/pipeline',
+    label: 'Pipeline',
+    icon: <GitBranch className="size-4" />,
+    roles: ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
+  },
+  {
+    href: '/performance',
+    label: 'Mi Performance',
+    icon: <TrendingUp className="size-4" />,
+    roles: ['vendedor'],
+  },
+]
+
+// ── Component ─────────────────────────────────────────────────────
+
+export function AppSidebar() {
+  const pathname = usePathname()
+  const user = useCurrentUser()
+  const tenant = useTenant()
+  const [isPending, startTransition] = useTransition()
+
+  const initials = user.nombre
+    .split(' ')
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  const visibleItems = NAV_ITEMS.filter((item) => item.roles.includes(user.rol))
+
+  return (
+    <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-card">
+      {/* Logo / Tenant */}
+      <div className="flex h-16 items-center gap-2.5 border-b border-border px-4">
+        <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
+          <img src="/spawn-logo.png" alt="Spawn" className="size-5 object-contain brightness-0 invert" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold leading-tight">{tenant.nombre}</div>
+          <div className="truncate text-[10px] text-muted-foreground">{tenant.concesionaria}</div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-2 py-3">
+        <ul className="space-y-0.5">
+          {visibleItems.map((item) => {
+            const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={cn(
+                    'group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  <span className={cn(
+                    'shrink-0 transition-colors',
+                    isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
+                  )}>
+                    {item.icon}
+                  </span>
+                  <span className="flex-1">{item.label}</span>
+                  {isActive && <ChevronRight className="size-3 text-primary/50" />}
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      </nav>
+
+      {/* Settings */}
+      <div className="px-2 pb-2">
+        <Link
+          href="/configuracion"
+          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Settings className="size-4 shrink-0" />
+          Configuración
+        </Link>
+      </div>
+
+      {/* User footer */}
+      <div className="border-t border-border p-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium leading-tight">{user.alias || user.nombre}</div>
+            <div className="truncate text-[10px] capitalize text-muted-foreground">{user.rol}</div>
+          </div>
+          <form
+            action={signOut}
+            onSubmit={(e) => {
+              e.preventDefault()
+              startTransition(() => { signOut() })
+            }}
+          >
+            <Button
+              type="submit"
+              size="icon"
+              variant="ghost"
+              className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+              disabled={isPending}
+              title="Cerrar sesión"
+            >
+              <LogOut className="size-3.5" />
+            </Button>
+          </form>
+        </div>
+      </div>
+    </aside>
+  )
+}

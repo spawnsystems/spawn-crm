@@ -4,6 +4,7 @@ import { getCurrentTenant, getCurrentTenantId } from '@/lib/tenant/server'
 import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
 import { TenantProvider } from '@/lib/tenant/context'
 import { PreviewBanner } from '@/components/platform/preview-banner'
+import { AppSidebar } from '@/components/layout/app-sidebar'
 import { cookies } from 'next/headers'
 import { PREVIEW_COOKIE } from '@/lib/constants'
 
@@ -28,7 +29,6 @@ export default async function AppLayout({
   ])
 
   if (!tenant || !tenantId) {
-    // Usuario sin tenant asignado — mostrar página de espera
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="text-center space-y-2">
@@ -48,8 +48,15 @@ export default async function AppLayout({
 
   return (
     <TenantProvider value={{ tenant, user, scope, isPreview }}>
-      {isPreview && <PreviewBanner tenantNombre={tenant.nombre} />}
-      {children}
+      <div className="flex flex-col min-h-screen">
+        {isPreview && <PreviewBanner tenantNombre={tenant.nombre} />}
+        <div className="flex flex-1 overflow-hidden">
+          <AppSidebar />
+          <main className="flex-1 min-w-0 overflow-y-auto">
+            {children}
+          </main>
+        </div>
+      </div>
     </TenantProvider>
   )
 }

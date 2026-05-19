@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth/get-current-user'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { db, dbAdmin, schema } from '@/lib/db'
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, isNotNull } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema } from '@/lib/schemas/leads'
 import type { ActionResult } from './auth'
 
@@ -364,6 +364,93 @@ export async function toggleTask(
 
   revalidatePath('/leads')
   return { success: true, data: undefined }
+}
+
+// ── getMyLeads ────────────────────────────────────────────────
+// Leads del usuario actual (vendedor o supervisor mirando sus leads)
+
+export async function getMyLeads() {
+  const { user, tenantId } = await requireTenant()
+
+  return dbAdmin
+    .select()
+    .from(schema.leads)
+    .where(
+      and(
+        eq(schema.leads.tenant_id, tenantId),
+        eq(schema.leads.assigned_to, user.id),
+      ),
+    )
+    .orderBy(desc(schema.leads.created_at))
+}
+
+// ── getAllLeads ───────────────────────────────────────────────
+// Todos los leads del tenant (para gerente/dueno/admin)
+
+export async function getAllLeads() {
+  const { tenantId } = await requireTenant()
+
+  return dbAdmin
+    .select({
+      id:                   schema.leads.id,
+      tenant_id:            schema.leads.tenant_id,
+      nombre:               schema.leads.nombre,
+      telefono:             schema.leads.telefono,
+      email:                schema.leads.email,
+      modelo:               schema.leads.modelo,
+      source:               schema.leads.source,
+      status:               schema.leads.status,
+      next_action:          schema.leads.next_action,
+      est_value:            schema.leads.est_value,
+      days_in_stage:        schema.leads.days_in_stage,
+      at_risk:              schema.leads.at_risk,
+      last_contact_at:      schema.leads.last_contact_at,
+      last_contact_critical: schema.leads.last_contact_critical,
+      stage_entered_at:     schema.leads.stage_entered_at,
+      abandoned_at:         schema.leads.abandoned_at,
+      rescue_category:      schema.leads.rescue_category,
+      assigned_to:          schema.leads.assigned_to,
+      equipo_id:            schema.leads.equipo_id,
+      created_by:           schema.leads.created_by,
+      updated_by:           schema.leads.updated_by,
+      created_at:           schema.leads.created_at,
+      updated_at:           schema.leads.updated_at,
+      vendedor_nombre:      schema.usuarios.nombre,
+      vendedor_alias:       schema.usuarios.alias,
+    })
+    .from(schema.leads)
+    .leftJoin(schema.usuarios, eq(schema.leads.assigned_to, schema.usuarios.id))
+    .where(eq(schema.leads.tenant_id, tenantId))
+    .orderBy(desc(schema.leads.created_at))
+}
+
+// ── getAbandonedLeads ─────────────────────────────────────────
+
+export async function getAbandonedLeads() {
+  const { tenantId } = await requireTenant()
+
+  return dbAdmin
+    .select({
+      id:              schema.leads.id,
+      nombre:          schema.leads.nombre,
+      modelo:          schema.leads.modelo,
+      status:          schema.leads.status,
+      est_value:       schema.leads.est_value,
+      abandoned_at:    schema.leads.abandoned_at,
+      rescue_category: schema.leads.rescue_category,
+      assigned_to:     schema.leads.assigned_to,
+      vendedor_nombre: schema.usuarios.nombre,
+      vendedor_alias:  schema.usuarios.alias,
+    })
+    .from(schema.leads)
+    .leftJoin(schema.usuarios, eq(schema.leads.assigned_to, schema.usuarios.id))
+    .where(
+      and(
+        eq(schema.leads.tenant_id, tenantId),
+        isNotNull(schema.leads.abandoned_at),
+      ),
+    )
+    .orderBy(desc(schema.leads.abandoned_at))
 }
 
 // ── getLeadDetail ─────────────────────────────────────────────
