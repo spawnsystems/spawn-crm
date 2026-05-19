@@ -47,7 +47,10 @@ function getDbAdmin() {
 
 export const dbAdmin = new Proxy({} as ReturnType<typeof createDbClient>, {
   get(_target, prop) {
-    return (getDbAdmin() as any)[prop]
+    const instance = getDbAdmin()
+    const value = (instance as any)[prop]
+    // Bindear funciones para que no pierdan el contexto de `this`
+    return typeof value === 'function' ? value.bind(instance) : value
   },
 })
 
