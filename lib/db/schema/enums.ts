@@ -1,0 +1,46 @@
+import { pgEnum } from 'drizzle-orm/pg-core'
+
+export const appRoleEnum = pgEnum('app_role', [
+  'platform_admin',
+  'dueno',
+  'gerente',
+  'supervisor',
+  'vendedor',
+])
+
+export const leadStatusEnum = pgEnum('lead_status', [
+  'Nuevo',
+  'Contactado',
+  'Cotizado',
+  'Test drive',
+  'Negociación',
+  'Cerrado',
+  'Perdido',
+])
+
+export const leadSourceEnum = pgEnum('lead_source', [
+  'Meta Ads',
+  'Mercado Libre',
+  'Web',
+  'Referido',
+  'Walk-in',
+  'Otro',
+])
+
+export const teamRoleEnum = pgEnum('team_role', [
+  'gerente',
+  'supervisor',
+  'vendedor',
+])
+
+export const rescueCategoryEnum = pgEnum('rescue_category', [
+  'cotizado_sin_respuesta',
+  'no_se_presento',
+  'negociacion_abandonada',
+])
+
+export const invitationStatusEnum = pgEnum('invitation_status', [
+  'pending',
+  'accepted',
+  'expired',
+])
