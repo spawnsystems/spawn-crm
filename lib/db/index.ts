@@ -34,10 +34,22 @@ function createDbClient() {
   return drizzle(client, { schema, logger: process.env.NODE_ENV === 'development' })
 }
 
-// Singleton — evitar múltiples conexiones en hot-reload de Next.js dev
+// Lazy singleton — NO se instancia en module evaluation (build time).
+// Se crea la primera vez que se llama dbAdmin, no al importar el módulo.
 const globalForDb = globalThis as unknown as { _drizzle?: ReturnType<typeof createDbClient> }
-export const dbAdmin = globalForDb._drizzle ?? createDbClient()
-if (process.env.NODE_ENV !== 'production') globalForDb._drizzle = dbAdmin
+
+function getDbAdmin() {
+  if (!globalForDb._drizzle) {
+    globalForDb._drizzle = createDbClient()
+  }
+  return globalForDb._drizzle
+}
+
+export const dbAdmin = new Proxy({} as ReturnType<typeof createDbClient>, {
+  get(_target, prop) {
+    return (getDbAdmin() as any)[prop]
+  },
+})
 
 // ── Tipos inferidos del schema ────────────────────────────────
 export type Tenant        = typeof schema.tenants.$inferSelect

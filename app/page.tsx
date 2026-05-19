@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth/get-current-user'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * Raíz de la app — redirige al destino correcto según rol.
  * El proxy.ts ya garantiza que el usuario está autenticado.
