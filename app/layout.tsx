@@ -10,6 +10,10 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 export const metadata: Metadata = {
   title: 'Spawn CRM',
   description: 'CRM para concesionarios de autos — gestión de leads, pipeline y métricas por vendedor.',
+  icons: {
+    icon: '/icon.png',
+    apple: '/icon.png',
+  },
 }
 
 export const viewport: Viewport = {
