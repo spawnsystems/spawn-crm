@@ -5,14 +5,13 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Loader2, KeyRound } from 'lucide-react'
 
 import { updatePasswordSchema, type UpdatePasswordInput } from '@/lib/schemas/auth'
 import { updatePassword } from '@/app/actions/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import Image from 'next/image'
 
 export default function UpdatePasswordPage() {
   const router = useRouter()
@@ -23,15 +22,13 @@ export default function UpdatePasswordPage() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<UpdatePasswordInput>({
-    resolver: zodResolver(updatePasswordSchema),
-  })
+  } = useForm<UpdatePasswordInput>({ resolver: zodResolver(updatePasswordSchema) })
 
   const onSubmit = handleSubmit((data) => {
     startTransition(async () => {
       const result = await updatePassword(data.password)
       if (!result.success) {
-        toast.error(result.error)
+        toast.error('Error', { description: result.error })
         return
       }
       setDone(true)
@@ -41,72 +38,94 @@ export default function UpdatePasswordPage() {
   })
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm space-y-8">
-        <div className="flex flex-col items-center gap-3">
-          <Image
-            src="/spawn-logo.png"
-            alt="Spawn CRM"
-            width={140}
-            height={40}
-            priority
-            className="dark:invert"
-          />
+    <main className="relative min-h-screen bg-background flex flex-col items-center justify-center px-6 overflow-hidden">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[40vh]"
+        style={{
+          background:
+            'radial-gradient(ellipse 80% 50% at 50% -10%, hsl(var(--primary) / 0.12), transparent)',
+        }}
+      />
+      <div className="relative w-full max-w-sm">
+        {/* Logo */}
+        <div className="flex flex-col items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/spawn-logo.png" alt="Spawn CRM" className="h-28 w-auto" />
         </div>
 
-        <div className="rounded-xl border bg-card p-6 shadow-sm">
-          <h1 className="mb-2 text-center text-xl font-semibold tracking-tight">
-            Crear contraseña
-          </h1>
-          <p className="mb-6 text-center text-sm text-muted-foreground">
-            Elegí una contraseña segura para tu cuenta.
-          </p>
+        <div className="mt-10 rounded-2xl bg-card/80 backdrop-blur-sm border border-border/40 shadow-lg shadow-black/5 p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 shrink-0">
+              <KeyRound className="size-4 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-[15px] font-semibold leading-tight">Crear contraseña</h2>
+              <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">
+                Elegí una contraseña segura para tu cuenta.
+              </p>
+            </div>
+          </div>
 
           {done ? (
-            <p className="text-center text-sm text-muted-foreground">
+            <p className="text-center text-[13px] text-muted-foreground py-2">
               Redirigiendo...
             </p>
           ) : (
-            <form onSubmit={onSubmit} className="space-y-4">
+            <form onSubmit={onSubmit} className="space-y-5" noValidate>
               <div className="space-y-1.5">
-                <Label htmlFor="password">Nueva contraseña</Label>
+                <Label htmlFor="password" className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Nueva contraseña
+                </Label>
                 <Input
                   id="password"
                   type="password"
                   autoComplete="new-password"
                   placeholder="Mínimo 8 caracteres"
+                  autoFocus
                   disabled={isPending}
+                  className="h-11 rounded-xl bg-secondary/50 border-border/60 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/15"
                   {...register('password')}
                 />
                 {errors.password && (
-                  <p className="text-xs text-destructive">{errors.password.message}</p>
+                  <p className="text-[11px] text-destructive">{errors.password.message}</p>
                 )}
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+                <Label htmlFor="confirmPassword" className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Confirmar contraseña
+                </Label>
                 <Input
                   id="confirmPassword"
                   type="password"
                   autoComplete="new-password"
                   placeholder="Repetí la contraseña"
                   disabled={isPending}
+                  className="h-11 rounded-xl bg-secondary/50 border-border/60 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/15"
                   {...register('confirmPassword')}
                 />
                 {errors.confirmPassword && (
-                  <p className="text-xs text-destructive">
-                    {errors.confirmPassword.message}
-                  </p>
+                  <p className="text-[11px] text-destructive">{errors.confirmPassword.message}</p>
                 )}
               </div>
 
-              <Button type="submit" className="w-full" disabled={isPending}>
-                {isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Guardar contraseña
+              <Button
+                type="submit"
+                disabled={isPending}
+                className="mt-1 h-11 w-full rounded-xl font-semibold shadow-sm shadow-primary/20 active:scale-[0.98] transition-transform"
+              >
+                {isPending
+                  ? <><Loader2 className="mr-2 size-4 animate-spin" /> Guardando...</>
+                  : 'Guardar contraseña'}
               </Button>
             </form>
           )}
         </div>
+
+        <p className="mt-8 text-center text-[11px] text-muted-foreground/40 tracking-wide">
+          SPAWN · CRM PARA CONCESIONARIOS
+        </p>
       </div>
     </main>
   )
