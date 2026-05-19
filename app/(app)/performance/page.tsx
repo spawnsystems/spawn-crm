@@ -14,7 +14,7 @@ export default async function PerformancePage() {
   ])
   if (!tenantId) redirect('/login')
 
-  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
 
   const [myLeads, teamRankRaw] = await Promise.all([
     // My own leads
