@@ -8,11 +8,6 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY ??
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 
-  // If env vars are not set yet (early Phase 0), skip auth refresh
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !publishableKey) {
-    return supabaseResponse
-  }
-
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     publishableKey,

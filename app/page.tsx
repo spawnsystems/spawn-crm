@@ -1,15 +1,24 @@
-export default function HomePage() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-xl">
-          S
-        </div>
-        <h1 className="text-2xl font-semibold tracking-tight">Spawn CRM</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Backend en construcción · Fase 0 completada
-        </p>
-      </div>
-    </main>
-  )
+import { redirect } from 'next/navigation'
+import { getCurrentUser } from '@/lib/auth/get-current-user'
+
+/**
+ * Raíz de la app — redirige al destino correcto según rol.
+ * El proxy.ts ya garantiza que el usuario está autenticado.
+ */
+export default async function HomePage() {
+  const user = await getCurrentUser()
+
+  if (!user) redirect('/login')
+
+  if (user.is_platform_admin) redirect('/platform')
+
+  switch (user.rol) {
+    case 'dueno':
+    case 'gerente':
+    case 'supervisor':
+      redirect('/dashboard')
+    case 'vendedor':
+    default:
+      redirect('/leads')
+  }
 }

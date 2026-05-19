@@ -1,0 +1,24 @@
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+/**
+ * /auth/callback
+ * Supabase redirige aquí después de confirmar el email (sign-up, invite).
+ * Intercambia el `code` por una sesión y redirige al destino.
+ */
+export async function GET(request: Request) {
+  const { searchParams, origin } = new URL(request.url)
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/'
+
+  if (code) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error) {
+      return NextResponse.redirect(`${origin}${next}`)
+    }
+  }
+
+  // Si algo falló, redirigir al login con mensaje de error
+  return NextResponse.redirect(`${origin}/login?error=callback_failed`)
+}

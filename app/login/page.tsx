@@ -1,19 +1,27 @@
-/**
- * Placeholder de login — se implementa en Fase 2 (Auth con Supabase).
- * Por ahora deja la ruta reservada para que el middleware/proxy no rompa
- * cuando redirige a /login.
- */
+import { LoginForm } from '@/components/auth/login-form'
+import Image from 'next/image'
+
 export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm text-center">
-        <div className="mx-auto mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-xl">
-          S
+      <div className="w-full max-w-sm space-y-8">
+        {/* Logo */}
+        <div className="flex flex-col items-center gap-3">
+          <Image
+            src="/spawn-logo.png"
+            alt="Spawn CRM"
+            width={140}
+            height={40}
+            priority
+            className="dark:invert"
+          />
+          <p className="text-sm text-muted-foreground">
+            CRM para concesionarios
+          </p>
         </div>
-        <h1 className="text-xl font-semibold tracking-tight">Spawn CRM</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Login en construcción · Fase 2
-        </p>
+
+        {/* Formulario */}
+        <LoginForm />
       </div>
     </main>
   )
