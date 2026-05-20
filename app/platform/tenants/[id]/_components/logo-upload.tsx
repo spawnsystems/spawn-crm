@@ -65,17 +65,8 @@ export function LogoUpload({ tenantId, currentUrl }: LogoUploadProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-4">
-        {/* Preview — cuadrícula para ver transparencia real */}
-        <div
-          className="h-16 w-48 rounded-lg border border-border flex items-center justify-center shrink-0 overflow-hidden px-3 py-2"
-          style={{
-            backgroundImage:
-              'linear-gradient(45deg,#e5e7eb 25%,transparent 25%),linear-gradient(-45deg,#e5e7eb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e5e7eb 75%),linear-gradient(-45deg,transparent 75%,#e5e7eb 75%)',
-            backgroundSize: '12px 12px',
-            backgroundPosition: '0 0,0 6px,6px -6px,-6px 0px',
-            backgroundColor: '#f9fafb',
-          }}
-        >
+        {/* Preview */}
+        <div className="h-16 w-48 rounded-lg border border-dashed border-border flex items-center justify-center shrink-0 overflow-hidden px-3 py-2">
           {preview ? (
             <img
               src={preview}
