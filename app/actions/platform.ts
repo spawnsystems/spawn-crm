@@ -6,8 +6,10 @@ import { revalidatePath } from 'next/cache'
 import { PREVIEW_COOKIE } from '@/lib/constants'
 import { getCurrentUser } from '@/lib/auth/get-current-user'
 import { dbAdmin, schema } from '@/lib/db'
-import { eq } from 'drizzle-orm'
+import { eq, count, and } from 'drizzle-orm'
+import { createAdminClient } from '@/lib/supabase/admin'
 import type { ActionResult } from './auth'
+import type { AppRole } from '@/lib/auth/get-current-user'
 
 // ── Preview mode ──────────────────────────────────────────────
 
@@ -97,5 +99,190 @@ export async function reactivateTenant(tenantId: string): Promise<ActionResult<v
     .where(eq(schema.tenants.id, tenantId))
 
   revalidatePath('/platform')
+  return { success: true, data: undefined }
+}
+
+export async function updateTenantInfo(
+  tenantId: string,
+  input: { nombre?: string; concesionaria?: string; color_primario?: string; plan_key?: string },
+): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  const updates: Record<string, string> = {}
+  if (input.nombre?.trim())        updates.nombre        = input.nombre.trim()
+  if (input.concesionaria?.trim()) updates.concesionaria = input.concesionaria.trim()
+  if (input.color_primario)        updates.color_primario = input.color_primario
+  if (input.plan_key)              updates.plan_key      = input.plan_key
+
+  if (Object.keys(updates).length === 0) return { success: true, data: undefined }
+
+  await dbAdmin.update(schema.tenants).set(updates).where(eq(schema.tenants.id, tenantId))
+
+  revalidatePath('/platform')
+  revalidatePath(`/platform/tenants/${tenantId}`)
+  return { success: true, data: undefined }
+}
+
+// ── getTenantWithStats ────────────────────────────────────────
+// Para la página de listado — cuenta miembros y leads por tenant
+
+export async function getTenantStats(tenantId: string): Promise<{
+  memberCount: number
+  leadCount: number
+}> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { memberCount: 0, leadCount: 0 }
+
+  const [members, leads] = await Promise.all([
+    dbAdmin
+      .select({ count: count() })
+      .from(schema.tenantMembers)
+      .where(and(
+        eq(schema.tenantMembers.tenant_id, tenantId),
+        eq(schema.tenantMembers.activo, true),
+      )),
+    dbAdmin
+      .select({ count: count() })
+      .from(schema.leads)
+      .where(eq(schema.leads.tenant_id, tenantId)),
+  ])
+
+  return {
+    memberCount: members[0]?.count ?? 0,
+    leadCount:   leads[0]?.count   ?? 0,
+  }
+}
+
+// ── getTenantMembers (platform admin view) ────────────────────
+
+export async function getTenantMembers(tenantId: string) {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return []
+
+  return dbAdmin
+    .select({
+      user_id:           schema.tenantMembers.user_id,
+      rol:               schema.tenantMembers.rol,
+      activo:            schema.tenantMembers.activo,
+      invitation_status: schema.tenantMembers.invitation_status,
+      invited_at:        schema.tenantMembers.invited_at,
+      nombre:            schema.usuarios.nombre,
+      alias:             schema.usuarios.alias,
+      email:             schema.usuarios.email,
+    })
+    .from(schema.tenantMembers)
+    .leftJoin(schema.usuarios, eq(schema.tenantMembers.user_id, schema.usuarios.id))
+    .where(eq(schema.tenantMembers.tenant_id, tenantId))
+    .orderBy(schema.tenantMembers.rol, schema.usuarios.nombre)
+}
+
+// ── inviteUserToTenantAsAdmin ─────────────────────────────────
+// Igual que inviteUserToTenant pero para platform admin sin necesitar preview mode
+
+export async function inviteUserToTenantAsAdmin(
+  tenantId: string,
+  input: { email: string; nombre: string; rol: AppRole },
+): Promise<ActionResult<{ userId: string }>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  const email = input.email.toLowerCase().trim()
+  if (!email.includes('@')) return { success: false, error: 'Email inválido' }
+  if (!input.nombre.trim())  return { success: false, error: 'El nombre es requerido' }
+
+  const adminClient = createAdminClient()
+  const siteUrl     = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+
+  try {
+    const existing = await dbAdmin
+      .select({ id: schema.usuarios.id })
+      .from(schema.usuarios)
+      .where(eq(schema.usuarios.email, email))
+      .limit(1)
+
+    let userId: string
+
+    if (existing[0]) {
+      userId = existing[0].id
+
+      const alreadyMember = await dbAdmin
+        .select({ id: schema.tenantMembers.id })
+        .from(schema.tenantMembers)
+        .where(and(
+          eq(schema.tenantMembers.tenant_id, tenantId),
+          eq(schema.tenantMembers.user_id, userId),
+        ))
+        .limit(1)
+
+      if (alreadyMember[0]) {
+        return { success: false, error: 'Este usuario ya es miembro del tenant' }
+      }
+
+      await dbAdmin.insert(schema.tenantMembers).values({
+        tenant_id:         tenantId,
+        user_id:           userId,
+        rol:               input.rol,
+        activo:            true,
+        invitation_status: 'accepted',
+      })
+    } else {
+      const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, {
+        redirectTo: `${siteUrl}/auth/confirm`,
+        data: { nombre: input.nombre.trim(), rol: input.rol },
+      })
+
+      if (error) {
+        const msg = error.message.toLowerCase()
+        if (msg.includes('already') || msg.includes('registered')) {
+          return { success: false, error: 'Este email ya tiene cuenta en la plataforma' }
+        }
+        return { success: false, error: `Error al invitar: ${error.message}` }
+      }
+
+      userId = data.user.id
+
+      await dbAdmin
+        .update(schema.usuarios)
+        .set({ nombre: input.nombre.trim(), rol: input.rol })
+        .where(eq(schema.usuarios.id, userId))
+
+      await dbAdmin.insert(schema.tenantMembers).values({
+        tenant_id:         tenantId,
+        user_id:           userId,
+        rol:               input.rol,
+        activo:            false,
+        invitation_status: 'pending',
+        invited_at:        new Date(),
+      }).onConflictDoNothing()
+    }
+
+    revalidatePath(`/platform/tenants/${tenantId}`)
+    revalidatePath('/platform')
+    return { success: true, data: { userId } }
+  } catch (err) {
+    console.error('[inviteUserToTenantAsAdmin]', err)
+    return { success: false, error: 'Error inesperado al invitar el usuario' }
+  }
+}
+
+// ── deactivateMemberAdmin ─────────────────────────────────────
+
+export async function deactivateMemberAdmin(
+  tenantId: string,
+  userId:   string,
+): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  await dbAdmin
+    .update(schema.tenantMembers)
+    .set({ activo: false })
+    .where(and(
+      eq(schema.tenantMembers.tenant_id, tenantId),
+      eq(schema.tenantMembers.user_id, userId),
+    ))
+
+  revalidatePath(`/platform/tenants/${tenantId}`)
   return { success: true, data: undefined }
 }
