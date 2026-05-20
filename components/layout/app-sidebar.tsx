@@ -97,20 +97,26 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       {/* Logo / Tenant */}
-      <div className="flex h-16 items-center gap-2.5 border-b border-border px-4 shrink-0">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg overflow-hidden bg-white border border-border">
-          {tenant.logo_url ? (
-            <img src={tenant.logo_url} alt={tenant.nombre} className="size-full object-contain p-0.5" />
-          ) : (
-            <span className="text-[10px] font-bold text-muted-foreground">
-              {tenant.concesionaria.slice(0, 2).toUpperCase()}
-            </span>
-          )}
-        </div>
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold leading-tight">{tenant.nombre}</div>
-          <div className="truncate text-[10px] text-muted-foreground">{tenant.concesionaria}</div>
-        </div>
+      <div className="flex h-16 items-center justify-center border-b border-border px-4 shrink-0">
+        {tenant.logo_url ? (
+          <img
+            src={tenant.logo_url}
+            alt={tenant.nombre}
+            className="max-h-10 max-w-[180px] w-full object-contain"
+          />
+        ) : (
+          <div className="flex items-center gap-2.5 w-full">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border">
+              <span className="text-[10px] font-bold text-muted-foreground">
+                {tenant.concesionaria.slice(0, 2).toUpperCase()}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold leading-tight">{tenant.nombre}</div>
+              <div className="truncate text-[10px] text-muted-foreground">{tenant.concesionaria}</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Nav */}
@@ -228,16 +234,22 @@ export function AppSidebar() {
 
         {/* Tenant name in header */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div className="flex size-6 shrink-0 items-center justify-center rounded overflow-hidden bg-white border border-border">
-            {tenant.logo_url ? (
-              <img src={tenant.logo_url} alt={tenant.nombre} className="size-full object-contain p-0.5" />
-            ) : (
-              <span className="text-[8px] font-bold text-muted-foreground">
-                {tenant.concesionaria.slice(0, 2).toUpperCase()}
-              </span>
-            )}
-          </div>
-          <span className="text-sm font-semibold truncate">{tenant.nombre}</span>
+          {tenant.logo_url ? (
+            <img
+              src={tenant.logo_url}
+              alt={tenant.nombre}
+              className="max-h-6 max-w-[120px] object-contain shrink-0"
+            />
+          ) : (
+            <>
+              <div className="flex size-6 shrink-0 items-center justify-center rounded border border-border">
+                <span className="text-[8px] font-bold text-muted-foreground">
+                  {tenant.concesionaria.slice(0, 2).toUpperCase()}
+                </span>
+              </div>
+              <span className="text-sm font-semibold truncate">{tenant.nombre}</span>
+            </>
+          )}
         </div>
 
         {/* User initials chip */}
