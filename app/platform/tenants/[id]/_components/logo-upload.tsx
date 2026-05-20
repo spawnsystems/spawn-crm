@@ -66,7 +66,7 @@ export function LogoUpload({ tenantId, currentUrl }: LogoUploadProps) {
     <div className="space-y-3">
       <div className="flex items-center gap-4">
         {/* Preview */}
-        <div className="h-16 w-48 rounded-lg border border-dashed border-border flex items-center justify-center shrink-0 overflow-hidden px-3 py-2">
+        <div className="h-16 w-48 rounded-lg border border-border bg-card flex items-center justify-center shrink-0 overflow-hidden px-3 py-2">
           {preview ? (
             <img
               src={preview}
