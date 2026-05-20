@@ -258,8 +258,8 @@ export async function uploadTenantLogo(
   if (!(ALLOWED_LOGO_TYPES as readonly string[]).includes(file.type)) {
     return { success: false, error: 'Formato no soportado. Usá SVG, PNG, JPG o WebP.' }
   }
-  if (file.size > 1024 * 1024) {
-    return { success: false, error: 'El archivo no puede superar 1 MB.' }
+  if (file.size > 5 * 1024 * 1024) {
+    return { success: false, error: 'El archivo no puede superar 5 MB.' }
   }
 
   const ext  = LOGO_EXT_MAP[file.type] ?? 'png'

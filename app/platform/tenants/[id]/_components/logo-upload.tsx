@@ -170,7 +170,7 @@ export function LogoUpload({ tenantId, currentUrl }: LogoUploadProps) {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Archivo: SVG, PNG, JPG o WebP · máx. 1 MB.
+        Archivo: SVG, PNG, JPG o WebP · máx. 5 MB.
       </p>
 
       <input
