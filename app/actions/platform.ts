@@ -294,6 +294,25 @@ export async function uploadTenantLogo(
   return { success: true, data: { url } }
 }
 
+// ── setLogoUrl — guarda una URL directa sin subir archivo ─────
+// Útil para imágenes ya alojadas en /public u otro CDN.
+
+export async function setLogoUrl(
+  tenantId: string,
+  url: string | null,
+): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  await dbAdmin
+    .update(schema.tenants)
+    .set({ logo_url: url || null })
+    .where(eq(schema.tenants.id, tenantId))
+
+  revalidatePath(`/platform/tenants/${tenantId}`)
+  return { success: true, data: undefined }
+}
+
 // ── removeTenantLogo ──────────────────────────────────────────
 
 export async function removeTenantLogo(tenantId: string): Promise<ActionResult<void>> {
