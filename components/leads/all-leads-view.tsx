@@ -42,19 +42,19 @@ export function AllLeadsView({ initialLeads, vendedores, canCreate }: AllLeadsVi
   }, [leads, search])
 
   return (
-    <div className="p-8 max-w-[1500px] mx-auto">
+    <div className="p-4 md:p-8 max-w-[1500px] mx-auto">
       {/* Header */}
-      <div className="flex items-end justify-between mb-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Todos los Leads</h1>
           <p className="text-sm text-muted-foreground mt-1">{leads.length} leads en el sistema</p>
         </div>
         <div className="flex gap-2">
-          <div className="relative">
+          <div className="relative flex-1 sm:flex-none">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
             <Input
               placeholder="Buscar por nombre, modelo..."
-              className="pl-8 h-9 w-64 text-sm"
+              className="pl-8 h-9 w-full sm:w-64 text-sm"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -69,7 +69,8 @@ export function AllLeadsView({ initialLeads, vendedores, canCreate }: AllLeadsVi
 
       {/* Table */}
       <Card className="overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[700px] text-sm">
           <thead className="bg-muted/40">
             <tr className="text-left text-xs text-muted-foreground border-b border-border">
               <th className="px-4 py-3 font-medium">Lead</th>
@@ -131,6 +132,7 @@ export function AllLeadsView({ initialLeads, vendedores, canCreate }: AllLeadsVi
             )}
           </tbody>
         </table>
+        </div>
       </Card>
 
       <LeadDetailSheet

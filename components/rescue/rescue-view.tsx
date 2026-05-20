@@ -85,7 +85,7 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
   }))
 
   return (
-    <div className="p-8 max-w-[1100px] mx-auto">
+    <div className="p-4 md:p-8 max-w-[1100px] mx-auto">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-2.5 mb-1">

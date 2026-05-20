@@ -31,7 +31,7 @@ export function TeamView({ ranking }: TeamViewProps) {
   const monthLabel = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
 
   return (
-    <div className="p-8 max-w-[1000px] mx-auto">
+    <div className="p-4 md:p-8 max-w-[1000px] mx-auto">
       <div className="flex items-end justify-between mb-8">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Equipo</h1>

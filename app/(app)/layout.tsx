@@ -52,7 +52,8 @@ export default async function AppLayout({
         {isPreview && <PreviewBanner tenantNombre={tenant.nombre} />}
         <div className="flex flex-1 overflow-hidden">
           <AppSidebar />
-          <main className="flex-1 min-w-0 overflow-y-auto">
+          {/* pt-14 on mobile to clear the fixed header; lg removes it (sidebar is static) */}
+          <main className="flex-1 min-w-0 overflow-y-auto pt-14 lg:pt-0">
             {children}
           </main>
         </div>

@@ -57,7 +57,7 @@ export function DashboardView({
   const monthLabel = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
 
   return (
-    <div className="p-8 max-w-[1500px] mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-[1500px] mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
@@ -73,7 +73,7 @@ export function DashboardView({
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           icon={<TrendingUp className="size-4" />}
           label="Leads del mes"
@@ -102,9 +102,9 @@ export function DashboardView({
       </div>
 
       {/* Two-column row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Sellers table */}
-        <Card className="col-span-2 p-6">
+        <Card className="xl:col-span-2 p-6">
           <h3 className="font-semibold mb-4">Performance por vendedor</h3>
           {sellers.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin datos aún.</p>

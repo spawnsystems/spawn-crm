@@ -42,7 +42,7 @@ export function PerformanceView({
   const monthLabel = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
@@ -58,14 +58,14 @@ export function PerformanceView({
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard icon={<TrendingUp className="size-4" />} label="Ventas del mes"    value={myClosedMonth.toString()} sub="leads cerrados" />
         <KpiCard icon={<Target className="size-4" />}    label="Tasa de cierre"     value={`${myCloseRate}%`}          sub="del total de tus leads" />
         <KpiCard icon={<Flame className="size-4" />}     label="Leads activos"       value={myActive.toString()}        sub={`${myAtRisk} en riesgo`} accent={myAtRisk > 0 ? 'warning' : undefined} />
         <KpiCard icon={<Target className="size-4" />}    label="Leads en riesgo"    value={myAtRisk.toString()}        sub="sin contacto +24h" accent={myAtRisk > 0 ? 'destructive' : undefined} />
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Funnel */}
         <Card className="p-6">
           <h3 className="font-semibold mb-4">Mi embudo</h3>
@@ -91,7 +91,7 @@ export function PerformanceView({
         </Card>
 
         {/* Team ranking */}
-        <Card className="col-span-2 p-6">
+        <Card className="xl:col-span-2 p-6">
           <h3 className="font-semibold mb-4">Ranking del equipo</h3>
           {ranking.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin datos de ranking este mes.</p>

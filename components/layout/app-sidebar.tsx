@@ -16,9 +16,11 @@ import {
   Settings,
   LogOut,
   ChevronRight,
+  Menu,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useTransition } from 'react'
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { useState, useTransition } from 'react'
 
 // ── Nav items by role ─────────────────────────────────────────────
 
@@ -74,9 +76,10 @@ const NAV_ITEMS: NavItem[] = [
   },
 ]
 
-// ── Component ─────────────────────────────────────────────────────
+// ── SidebarContent ─────────────────────────────────────────────────
+// Shared content — used inside both desktop aside and mobile Sheet
 
-export function AppSidebar() {
+function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const user = useCurrentUser()
   const tenant = useTenant()
@@ -92,9 +95,9 @@ export function AppSidebar() {
   const visibleItems = NAV_ITEMS.filter((item) => item.roles.includes(user.rol))
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-card">
+    <div className="flex h-full flex-col">
       {/* Logo / Tenant */}
-      <div className="flex h-16 items-center gap-2.5 border-b border-border px-4">
+      <div className="flex h-16 items-center gap-2.5 border-b border-border px-4 shrink-0">
         <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
           <img src="/spawn-logo.png" alt="Spawn" className="size-5 object-contain brightness-0 invert" />
         </div>
@@ -113,6 +116,7 @@ export function AppSidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  onClick={onNavigate}
                   className={cn(
                     'group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                     isActive
@@ -139,6 +143,7 @@ export function AppSidebar() {
       <div className="px-2 pb-2">
         <Link
           href="/configuracion"
+          onClick={onNavigate}
           className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <Settings className="size-4 shrink-0" />
@@ -147,7 +152,7 @@ export function AppSidebar() {
       </div>
 
       {/* User footer */}
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border p-3 shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
             {initials}
@@ -176,6 +181,58 @@ export function AppSidebar() {
           </form>
         </div>
       </div>
-    </aside>
+    </div>
+  )
+}
+
+// ── Component ─────────────────────────────────────────────────────
+
+export function AppSidebar() {
+  const [open, setOpen] = useState(false)
+  const tenant = useTenant()
+  const user = useCurrentUser()
+
+  const initials = user.nombre
+    .split(' ')
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  return (
+    <>
+      {/* Desktop: fixed sidebar */}
+      <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-border bg-card">
+        <SidebarContent />
+      </aside>
+
+      {/* Mobile: header bar + Sheet drawer */}
+      <div className="lg:hidden flex items-center h-14 border-b border-border bg-card px-4 fixed top-0 inset-x-0 z-40">
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-8 -ml-1 mr-3">
+              <Menu className="size-5" />
+              <span className="sr-only">Abrir menú</span>
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-64 p-0">
+            <SidebarContent onNavigate={() => setOpen(false)} />
+          </SheetContent>
+        </Sheet>
+
+        {/* Tenant name in header */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div className="flex size-6 items-center justify-center rounded bg-primary shrink-0">
+            <img src="/spawn-logo.png" alt="Spawn" className="size-3.5 object-contain brightness-0 invert" />
+          </div>
+          <span className="text-sm font-semibold truncate">{tenant.nombre}</span>
+        </div>
+
+        {/* User initials chip */}
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">
+          {initials}
+        </div>
+      </div>
+    </>
   )
 }

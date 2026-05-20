@@ -53,7 +53,7 @@ export function LeadsView({ initialLeads, vendedores, canCreate }: LeadsViewProp
   })
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto">
+    <div className="p-4 md:p-8 max-w-[1400px] mx-auto">
       {/* Header */}
       <div className="flex items-end justify-between mb-6">
         <div>
