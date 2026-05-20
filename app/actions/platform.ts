@@ -236,6 +236,113 @@ export async function inviteUserToTenantAsAdmin(
   }
 }
 
+// ── uploadTenantLogo ──────────────────────────────────────────
+
+const ALLOWED_LOGO_TYPES = ['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp'] as const
+const LOGO_EXT_MAP: Record<string, string> = {
+  'image/svg+xml': 'svg',
+  'image/png':     'png',
+  'image/jpeg':    'jpg',
+  'image/webp':    'webp',
+}
+
+export async function uploadTenantLogo(
+  tenantId: string,
+  formData: FormData,
+): Promise<ActionResult<{ url: string }>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  const file = formData.get('logo') as File | null
+  if (!file || file.size === 0) return { success: false, error: 'No se recibió ningún archivo.' }
+  if (!(ALLOWED_LOGO_TYPES as readonly string[]).includes(file.type)) {
+    return { success: false, error: 'Formato no soportado. Usá SVG, PNG, JPG o WebP.' }
+  }
+  if (file.size > 1024 * 1024) {
+    return { success: false, error: 'El archivo no puede superar 1 MB.' }
+  }
+
+  const ext  = LOGO_EXT_MAP[file.type] ?? 'png'
+  const path = `${tenantId}/logo.${ext}`
+  const adminClient = createAdminClient()
+
+  // Borrar logos anteriores con otras extensiones
+  for (const e of Object.values(LOGO_EXT_MAP)) {
+    if (e !== ext) {
+      await adminClient.storage.from('tenant-logos').remove([`${tenantId}/logo.${e}`])
+    }
+  }
+
+  const { error: uploadError } = await adminClient.storage
+    .from('tenant-logos')
+    .upload(path, file, { contentType: file.type, upsert: true })
+
+  if (uploadError) {
+    console.error('[uploadTenantLogo]', uploadError)
+    return { success: false, error: 'No se pudo subir el archivo.' }
+  }
+
+  const { data } = adminClient.storage.from('tenant-logos').getPublicUrl(path)
+  const url = data.publicUrl
+
+  await dbAdmin
+    .update(schema.tenants)
+    .set({ logo_url: url })
+    .where(eq(schema.tenants.id, tenantId))
+
+  revalidatePath(`/platform/tenants/${tenantId}`)
+  return { success: true, data: { url } }
+}
+
+// ── removeTenantLogo ──────────────────────────────────────────
+
+export async function removeTenantLogo(tenantId: string): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  const adminClient = createAdminClient()
+  // Intentar borrar todas las extensiones posibles
+  await Promise.all(
+    Object.values(LOGO_EXT_MAP).map((ext) =>
+      adminClient.storage.from('tenant-logos').remove([`${tenantId}/logo.${ext}`]),
+    ),
+  )
+
+  await dbAdmin
+    .update(schema.tenants)
+    .set({ logo_url: null })
+    .where(eq(schema.tenants.id, tenantId))
+
+  revalidatePath(`/platform/tenants/${tenantId}`)
+  return { success: true, data: undefined }
+}
+
+// ── toggleModule ──────────────────────────────────────────────
+
+export async function toggleModule(
+  tenantId:  string,
+  moduleKey: string,
+  enabled:   boolean,
+): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  await dbAdmin
+    .insert(schema.tenantModules)
+    .values({
+      tenant_id:  tenantId,
+      module_key: moduleKey as typeof schema.tenantModules.$inferInsert['module_key'],
+      enabled,
+    })
+    .onConflictDoUpdate({
+      target:     [schema.tenantModules.tenant_id, schema.tenantModules.module_key],
+      set:        { enabled, updated_at: new Date() },
+    })
+
+  revalidatePath(`/platform/tenants/${tenantId}`)
+  return { success: true, data: undefined }
+}
+
 // ── deactivateMemberAdmin ─────────────────────────────────────
 
 export async function deactivateMemberAdmin(

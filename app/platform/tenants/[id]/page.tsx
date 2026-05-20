@@ -15,16 +15,19 @@ export default async function TenantDetailPage({
   await requireRole('platform_admin')
   const { id } = await params
 
-  const rows = await dbAdmin
-    .select()
-    .from(schema.tenants)
-    .where(eq(schema.tenants.id, id))
-    .limit(1)
+  const [rows, members, moduleRows] = await Promise.all([
+    dbAdmin.select().from(schema.tenants).where(eq(schema.tenants.id, id)).limit(1),
+    getTenantMembers(id),
+    dbAdmin
+      .select({ module_key: schema.tenantModules.module_key, enabled: schema.tenantModules.enabled })
+      .from(schema.tenantModules)
+      .where(eq(schema.tenantModules.tenant_id, id)),
+  ])
 
   const tenant = rows[0]
   if (!tenant) notFound()
 
-  const members = await getTenantMembers(id)
+  const enabledModules = moduleRows.filter((m) => m.enabled).map((m) => m.module_key)
 
-  return <TenantDetailView tenant={tenant} members={members} />
+  return <TenantDetailView tenant={tenant} members={members} enabledModules={enabledModules} />
 }

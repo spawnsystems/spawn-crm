@@ -44,3 +44,12 @@ export const invitationStatusEnum = pgEnum('invitation_status', [
   'accepted',
   'expired',
 ])
+
+export const moduleKeyEnum = pgEnum('module_key', [
+  'pipeline',
+  'rescate',
+  'test_drive',
+  'cotizaciones',
+  'inventario',
+  'reportes',
+])

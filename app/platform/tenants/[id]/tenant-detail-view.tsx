@@ -15,13 +15,15 @@ import {
 } from '@/components/ui/dialog'
 import {
   ArrowLeft, Building2, Users, UserPlus, CheckCircle2, XCircle,
-  Clock, ShieldCheck, Loader2, Save, AlertCircle, Eye,
+  Clock, ShieldCheck, Loader2, Save, AlertCircle, Eye, Puzzle, ImageIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import {
   updateTenantInfo, inviteUserToTenantAsAdmin, deactivateMemberAdmin, enterPreviewMode,
 } from '@/app/actions/platform'
+import { LogoUpload } from './_components/logo-upload'
+import { ModuleToggles } from './_components/module-toggles'
 import type { AppRole } from '@/lib/auth/get-current-user'
 
 // ── Types ─────────────────────────────────────────────────────
@@ -48,8 +50,9 @@ interface MemberRow {
 }
 
 interface TenantDetailViewProps {
-  tenant: TenantRow
-  members: MemberRow[]
+  tenant:         TenantRow
+  members:        MemberRow[]
+  enabledModules: string[]
 }
 
 const ROL_LABELS: Record<AppRole, string> = {
@@ -66,7 +69,7 @@ const PLAN_OPTIONS = ['starter', 'pro', 'enterprise']
 
 // ── Component ─────────────────────────────────────────────────
 
-export function TenantDetailView({ tenant: initialTenant, members: initialMembers }: TenantDetailViewProps) {
+export function TenantDetailView({ tenant: initialTenant, members: initialMembers, enabledModules }: TenantDetailViewProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -239,6 +242,27 @@ export function TenantDetailView({ tenant: initialTenant, members: initialMember
               </Select>
             </div>
           </div>
+        </Card>
+
+        {/* ── Logo ─────────────────────────────────────────────── */}
+        <Card className="p-6">
+          <div className="flex items-center gap-2 mb-5">
+            <ImageIcon className="size-4 text-muted-foreground" />
+            <h2 className="font-semibold">Logo de la concesionaria</h2>
+          </div>
+          <LogoUpload tenantId={tenant.id} currentUrl={tenant.logo_url} />
+        </Card>
+
+        {/* ── Módulos ───────────────────────────────────────────── */}
+        <Card className="p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Puzzle className="size-4 text-muted-foreground" />
+            <h2 className="font-semibold">Módulos</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            Activá o desactivá funcionalidades individualmente. Los cambios aplican de inmediato.
+          </p>
+          <ModuleToggles tenantId={tenant.id} enabledModules={enabledModules} />
         </Card>
 
         {/* ── Members ──────────────────────────────────────────── */}

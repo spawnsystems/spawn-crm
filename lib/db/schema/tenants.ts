@@ -5,8 +5,9 @@ import {
   boolean,
   timestamp,
   jsonb,
+  unique,
 } from 'drizzle-orm/pg-core'
-import { appRoleEnum, invitationStatusEnum } from './enums'
+import { appRoleEnum, invitationStatusEnum, moduleKeyEnum } from './enums'
 
 const timestamps = {
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -40,6 +41,20 @@ export const usuarios = pgTable('usuarios', {
   activo: boolean('activo').default(true).notNull(),
   ...timestamps,
 })
+
+// ─── Módulos por tenant ──────────────────────────────────────────────────────
+
+export const tenantModules = pgTable(
+  'tenant_modules',
+  {
+    id:         uuid('id').primaryKey().defaultRandom(),
+    tenant_id:  uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+    module_key: moduleKeyEnum('module_key').notNull(),
+    enabled:    boolean('enabled').notNull().default(true),
+    updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [unique('tenant_modules_tenant_module_uq').on(t.tenant_id, t.module_key)],
+)
 
 // ─── Membresías (usuario ↔ tenant) ──────────────────────────────────────────
 
