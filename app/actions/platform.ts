@@ -283,13 +283,15 @@ export async function uploadTenantLogo(
   }
 
   const { data } = adminClient.storage.from('tenant-logos').getPublicUrl(path)
-  const url = data.publicUrl
+  // Append cache-buster so browsers/CDN don't serve stale versions on re-upload
+  const url = `${data.publicUrl}?t=${Date.now()}`
 
   await dbAdmin
     .update(schema.tenants)
     .set({ logo_url: url })
     .where(eq(schema.tenants.id, tenantId))
 
+  revalidatePath('/', 'layout')
   revalidatePath(`/platform/tenants/${tenantId}`)
   return { success: true, data: { url } }
 }
@@ -332,6 +334,7 @@ export async function removeTenantLogo(tenantId: string): Promise<ActionResult<v
     .set({ logo_url: null })
     .where(eq(schema.tenants.id, tenantId))
 
+  revalidatePath('/', 'layout')
   revalidatePath(`/platform/tenants/${tenantId}`)
   return { success: true, data: undefined }
 }
