@@ -72,6 +72,7 @@ export function LogoUpload({ tenantId, currentUrl }: LogoUploadProps) {
               src={preview}
               alt="Logo de la concesionaria"
               className="max-h-full max-w-full object-contain"
+              style={{ mixBlendMode: 'multiply' }}
             />
           ) : (
             <div className="flex flex-col items-center gap-1 text-muted-foreground/40">

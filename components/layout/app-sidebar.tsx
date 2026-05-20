@@ -103,6 +103,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             src={tenant.logo_url}
             alt={tenant.nombre}
             className="max-h-10 max-w-[180px] w-full object-contain"
+            style={{ mixBlendMode: 'multiply' }}
           />
         ) : (
           <div className="flex items-center gap-2.5 w-full">
@@ -239,6 +240,7 @@ export function AppSidebar() {
               src={tenant.logo_url}
               alt={tenant.nombre}
               className="max-h-6 max-w-[120px] object-contain shrink-0"
+              style={{ mixBlendMode: 'multiply' }}
             />
           ) : (
             <>
