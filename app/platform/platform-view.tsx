@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   ShieldCheck, Building2, CheckCircle2, XCircle, Eye, Plus,
-  Users, BarChart3, Loader2, ChevronRight, AlertCircle,
+  Users, Loader2, ChevronRight, AlertCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -28,7 +28,6 @@ interface TenantRow {
   plan_key: string
   activo: boolean
   memberCount: number
-  leadCount: number
 }
 
 interface PlatformViewProps {
@@ -115,10 +114,9 @@ export function PlatformView({ user, tenants: initialTenants }: PlatformViewProp
 
       <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
         {/* Stats summary */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <StatCard label="Tenants activos" value={activeCount} icon={<Building2 className="size-4" />} />
           <StatCard label="Total usuarios" value={tenants.reduce((a, t) => a + t.memberCount, 0)} icon={<Users className="size-4" />} />
-          <StatCard label="Total leads" value={tenants.reduce((a, t) => a + t.leadCount, 0)} icon={<BarChart3 className="size-4" />} />
         </div>
 
         {/* Tenant list */}
@@ -174,10 +172,6 @@ export function PlatformView({ user, tenants: initialTenants }: PlatformViewProp
                         <span className="mx-1.5">·</span>
                         <span className="inline-flex items-center gap-0.5">
                           <Users className="size-2.5" />{t.memberCount} miembros
-                        </span>
-                        <span className="mx-1.5">·</span>
-                        <span className="inline-flex items-center gap-0.5">
-                          <BarChart3 className="size-2.5" />{t.leadCount} leads
                         </span>
                       </p>
                     </div>

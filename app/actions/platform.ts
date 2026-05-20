@@ -124,36 +124,6 @@ export async function updateTenantInfo(
   return { success: true, data: undefined }
 }
 
-// ── getTenantWithStats ────────────────────────────────────────
-// Para la página de listado — cuenta miembros y leads por tenant
-
-export async function getTenantStats(tenantId: string): Promise<{
-  memberCount: number
-  leadCount: number
-}> {
-  const user = await getCurrentUser()
-  if (!user?.is_platform_admin) return { memberCount: 0, leadCount: 0 }
-
-  const [members, leads] = await Promise.all([
-    dbAdmin
-      .select({ count: count() })
-      .from(schema.tenantMembers)
-      .where(and(
-        eq(schema.tenantMembers.tenant_id, tenantId),
-        eq(schema.tenantMembers.activo, true),
-      )),
-    dbAdmin
-      .select({ count: count() })
-      .from(schema.leads)
-      .where(eq(schema.leads.tenant_id, tenantId)),
-  ])
-
-  return {
-    memberCount: members[0]?.count ?? 0,
-    leadCount:   leads[0]?.count   ?? 0,
-  }
-}
-
 // ── getTenantMembers (platform admin view) ────────────────────
 
 export async function getTenantMembers(tenantId: string) {
