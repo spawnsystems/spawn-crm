@@ -98,8 +98,14 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     <div className="flex h-full flex-col">
       {/* Logo / Tenant */}
       <div className="flex h-16 items-center gap-2.5 border-b border-border px-4 shrink-0">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
-          <img src="/spawn-logo.png" alt="Spawn" className="size-5 object-contain brightness-0 invert" />
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg overflow-hidden bg-white border border-border">
+          {tenant.logo_url ? (
+            <img src={tenant.logo_url} alt={tenant.nombre} className="size-full object-contain p-0.5" />
+          ) : (
+            <span className="text-[10px] font-bold text-muted-foreground">
+              {tenant.concesionaria.slice(0, 2).toUpperCase()}
+            </span>
+          )}
         </div>
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold leading-tight">{tenant.nombre}</div>
@@ -222,8 +228,14 @@ export function AppSidebar() {
 
         {/* Tenant name in header */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div className="flex size-6 items-center justify-center rounded bg-primary shrink-0">
-            <img src="/spawn-logo.png" alt="Spawn" className="size-3.5 object-contain brightness-0 invert" />
+          <div className="flex size-6 shrink-0 items-center justify-center rounded overflow-hidden bg-white border border-border">
+            {tenant.logo_url ? (
+              <img src={tenant.logo_url} alt={tenant.nombre} className="size-full object-contain p-0.5" />
+            ) : (
+              <span className="text-[8px] font-bold text-muted-foreground">
+                {tenant.concesionaria.slice(0, 2).toUpperCase()}
+              </span>
+            )}
           </div>
           <span className="text-sm font-semibold truncate">{tenant.nombre}</span>
         </div>
