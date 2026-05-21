@@ -1,13 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Card } from '@/components/ui/card'
 import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { ChevronDown } from 'lucide-react'
 import type { Lead } from '@/lib/db'
 import { changeStatus } from '@/app/actions/leads'
 import { toast } from 'sonner'
+
+const ALL = '__all__'
 
 // Accept both Lead and the extended row from getAllLeads (with vendedor fields)
 type LeadLike = Lead & { vendedor_nombre?: string | null; vendedor_alias?: string | null }
@@ -26,12 +31,29 @@ interface PipelineViewProps {
 }
 
 export function PipelineView({ initialLeads }: PipelineViewProps) {
-  const [leads, setLeads]         = useState<LeadLike[]>(initialLeads)
-  const [showLost, setShowLost]   = useState(false)
-  const [openLeadId, setOpenLeadId] = useState<string | null>(null)
+  const [leads,       setLeads]       = useState<LeadLike[]>(initialLeads)
+  const [showLost,    setShowLost]    = useState(false)
+  const [openLeadId,  setOpenLeadId]  = useState<string | null>(null)
+  const [filterVend,  setFilterVend]  = useState(ALL)
 
-  const activeLeads = leads.filter((l) => l.status !== 'Perdido')
-  const lostLeads   = leads.filter((l) => l.status === 'Perdido')
+  // Derive unique vendedores from the leads list (no extra fetch needed)
+  const vendedores = useMemo(() => {
+    const map = new Map<string, string>()
+    leads.forEach((l) => {
+      if (l.assigned_to && (l.vendedor_nombre || l.vendedor_alias)) {
+        map.set(l.assigned_to, l.vendedor_alias || l.vendedor_nombre || l.assigned_to)
+      }
+    })
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+  }, [leads])
+
+  const visibleLeads = useMemo(() =>
+    filterVend === ALL ? leads : leads.filter((l) => l.assigned_to === filterVend),
+    [leads, filterVend],
+  )
+
+  const activeLeads = visibleLeads.filter((l) => l.status !== 'Perdido')
+  const lostLeads   = visibleLeads.filter((l) => l.status === 'Perdido')
 
   async function handleDrop(leadId: string, newStatus: LeadLike['status']) {
     const prev = leads.find((l) => l.id === leadId)?.status
@@ -50,9 +72,24 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
 
   return (
     <div className="p-4 md:p-8 max-w-[1600px] mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Pipeline</h1>
-        <p className="text-sm text-muted-foreground mt-1">Vista Kanban de tu embudo de ventas</p>
+      <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Pipeline</h1>
+          <p className="text-sm text-muted-foreground mt-1">Vista Kanban de tu embudo de ventas</p>
+        </div>
+        {vendedores.length > 1 && (
+          <Select value={filterVend} onValueChange={setFilterVend}>
+            <SelectTrigger className={cn('h-9 w-48 text-sm', filterVend !== ALL && 'border-primary text-primary')}>
+              <SelectValue placeholder="Todos los vendedores" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Todos los vendedores</SelectItem>
+              {vendedores.map((v) => (
+                <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div className="flex gap-4 overflow-x-auto pb-2">
@@ -106,7 +143,9 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
       </div>
 
       <div className="text-xs text-muted-foreground mt-4">
-        {leads.length} leads totales
+        {visibleLeads.length !== leads.length
+          ? `${visibleLeads.length} de ${leads.length} leads`
+          : `${leads.length} leads totales`}
       </div>
 
       <LeadDetailSheet
