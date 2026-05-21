@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth/get-current-user'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { db, dbAdmin, schema } from '@/lib/db'
-import { eq, and, desc, isNotNull } from 'drizzle-orm'
+import { eq, and, desc, isNotNull, inArray } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema } from '@/lib/schemas/leads'
 import type { ActionResult } from './auth'
 
@@ -384,52 +384,118 @@ export async function getMyLeads() {
     .orderBy(desc(schema.leads.created_at))
 }
 
+// ── getMyTeamIds ──────────────────────────────────────────────
+// Retorna los IDs de equipo que el usuario puede ver según su rol.
+// Supervisor → equipos donde supervisor_id = user.id
+// Gerente    → equipos donde gerente_id    = user.id
+// null       → no tiene equipos asignados
+
+async function getMyTeamIds(
+  userId: string,
+  tenantId: string,
+  rol: string,
+): Promise<string[] | null> {
+  if (['platform_admin', 'dueno'].includes(rol)) return null // ve todo
+
+  const field = rol === 'gerente'
+    ? schema.equipos.gerente_id
+    : schema.equipos.supervisor_id
+
+  const rows = await dbAdmin
+    .select({ id: schema.equipos.id })
+    .from(schema.equipos)
+    .where(
+      and(
+        eq(schema.equipos.tenant_id, tenantId),
+        eq(field, userId),
+        eq(schema.equipos.activo, true),
+      ),
+    )
+
+  return rows.map((r) => r.id)
+}
+
 // ── getAllLeads ───────────────────────────────────────────────
-// Todos los leads del tenant (para gerente/dueno/admin)
+// Leads visibles para el usuario según su rol y equipos:
+//   dueño/admin → todos los del tenant
+//   gerente     → solo leads de equipos que dirige
+//   supervisor  → solo leads de equipos que supervisa
+//   vendedor    → solo los asignados a él
 
 export async function getAllLeads() {
-  const { tenantId } = await requireTenant()
+  const { user, tenantId } = await requireTenant()
 
-  return dbAdmin
-    .select({
-      id:                   schema.leads.id,
-      tenant_id:            schema.leads.tenant_id,
-      nombre:               schema.leads.nombre,
-      telefono:             schema.leads.telefono,
-      email:                schema.leads.email,
-      modelo:               schema.leads.modelo,
-      source:               schema.leads.source,
-      status:               schema.leads.status,
-      next_action:          schema.leads.next_action,
-      est_value:            schema.leads.est_value,
-      days_in_stage:        schema.leads.days_in_stage,
-      at_risk:              schema.leads.at_risk,
-      last_contact_at:      schema.leads.last_contact_at,
-      last_contact_critical: schema.leads.last_contact_critical,
-      stage_entered_at:     schema.leads.stage_entered_at,
-      abandoned_at:         schema.leads.abandoned_at,
-      rescue_category:      schema.leads.rescue_category,
-      assigned_to:          schema.leads.assigned_to,
-      equipo_id:            schema.leads.equipo_id,
-      created_by:           schema.leads.created_by,
-      updated_by:           schema.leads.updated_by,
-      created_at:           schema.leads.created_at,
-      updated_at:           schema.leads.updated_at,
-      vendedor_nombre:      schema.usuarios.nombre,
-      vendedor_alias:       schema.usuarios.alias,
-    })
+  const LEAD_FIELDS = {
+    id:                    schema.leads.id,
+    tenant_id:             schema.leads.tenant_id,
+    nombre:                schema.leads.nombre,
+    telefono:              schema.leads.telefono,
+    email:                 schema.leads.email,
+    modelo:                schema.leads.modelo,
+    source:                schema.leads.source,
+    status:                schema.leads.status,
+    next_action:           schema.leads.next_action,
+    est_value:             schema.leads.est_value,
+    days_in_stage:         schema.leads.days_in_stage,
+    at_risk:               schema.leads.at_risk,
+    last_contact_at:       schema.leads.last_contact_at,
+    last_contact_critical: schema.leads.last_contact_critical,
+    stage_entered_at:      schema.leads.stage_entered_at,
+    abandoned_at:          schema.leads.abandoned_at,
+    rescue_category:       schema.leads.rescue_category,
+    assigned_to:           schema.leads.assigned_to,
+    equipo_id:             schema.leads.equipo_id,
+    created_by:            schema.leads.created_by,
+    updated_by:            schema.leads.updated_by,
+    created_at:            schema.leads.created_at,
+    updated_at:            schema.leads.updated_at,
+    vendedor_nombre:       schema.usuarios.nombre,
+    vendedor_alias:        schema.usuarios.alias,
+  }
+
+  const base = dbAdmin
+    .select(LEAD_FIELDS)
     .from(schema.leads)
     .leftJoin(schema.usuarios, eq(schema.leads.assigned_to, schema.usuarios.id))
-    .where(eq(schema.leads.tenant_id, tenantId))
+
+  // Dueño / platform_admin → sin filtro adicional
+  if (['platform_admin', 'dueno'].includes(user.rol)) {
+    return base
+      .where(eq(schema.leads.tenant_id, tenantId))
+      .orderBy(desc(schema.leads.created_at))
+  }
+
+  // Vendedor → solo sus leads
+  if (user.rol === 'vendedor') {
+    return base
+      .where(and(
+        eq(schema.leads.tenant_id, tenantId),
+        eq(schema.leads.assigned_to, user.id),
+      ))
+      .orderBy(desc(schema.leads.created_at))
+  }
+
+  // Gerente / Supervisor → filtrar por equipos a cargo
+  const teamIds = await getMyTeamIds(user.id, tenantId, user.rol)
+
+  // Sin equipos asignados → no ve nada
+  if (!teamIds || teamIds.length === 0) return []
+
+  return base
+    .where(and(
+      eq(schema.leads.tenant_id, tenantId),
+      inArray(schema.leads.equipo_id, teamIds),
+    ))
     .orderBy(desc(schema.leads.created_at))
 }
 
 // ── getAbandonedLeads ─────────────────────────────────────────
+// Leads abandonados visibles para el usuario (mismo scoping que getAllLeads)
 
 export async function getAbandonedLeads() {
-  const { tenantId } = await requireTenant()
+  const { user, tenantId } = await requireTenant()
 
-  return dbAdmin
+  const base = dbAdmin
     .select({
       id:              schema.leads.id,
       nombre:          schema.leads.nombre,
@@ -439,17 +505,28 @@ export async function getAbandonedLeads() {
       abandoned_at:    schema.leads.abandoned_at,
       rescue_category: schema.leads.rescue_category,
       assigned_to:     schema.leads.assigned_to,
+      equipo_id:       schema.leads.equipo_id,
       vendedor_nombre: schema.usuarios.nombre,
       vendedor_alias:  schema.usuarios.alias,
     })
     .from(schema.leads)
     .leftJoin(schema.usuarios, eq(schema.leads.assigned_to, schema.usuarios.id))
-    .where(
-      and(
-        eq(schema.leads.tenant_id, tenantId),
-        isNotNull(schema.leads.abandoned_at),
-      ),
-    )
+
+  if (['platform_admin', 'dueno'].includes(user.rol)) {
+    return base
+      .where(and(eq(schema.leads.tenant_id, tenantId), isNotNull(schema.leads.abandoned_at)))
+      .orderBy(desc(schema.leads.abandoned_at))
+  }
+
+  const teamIds = await getMyTeamIds(user.id, tenantId, user.rol)
+  if (!teamIds || teamIds.length === 0) return []
+
+  return base
+    .where(and(
+      eq(schema.leads.tenant_id, tenantId),
+      isNotNull(schema.leads.abandoned_at),
+      inArray(schema.leads.equipo_id, teamIds),
+    ))
     .orderBy(desc(schema.leads.abandoned_at))
 }
 
