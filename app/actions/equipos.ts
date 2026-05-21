@@ -213,13 +213,14 @@ export async function getEquiposConMiembros() {
   // Todos los miembros activos del tenant
   const miembros = await dbAdmin
     .select({
-      user_id:   schema.tenantMembers.user_id,
-      rol:       schema.tenantMembers.rol,
-      equipo_id: schema.tenantMembers.equipo_id,
-      activo:    schema.tenantMembers.activo,
-      nombre:    schema.usuarios.nombre,
-      alias:     schema.usuarios.alias,
-      email:     schema.usuarios.email,
+      user_id:           schema.tenantMembers.user_id,
+      rol:               schema.tenantMembers.rol,
+      equipo_id:         schema.tenantMembers.equipo_id,
+      activo:            schema.tenantMembers.activo,
+      invitation_status: schema.tenantMembers.invitation_status,
+      nombre:            schema.usuarios.nombre,
+      alias:             schema.usuarios.alias,
+      email:             schema.usuarios.email,
     })
     .from(schema.tenantMembers)
     .leftJoin(schema.usuarios, eq(schema.tenantMembers.user_id, schema.usuarios.id))
