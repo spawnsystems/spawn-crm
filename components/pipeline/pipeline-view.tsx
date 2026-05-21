@@ -9,6 +9,9 @@ import type { Lead } from '@/lib/db'
 import { changeStatus } from '@/app/actions/leads'
 import { toast } from 'sonner'
 
+// Accept both Lead and the extended row from getAllLeads (with vendedor fields)
+type LeadLike = Lead & { vendedor_nombre?: string | null; vendedor_alias?: string | null }
+
 const STAGES = [
   { id: 'Nuevo',       label: 'Nuevos',      color: 'bg-info' },
   { id: 'Contactado',  label: 'Contactados', color: 'bg-primary' },
@@ -19,18 +22,18 @@ const STAGES = [
 ] as const
 
 interface PipelineViewProps {
-  initialLeads: Lead[]
+  initialLeads: LeadLike[]
 }
 
 export function PipelineView({ initialLeads }: PipelineViewProps) {
-  const [leads, setLeads]         = useState<Lead[]>(initialLeads)
+  const [leads, setLeads]         = useState<LeadLike[]>(initialLeads)
   const [showLost, setShowLost]   = useState(false)
   const [openLeadId, setOpenLeadId] = useState<string | null>(null)
 
   const activeLeads = leads.filter((l) => l.status !== 'Perdido')
   const lostLeads   = leads.filter((l) => l.status === 'Perdido')
 
-  async function handleDrop(leadId: string, newStatus: Lead['status']) {
+  async function handleDrop(leadId: string, newStatus: LeadLike['status']) {
     const prev = leads.find((l) => l.id === leadId)?.status
     if (prev === newStatus) return
 
@@ -64,7 +67,7 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
               leads={items}
               totalValue={total}
               onCardClick={setOpenLeadId}
-              onDrop={(leadId) => handleDrop(leadId, stage.id as Lead['status'])}
+              onDrop={(leadId) => handleDrop(leadId, stage.id as LeadLike['status'])}
             />
           )
         })}
@@ -110,7 +113,7 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
         leadId={openLeadId}
         onClose={() => setOpenLeadId(null)}
         onStatusChange={(id, status) =>
-          setLeads((ls) => ls.map((l) => l.id === id ? { ...l, status: status as Lead['status'] } : l))
+          setLeads((ls) => ls.map((l) => l.id === id ? { ...l, status: status as LeadLike['status'] } : l))
         }
       />
     </div>
@@ -121,7 +124,7 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
 
 interface KanbanColumnProps {
   stage: { id: string; label: string; color: string }
-  leads: Lead[]
+  leads: LeadLike[]
   totalValue: number
   onCardClick: (id: string) => void
   onDrop: (leadId: string) => void
@@ -173,7 +176,7 @@ function KanbanColumn({ stage, leads, totalValue, onCardClick, onDrop }: KanbanC
   )
 }
 
-function KanbanCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
+function KanbanCard({ lead, onClick }: { lead: LeadLike; onClick: () => void }) {
   const value = parseFloat(lead.est_value ?? '0')
   const formattedValue = value >= 1_000_000
     ? `$${(value / 1_000_000).toFixed(1)}M`
@@ -196,8 +199,13 @@ function KanbanCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
         ) : (
           <span />
         )}
-        <span className="text-muted-foreground">{lead.days_in_stage}d en etapa</span>
+        <span className="text-muted-foreground">{lead.days_in_stage ?? 0}d en etapa</span>
       </div>
+      {(lead.vendedor_alias || lead.vendedor_nombre) && (
+        <div className="mt-1 text-[10px] text-muted-foreground/70 truncate">
+          {lead.vendedor_alias || lead.vendedor_nombre}
+        </div>
+      )}
     </Card>
   )
 }

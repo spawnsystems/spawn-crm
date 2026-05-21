@@ -6,76 +6,74 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
 import { StatusBadge } from '@/components/status-badge'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
   Phone, Mail, Car, CheckCircle2, Circle, Calendar, FileText,
-  MessageCircle, Send, ChevronDown, Loader2,
+  MessageCircle, Send, ChevronDown, Loader2, Pencil, X, Check,
+  UserCircle, Plus,
 } from 'lucide-react'
 import {
   changeStatus, addNote, toggleTask, getLeadDetail, markContacted,
+  updateLead, addTask, assignLead,
 } from '@/app/actions/leads'
+import { getVendedoresDelTenant } from '@/app/actions/users'
+import { leadSourceValues } from '@/lib/schemas/leads'
 import type { Lead } from '@/lib/db'
 
 // ── Types ─────────────────────────────────────────────────────────
 
-type DetailData = Awaited<ReturnType<typeof getLeadDetail>>
+type DetailData  = Awaited<ReturnType<typeof getLeadDetail>>
+type Vendedor    = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 
 const STATUSES = [
   'Nuevo', 'Contactado', 'Cotizado', 'Test drive', 'Negociación', 'Cerrado', 'Perdido',
 ] as const
-
-// ── SPECS lookup (static fallback, will be overridden by DB data later) ────────
-
-const SPECS: Record<string, { motor: string; transmision: string; consumo: string; precio: string; stock: string }> = {
-  'Onix Plus 1.2 Turbo':  { motor: '1.2L Turbo – 132 CV',  transmision: 'Automática CVT', consumo: '5.8 L/100km', precio: '$28.500.000', stock: '3 unidades' },
-  'Tracker Premier':       { motor: '1.2L Turbo – 132 CV',  transmision: 'Automática CVT', consumo: '6.2 L/100km', precio: '$42.000.000', stock: '2 unidades' },
-  'Tracker LT':            { motor: '1.2L Turbo – 132 CV',  transmision: 'Automática CVT', consumo: '6.2 L/100km', precio: '$36.500.000', stock: '4 unidades' },
-  'S10 High Country':      { motor: '2.8L Turbo Diesel – 200 CV', transmision: 'Automática 6AT', consumo: '9.1 L/100km', precio: '$78.000.000', stock: '1 unidad' },
-  'S10 Midnight':          { motor: '2.8L Turbo Diesel – 200 CV', transmision: 'Automática 6AT', consumo: '9.1 L/100km', precio: '$82.000.000', stock: '1 unidad' },
-  'Onix LT':               { motor: '1.0L Aspirado – 76 CV', transmision: 'Manual 5V',       consumo: '5.4 L/100km', precio: '$24.000.000', stock: '6 unidades' },
-  'Onix Plus Premier':     { motor: '1.2L Turbo – 132 CV',  transmision: 'Automática CVT', consumo: '5.8 L/100km', precio: '$31.000.000', stock: '2 unidades' },
-  'Cruze 5 Premier':       { motor: '1.4L Turbo – 153 CV',  transmision: 'Automática 6AT', consumo: '7.0 L/100km', precio: '$38.000.000', stock: '2 unidades' },
-  'Spin LTZ 7as':          { motor: '1.8L Aspirado – 103 CV', transmision: 'Manual 5V',    consumo: '7.8 L/100km', precio: '$35.000.000', stock: '3 unidades' },
-  'Spin Activ':            { motor: '1.8L Aspirado – 103 CV', transmision: 'Automática 6AT', consumo: '8.0 L/100km', precio: '$33.500.000', stock: '2 unidades' },
-}
-
-function getSpecs(modelo: string | null) {
-  if (!modelo) return null
-  return SPECS[modelo] ?? null
-}
 
 // ── Main component ────────────────────────────────────────────────
 
 interface LeadDetailSheetProps {
   leadId: string | null
   onClose: () => void
-  /** Called after status changes so parent can update list optimistically */
   onStatusChange?: (leadId: string, status: string) => void
 }
 
 export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailSheetProps) {
-  const [detail, setDetail] = useState<DetailData | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [newNote, setNewNote] = useState('')
+  const [detail,    setDetail]    = useState<DetailData | null>(null)
+  const [loading,   setLoading]   = useState(false)
+  const [vendedores, setVendedores] = useState<Vendedor[]>([])
+  const [newNote,   setNewNote]   = useState('')
+  const [newTask,   setNewTask]   = useState('')
+  const [editing,   setEditing]   = useState(false)
+  const [editForm,  setEditForm]  = useState<Partial<Lead>>({})
   const [isPending, startTransition] = useTransition()
 
-  // Fetch when leadId changes
+  // Fetch lead detail + vendedores when sheet opens
   useEffect(() => {
-    if (!leadId) { setDetail(null); return }
+    if (!leadId) { setDetail(null); setEditing(false); return }
     setLoading(true)
-    getLeadDetail(leadId)
-      .then(setDetail)
-      .finally(() => setLoading(false))
+    Promise.all([
+      getLeadDetail(leadId),
+      getVendedoresDelTenant(),
+    ]).then(([d, v]) => {
+      setDetail(d)
+      setVendedores(v)
+      if (d) setEditForm(d.lead)
+    }).finally(() => setLoading(false))
   }, [leadId])
 
-  const lead = detail?.lead
-  const notes = detail?.notes ?? []
+  const lead     = detail?.lead
+  const notes    = detail?.notes    ?? []
   const timeline = detail?.timeline ?? []
-  const tasks = detail?.tasks ?? []
+  const tasks    = detail?.tasks    ?? []
 
   // ── Mutations ──────────────────────────────────────────────────
 
@@ -85,8 +83,9 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
       const res = await changeStatus(lead.id, newStatus as Lead['status'])
       if (res.success) {
         setDetail((d) => d ? { ...d, lead: { ...d.lead, status: newStatus as Lead['status'] } } : d)
+        setEditForm((f) => ({ ...f, status: newStatus as Lead['status'] }))
         onStatusChange?.(lead.id, newStatus)
-        toast.success(`Estado actualizado: ${newStatus}`)
+        toast.success(`Estado: ${newStatus}`)
       } else {
         toast.error(res.error)
       }
@@ -112,9 +111,22 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
       const res = await addNote(lead.id, newNote.trim())
       if (res.success) {
         setNewNote('')
-        // Re-fetch to get new note with author info
         getLeadDetail(lead.id).then(setDetail)
         toast.success('Nota guardada')
+      } else {
+        toast.error(res.error)
+      }
+    })
+  }
+
+  function handleAddTask() {
+    if (!lead || !newTask.trim()) return
+    startTransition(async () => {
+      const res = await addTask(lead.id, newTask.trim())
+      if (res.success) {
+        setNewTask('')
+        getLeadDetail(lead.id).then(setDetail)
+        toast.success('Tarea agregada')
       } else {
         toast.error(res.error)
       }
@@ -134,6 +146,41 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
     })
   }
 
+  function handleSaveEdit() {
+    if (!lead) return
+    startTransition(async () => {
+      const res = await updateLead(lead.id, {
+        nombre:      editForm.nombre,
+        telefono:    editForm.telefono ?? undefined,
+        email:       editForm.email    ?? undefined,
+        modelo:      editForm.modelo   ?? undefined,
+        source:      editForm.source,
+        next_action: editForm.next_action ?? undefined,
+        est_value:   editForm.est_value ? parseFloat(String(editForm.est_value)) : undefined,
+      })
+      if (res.success) {
+        setDetail((d) => d ? { ...d, lead: { ...d.lead, ...editForm } } : d)
+        setEditing(false)
+        toast.success('Lead actualizado')
+      } else {
+        toast.error(res.error)
+      }
+    })
+  }
+
+  function handleAssign(vendedorId: string | null) {
+    if (!lead) return
+    startTransition(async () => {
+      const res = await assignLead(lead.id, vendedorId)
+      if (res.success) {
+        setDetail((d) => d ? { ...d, lead: { ...d.lead, assigned_to: vendedorId } } : d)
+        toast.success(vendedorId ? 'Lead asignado' : 'Lead enviado a Bandeja General')
+      } else {
+        toast.error(res.error)
+      }
+    })
+  }
+
   // ── Render ─────────────────────────────────────────────────────
 
   return (
@@ -147,10 +194,20 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
 
         {!loading && lead && (
           <>
+            {/* ── Header ── */}
             <SheetHeader className="p-6 border-b border-border">
               <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <SheetTitle className="text-xl">{lead.nombre}</SheetTitle>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <SheetTitle className="text-xl">{lead.nombre}</SheetTitle>
+                    <button
+                      onClick={() => setEditing((v) => !v)}
+                      className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                      title="Editar lead"
+                    >
+                      {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
+                    </button>
+                  </div>
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                     {lead.telefono && (
                       <span className="inline-flex items-center gap-1.5">
@@ -186,16 +243,40 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
+
+                  {/* Vendedor asignado */}
+                  {vendedores.length > 0 && (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <UserCircle className="size-3.5 text-muted-foreground shrink-0" />
+                      <Select
+                        value={lead.assigned_to ?? '__none__'}
+                        onValueChange={(v) => handleAssign(v === '__none__' ? null : v)}
+                        disabled={isPending}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-48 border-dashed">
+                          <SelectValue placeholder="Sin asignar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">
+                            <span className="text-muted-foreground italic">Sin asignar</span>
+                          </SelectItem>
+                          {vendedores.map((v) => {
+                            const name = v.alias || v.nombre || v.user_id
+                            return (
+                              <SelectItem key={v.user_id} value={v.user_id}>
+                                {name}
+                              </SelectItem>
+                            )
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex shrink-0 gap-2">
+                <div className="flex shrink-0 flex-col gap-2">
                   {lead.telefono && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5"
-                      asChild
-                    >
+                    <Button size="sm" variant="outline" className="gap-1.5" asChild>
                       <a href={`https://wa.me/${lead.telefono.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">
                         <MessageCircle className="size-3.5 text-success" />WhatsApp
                       </a>
@@ -223,16 +304,100 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
               </div>
             </SheetHeader>
 
+            {/* ── Edit form ── */}
+            {editing && (
+              <div className="border-b border-border bg-muted/30 p-6">
+                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">Editar lead</div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 space-y-1.5">
+                    <Label className="text-xs">Nombre</Label>
+                    <Input
+                      value={editForm.nombre ?? ''}
+                      onChange={(e) => setEditForm((f) => ({ ...f, nombre: e.target.value }))}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Teléfono</Label>
+                    <Input
+                      value={editForm.telefono ?? ''}
+                      onChange={(e) => setEditForm((f) => ({ ...f, telefono: e.target.value }))}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Email</Label>
+                    <Input
+                      value={editForm.email ?? ''}
+                      onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Modelo</Label>
+                    <Input
+                      value={editForm.modelo ?? ''}
+                      onChange={(e) => setEditForm((f) => ({ ...f, modelo: e.target.value }))}
+                      placeholder="Ej: Tracker Premier"
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Origen</Label>
+                    <Select
+                      value={editForm.source ?? 'Otro'}
+                      onValueChange={(v) => setEditForm((f) => ({ ...f, source: v as Lead['source'] }))}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {leadSourceValues.map((s) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Valor estimado ($)</Label>
+                    <Input
+                      type="number"
+                      value={editForm.est_value ?? ''}
+                      onChange={(e) => setEditForm((f) => ({ ...f, est_value: e.target.value as unknown as Lead['est_value'] }))}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Próxima acción</Label>
+                    <Input
+                      value={editForm.next_action ?? ''}
+                      onChange={(e) => setEditForm((f) => ({ ...f, next_action: e.target.value }))}
+                      placeholder="Ej: Llamar el lunes"
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-4">
+                  <Button size="sm" onClick={handleSaveEdit} disabled={isPending} className="gap-1.5">
+                    {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                    Guardar cambios
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setEditing(false); setEditForm(lead) }}>
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Body ── */}
             <div className="grid grid-cols-3 gap-6 p-6">
               {/* Left col — 2/3 width */}
               <div className="col-span-2 space-y-6">
 
                 {/* Tasks */}
                 <Section icon={<Calendar className="size-4" />} title="Próximas acciones">
-                  {tasks.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Sin tareas pendientes.</p>
-                  ) : (
-                    <div className="space-y-2">
+                  {tasks.length > 0 && (
+                    <div className="space-y-2 mb-3">
                       {tasks.map((t) => (
                         <div
                           key={t.id}
@@ -253,42 +418,41 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                             </div>
                             {t.due_at && (
                               <div className="text-[11px] text-muted-foreground mt-0.5">
-                                {new Date(t.due_at).toLocaleDateString('es-AR', {
-                                  day: '2-digit', month: '2-digit',
-                                })}
+                                {new Date(t.due_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}
                               </div>
                             )}
                           </div>
                           {!t.done && (
                             <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 text-xs"
+                              size="sm" variant="ghost" className="h-7 text-xs"
                               onClick={() => handleToggleTask(t.id, true)}
                               disabled={isPending}
                             >
-                              Marcar como hecho
+                              Hecho
                             </Button>
                           )}
                         </div>
                       ))}
                     </div>
                   )}
+                  {/* Add task */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Nueva tarea..."
+                      className="h-8 text-sm"
+                      value={newTask}
+                      onChange={(e) => setNewTask(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleAddTask() }}
+                    />
+                    <Button
+                      size="sm" variant="outline" className="h-8 gap-1 shrink-0"
+                      onClick={handleAddTask}
+                      disabled={!newTask.trim() || isPending}
+                    >
+                      <Plus className="size-3.5" />Agregar
+                    </Button>
+                  </div>
                 </Section>
-
-                {/* Vehicle specs */}
-                {lead.modelo && getSpecs(lead.modelo) && (
-                  <Section icon={<Car className="size-4" />} title="Vehículo de interés">
-                    <div className="rounded-lg border border-border p-4 grid grid-cols-2 gap-3 text-sm">
-                      <Spec label="Modelo" value={lead.modelo} />
-                      <Spec label="Motor" value={getSpecs(lead.modelo)!.motor} />
-                      <Spec label="Transmisión" value={getSpecs(lead.modelo)!.transmision} />
-                      <Spec label="Consumo" value={getSpecs(lead.modelo)!.consumo} />
-                      <Spec label="Precio sugerido" value={getSpecs(lead.modelo)!.precio} />
-                      <Spec label="Stock" value={getSpecs(lead.modelo)!.stock} />
-                    </div>
-                  </Section>
-                )}
 
                 {/* Notes */}
                 <Section icon={<FileText className="size-4" />} title="Notas internas">
@@ -297,9 +461,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       <div key={n.id} className="rounded-lg border border-border p-3 bg-muted/30">
                         <div className="text-xs text-muted-foreground mb-1">
                           {n.autor ?? 'Usuario'} ·{' '}
-                          {new Date(n.created_at).toLocaleDateString('es-AR', {
-                            day: '2-digit', month: '2-digit',
-                          })}
+                          {new Date(n.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}
                         </div>
                         <div className="text-sm">{n.texto}</div>
                       </div>
@@ -317,8 +479,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) handleAddNote() }}
                     />
                     <Button
-                      size="sm"
-                      className="shrink-0 self-end gap-1.5"
+                      size="sm" className="shrink-0 self-end gap-1.5"
                       onClick={handleAddNote}
                       disabled={!newNote.trim() || isPending}
                     >
@@ -342,12 +503,8 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       <div key={e.id} className="relative pb-4">
                         <div className="absolute -left-[14px] top-1 size-2.5 rounded-full bg-primary ring-4 ring-background" />
                         <div className="text-[11px] text-muted-foreground">
-                          {new Date(e.created_at).toLocaleDateString('es-AR', {
-                            day: '2-digit', month: '2-digit',
-                          })}{' '}
-                          {new Date(e.created_at).toLocaleTimeString('es-AR', {
-                            hour: '2-digit', minute: '2-digit',
-                          })}
+                          {new Date(e.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}{' '}
+                          {new Date(e.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
                         </div>
                         <div className="text-sm font-medium mt-0.5">{e.title}</div>
                         {e.description && (
@@ -380,15 +537,6 @@ function Section({ icon, title, children }: {
         {title}
       </div>
       {children}
-    </div>
-  )
-}
-
-function Spec({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="font-medium">{value}</div>
     </div>
   )
 }
