@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import {
-  Trophy, Medal, Plus, UserPlus, Users, Pencil, X,
+  Trophy, Medal, Plus, Users, Pencil, X,
   UserCircle, Loader2, Check,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -23,7 +23,6 @@ import {
   createEquipo, updateEquipo, addMemberToEquipo, removeMemberFromEquipo,
   getEquiposConMiembros, getMiembrosDelTenant,
 } from '@/app/actions/equipos'
-import { inviteUserToTenant } from '@/app/actions/users'
 import { useRouter } from 'next/navigation'
 
 // ── Types ─────────────────────────────────────────────────────
@@ -184,7 +183,6 @@ function EquiposTab({ equipos, miembros, onRefresh }: {
   onRefresh: () => void
 }) {
   const [showNewEquipo, setShowNewEquipo] = useState(false)
-  const [showInvite,    setShowInvite]    = useState(false)
   const [editingId,     setEditingId]     = useState<string | null>(null)
 
   const gerentes     = miembros.filter((m) => m.rol === 'gerente')
@@ -198,9 +196,6 @@ function EquiposTab({ equipos, miembros, onRefresh }: {
       <div className="flex gap-2 flex-wrap">
         <Button size="sm" className="gap-1.5" onClick={() => setShowNewEquipo(true)}>
           <Plus className="size-3.5" />Nuevo equipo
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowInvite(true)}>
-          <UserPlus className="size-3.5" />Invitar usuario
         </Button>
       </div>
 
@@ -252,11 +247,6 @@ function EquiposTab({ equipos, miembros, onRefresh }: {
         gerentes={gerentes}
         supervisores={supervisores}
         onCreated={onRefresh}
-      />
-      <InviteDialog
-        open={showInvite}
-        onOpenChange={setShowInvite}
-        onInvited={onRefresh}
       />
     </div>
   )
@@ -537,73 +527,6 @@ function NewEquipoDialog({ open, onOpenChange, gerentes, supervisores, onCreated
           <Button variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={isPending}>Cancelar</Button>
           <Button onClick={handleCreate} disabled={!nombre.trim() || isPending}>
             {isPending ? <Loader2 className="size-4 animate-spin" /> : 'Crear equipo'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ── InviteDialog ──────────────────────────────────────────────
-
-const APP_ROLES = ['gerente', 'supervisor', 'vendedor'] as const
-type InviteRole = typeof APP_ROLES[number]
-
-function InviteDialog({ open, onOpenChange, onInvited }: {
-  open: boolean; onOpenChange: (v: boolean) => void; onInvited: () => void
-}) {
-  const [email,  setEmail]  = useState('')
-  const [nombre, setNombre] = useState('')
-  const [rol,    setRol]    = useState<InviteRole>('vendedor')
-  const [isPending, startTransition] = useTransition()
-
-  function reset() { setEmail(''); setNombre(''); setRol('vendedor') }
-
-  function handleInvite() {
-    if (!email.trim() || !nombre.trim()) return
-    startTransition(async () => {
-      const res = await inviteUserToTenant({ email, nombre, rol })
-      if (res.success) {
-        toast.success('Invitación enviada', { description: `Email enviado a ${email}` })
-        reset(); onOpenChange(false); onInvited()
-      } else {
-        toast.error(res.error)
-      }
-    })
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader><DialogTitle>Invitar usuario</DialogTitle></DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label>Email *</Label>
-            <Input type="email" placeholder="usuario@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Nombre completo *</Label>
-            <Input placeholder="Ej: Juan García" value={nombre} onChange={(e) => setNombre(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Rol</Label>
-            <Select value={rol} onValueChange={(v) => setRol(v as InviteRole)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {APP_ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>{ROLES_LABEL[r]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Se enviará un email con un link para que el usuario establezca su contraseña.
-          </p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={isPending}>Cancelar</Button>
-          <Button onClick={handleInvite} disabled={!email.trim() || !nombre.trim() || isPending}>
-            {isPending ? <Loader2 className="size-4 animate-spin" /> : 'Enviar invitación'}
           </Button>
         </DialogFooter>
       </DialogContent>

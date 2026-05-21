@@ -242,7 +242,8 @@ export async function getEquiposConMiembros() {
 }
 
 // ── getMiembrosDelTenant ──────────────────────────────────────
-// Todos los miembros activos (para selectores de asignación)
+// Todos los miembros del tenant, incluyendo invitados pendientes.
+// Se usa para los selectores de asignación en la gestión de equipos.
 
 export async function getMiembrosDelTenant() {
   const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
@@ -250,20 +251,17 @@ export async function getMiembrosDelTenant() {
 
   return dbAdmin
     .select({
-      user_id:   schema.tenantMembers.user_id,
-      rol:       schema.tenantMembers.rol,
-      equipo_id: schema.tenantMembers.equipo_id,
-      nombre:    schema.usuarios.nombre,
-      alias:     schema.usuarios.alias,
-      email:     schema.usuarios.email,
+      user_id:           schema.tenantMembers.user_id,
+      rol:               schema.tenantMembers.rol,
+      equipo_id:         schema.tenantMembers.equipo_id,
+      activo:            schema.tenantMembers.activo,
+      invitation_status: schema.tenantMembers.invitation_status,
+      nombre:            schema.usuarios.nombre,
+      alias:             schema.usuarios.alias,
+      email:             schema.usuarios.email,
     })
     .from(schema.tenantMembers)
     .leftJoin(schema.usuarios, eq(schema.tenantMembers.user_id, schema.usuarios.id))
-    .where(
-      and(
-        eq(schema.tenantMembers.tenant_id, tenantId),
-        eq(schema.tenantMembers.activo, true),
-      ),
-    )
+    .where(eq(schema.tenantMembers.tenant_id, tenantId))
     .orderBy(schema.tenantMembers.rol, schema.usuarios.nombre)
 }
