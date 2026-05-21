@@ -168,10 +168,10 @@ export async function getEquipos() {
 
   return dbAdmin
     .select({
-      id:           schema.equipos.id,
-      nombre:       schema.equipos.nombre,
-      activo:       schema.equipos.activo,
-      gerente_id:   schema.equipos.gerente_id,
+      id:            schema.equipos.id,
+      nombre:        schema.equipos.nombre,
+      activo:        schema.equipos.activo,
+      gerente_id:    schema.equipos.gerente_id,
       supervisor_id: schema.equipos.supervisor_id,
     })
     .from(schema.equipos)
@@ -182,4 +182,88 @@ export async function getEquipos() {
       ),
     )
     .orderBy(schema.equipos.nombre)
+}
+
+// ── getEquiposConMiembros ─────────────────────────────────────
+// Equipos con nombres de gerente/supervisor + lista de vendedores asignados
+
+export async function getEquiposConMiembros() {
+  const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
+  if (!user || !tenantId) return []
+
+  const equipoRows = await dbAdmin
+    .select({
+      id:            schema.equipos.id,
+      nombre:        schema.equipos.nombre,
+      activo:        schema.equipos.activo,
+      gerente_id:    schema.equipos.gerente_id,
+      supervisor_id: schema.equipos.supervisor_id,
+    })
+    .from(schema.equipos)
+    .where(
+      and(
+        eq(schema.equipos.tenant_id, tenantId),
+        eq(schema.equipos.activo, true),
+      ),
+    )
+    .orderBy(schema.equipos.nombre)
+
+  if (equipoRows.length === 0) return []
+
+  // Todos los miembros activos del tenant
+  const miembros = await dbAdmin
+    .select({
+      user_id:   schema.tenantMembers.user_id,
+      rol:       schema.tenantMembers.rol,
+      equipo_id: schema.tenantMembers.equipo_id,
+      activo:    schema.tenantMembers.activo,
+      nombre:    schema.usuarios.nombre,
+      alias:     schema.usuarios.alias,
+      email:     schema.usuarios.email,
+    })
+    .from(schema.tenantMembers)
+    .leftJoin(schema.usuarios, eq(schema.tenantMembers.user_id, schema.usuarios.id))
+    .where(
+      and(
+        eq(schema.tenantMembers.tenant_id, tenantId),
+        eq(schema.tenantMembers.activo, true),
+      ),
+    )
+    .orderBy(schema.usuarios.nombre)
+
+  const byId = new Map(miembros.map((m) => [m.user_id, m]))
+
+  return equipoRows.map((e) => ({
+    ...e,
+    gerente:    e.gerente_id    ? (byId.get(e.gerente_id)    ?? null) : null,
+    supervisor: e.supervisor_id ? (byId.get(e.supervisor_id) ?? null) : null,
+    vendedores: miembros.filter((m) => m.equipo_id === e.id && m.rol === 'vendedor'),
+  }))
+}
+
+// ── getMiembrosDelTenant ──────────────────────────────────────
+// Todos los miembros activos (para selectores de asignación)
+
+export async function getMiembrosDelTenant() {
+  const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
+  if (!user || !tenantId) return []
+
+  return dbAdmin
+    .select({
+      user_id:   schema.tenantMembers.user_id,
+      rol:       schema.tenantMembers.rol,
+      equipo_id: schema.tenantMembers.equipo_id,
+      nombre:    schema.usuarios.nombre,
+      alias:     schema.usuarios.alias,
+      email:     schema.usuarios.email,
+    })
+    .from(schema.tenantMembers)
+    .leftJoin(schema.usuarios, eq(schema.tenantMembers.user_id, schema.usuarios.id))
+    .where(
+      and(
+        eq(schema.tenantMembers.tenant_id, tenantId),
+        eq(schema.tenantMembers.activo, true),
+      ),
+    )
+    .orderBy(schema.tenantMembers.rol, schema.usuarios.nombre)
 }
