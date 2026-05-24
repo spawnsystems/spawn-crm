@@ -58,49 +58,49 @@ export function ModelosTab({ initialModelos }: ModelosTabProps) {
   function handleSave() {
     if (!form.nombre.trim()) return
 
-    const payload = {
+    // Valores normalizados: null en lugar de undefined para coincidir con el tipo Modelo
+    const actionPayload = {
       nombre:      form.nombre,
       motor:       form.motor       || undefined,
       transmision: form.transmision || undefined,
       consumo:     form.consumo     || undefined,
-      precio:      form.precio      ? Number(form.precio)  : undefined,
-      stock:       form.stock       ? Number(form.stock)   : undefined,
+      precio:      form.precio      ? Number(form.precio) : undefined,
+      stock:       form.stock       ? Number(form.stock)  : undefined,
     }
+
+    // Snapshot para el optimistic update (misma forma que Modelo, null en vez de undefined)
+    const optimistic = {
+      nombre:      form.nombre,
+      motor:       form.motor       || null,
+      transmision: form.transmision || null,
+      consumo:     form.consumo     || null,
+      precio:      form.precio      ? form.precio        : null,
+      stock:       form.stock       ? Number(form.stock) : 0,
+    } as const
 
     startTransition(async () => {
       if (editing) {
-        const res = await updateModelo(editing.id, payload)
+        const res = await updateModelo(editing.id, actionPayload)
         if (res.success) {
           toast.success('Modelo actualizado')
           setDialogOpen(false)
-          const snap = editing
+          const snapId = editing.id
           setModelos((prev) =>
             prev.map((m) =>
-              m.id === snap.id
-                ? { ...m, ...payload, precio: payload.precio?.toString() ?? null, stock: payload.stock ?? 0 }
-                : m,
+              m.id === snapId ? { ...m, ...optimistic } : m,
             ),
           )
         } else {
           toast.error(res.error)
         }
       } else {
-        const res = await createModelo(payload)
+        const res = await createModelo(actionPayload)
         if (res.success) {
           toast.success('Modelo creado')
           setDialogOpen(false)
           setModelos((prev) => [
             ...prev,
-            {
-              id:          res.data.id,
-              nombre:      payload.nombre,
-              motor:       payload.motor       ?? null,
-              transmision: payload.transmision ?? null,
-              consumo:     payload.consumo     ?? null,
-              precio:      payload.precio?.toString() ?? null,
-              stock:       payload.stock ?? 0,
-              activo:      true,
-            },
+            { id: res.data.id, activo: true, ...optimistic },
           ])
         } else {
           toast.error(res.error)
