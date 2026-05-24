@@ -6,6 +6,7 @@ import { getCurrentTenantId } from '@/lib/tenant/server'
 import { db, dbAdmin, schema } from '@/lib/db'
 import { eq, and, desc, isNotNull, inArray } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema } from '@/lib/schemas/leads'
+import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
 
 // ── Guard ─────────────────────────────────────────────────────
@@ -89,6 +90,16 @@ export async function createLead(
     data.assigned_to ? `Asignado al crear` : 'Sin asignar — Bandeja General',
   )
 
+  void logAudit({
+    tenantId,
+    actorId:        user.id,
+    action:         'lead.create',
+    entity:         'lead',
+    entityId:       row.id,
+    meta:           { nombre: data.nombre, source: data.source, assigned_to: data.assigned_to ?? null },
+    visibleToDueno: true,
+  })
+
   revalidatePath('/leads')
   revalidatePath('/dashboard')
   revalidatePath('/all-leads')
@@ -168,6 +179,15 @@ export async function changeStatus(
     `Estado: ${current[0].status} → ${newStatus}`,
   )
 
+  void logAudit({
+    tenantId,
+    actorId:  user.id,
+    action:   'lead.status_change',
+    entity:   'lead',
+    entityId: leadId,
+    meta:     { from: current[0].status, to: newStatus },
+  })
+
   revalidatePath('/leads')
   revalidatePath('/pipeline')
   revalidatePath('/all-leads')
@@ -212,6 +232,15 @@ export async function assignLead(
     vendedorId ? 'Lead asignado' : 'Lead enviado a Bandeja General',
   )
 
+  void logAudit({
+    tenantId,
+    actorId:  user.id,
+    action:   'lead.assign',
+    entity:   'lead',
+    entityId: leadId,
+    meta:     { vendedor_id: vendedorId },
+  })
+
   revalidatePath('/leads')
   revalidatePath('/all-leads')
   revalidatePath('/rescate')
@@ -228,6 +257,15 @@ export async function markAsLost(leadId: string): Promise<ActionResult<void>> {
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
 
   await appendTimeline(tenantId, leadId, user.id, 'status_changed', 'Marcado como Perdido')
+
+  void logAudit({
+    tenantId,
+    actorId:        user.id,
+    action:         'lead.mark_lost',
+    entity:         'lead',
+    entityId:       leadId,
+    visibleToDueno: true,
+  })
 
   revalidatePath('/rescate')
   revalidatePath('/all-leads')
@@ -263,6 +301,14 @@ export async function markContacted(
   } else {
     await appendTimeline(tenantId, leadId, user.id, 'contacted', 'Contactado')
   }
+
+  void logAudit({
+    tenantId,
+    actorId:  user.id,
+    action:   'lead.contacted',
+    entity:   'lead',
+    entityId: leadId,
+  })
 
   revalidatePath('/leads')
   revalidatePath('/all-leads')

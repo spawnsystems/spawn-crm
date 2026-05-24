@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { toast } from 'sonner'
+import { z } from 'zod'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
@@ -14,6 +15,9 @@ import {
 import { UserCircle, Loader2 } from 'lucide-react'
 import { createLead } from '@/app/actions/leads'
 import { leadSourceValues } from '@/lib/schemas/leads'
+import { getInitials } from '@/lib/utils'
+
+const emailSchema = z.string().email('Ingresá un email válido')
 
 // Static model list — later sourced from modelos_vehiculo table
 const MODELS = [
@@ -49,11 +53,26 @@ export function NewLeadDialog({
   onCreated,
 }: NewLeadDialogProps) {
   const [form, setForm] = useState(EMPTY)
+  const [emailError, setEmailError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  function reset() { setForm(EMPTY) }
+  function reset() {
+    setForm(EMPTY)
+    setEmailError(null)
+  }
+
+  function validateEmail(value: string): string | null {
+    if (!value.trim()) return null // campo opcional
+    const result = emailSchema.safeParse(value.trim())
+    return result.success ? null : result.error.issues[0]?.message ?? 'Email inválido'
+  }
 
   function handleSubmit() {
+    // Validar email antes de enviar
+    const emailErr = validateEmail(form.email)
+    setEmailError(emailErr)
+    if (emailErr) return
+
     startTransition(async () => {
       const res = await createLead({
         nombre:      form.nombre,
@@ -75,7 +94,7 @@ export function NewLeadDialog({
     })
   }
 
-  const canSubmit = !!form.nombre.trim() && !isPending
+  const canSubmit = !!form.nombre.trim() && !emailError && !isPending
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
@@ -110,10 +129,20 @@ export function NewLeadDialog({
               <Label htmlFor="nl-email">Email</Label>
               <Input
                 id="nl-email"
+                type="email"
                 placeholder="opcional"
                 value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, email: e.target.value }))
+                  if (emailError) setEmailError(validateEmail(e.target.value))
+                }}
+                onBlur={(e) => setEmailError(validateEmail(e.target.value))}
+                aria-invalid={!!emailError}
+                className={emailError ? 'border-destructive focus-visible:ring-destructive' : ''}
               />
+              {emailError && (
+                <p className="text-[11px] text-destructive">{emailError}</p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -167,12 +196,11 @@ export function NewLeadDialog({
                   <SelectContent>
                     {vendedores.map((v) => {
                       const name = v.alias || v.nombre || v.user_id
-                      const initials = name.split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase()
                       return (
                         <SelectItem key={v.user_id} value={v.user_id}>
                           <div className="flex items-center gap-2">
                             <div className="flex size-5 items-center justify-center rounded-full bg-primary-soft text-primary text-[9px] font-semibold">
-                              {initials}
+                              {getInitials(name)}
                             </div>
                             <span>{name}</span>
                           </div>

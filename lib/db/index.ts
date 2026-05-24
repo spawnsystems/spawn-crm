@@ -45,6 +45,15 @@ function getDbAdmin() {
   return globalForDb._drizzle
 }
 
+/* eslint-disable
+   @typescript-eslint/no-explicit-any,
+   @typescript-eslint/no-unsafe-assignment,
+   @typescript-eslint/no-unsafe-member-access,
+   @typescript-eslint/no-unsafe-return,
+   @typescript-eslint/no-unsafe-call
+   --
+   El Proxy necesita `any` para reenviar propiedades dinámicas al cliente Drizzle.
+   Esta es la única excepción permitida en el proyecto para `any`. */
 export const dbAdmin = new Proxy({} as ReturnType<typeof createDbClient>, {
   get(_target, prop) {
     const instance = getDbAdmin()
@@ -53,6 +62,12 @@ export const dbAdmin = new Proxy({} as ReturnType<typeof createDbClient>, {
     return typeof value === 'function' ? value.bind(instance) : value
   },
 })
+/* eslint-enable
+   @typescript-eslint/no-explicit-any,
+   @typescript-eslint/no-unsafe-assignment,
+   @typescript-eslint/no-unsafe-member-access,
+   @typescript-eslint/no-unsafe-return,
+   @typescript-eslint/no-unsafe-call */
 
 // ── Tipos inferidos del schema ────────────────────────────────
 export type Tenant        = typeof schema.tenants.$inferSelect
@@ -67,6 +82,14 @@ export type LeadNote      = typeof schema.leadNotes.$inferSelect
 export type LeadTimeline  = typeof schema.leadTimeline.$inferSelect
 export type LeadTask      = typeof schema.leadTasks.$inferSelect
 export type ModeloVehiculo = typeof schema.modelosVehiculo.$inferSelect
+
+// Audit & config
+export type AuditLog         = typeof schema.auditLogs.$inferSelect
+export type EmailLog         = typeof schema.emailLog.$inferSelect
+export type NotificationPrefs = typeof schema.notificationPrefs.$inferSelect
+export type MetaMensual      = typeof schema.metasMensuales.$inferSelect
+export type MetaMensualInsert = typeof schema.metasMensuales.$inferInsert
+export type LeadSourceCustom = typeof schema.leadSourcesCustom.$inferSelect
 
 // ── Wrapper tenant-aware ──────────────────────────────────────
 // Uso en server actions:
@@ -85,11 +108,10 @@ export function db(tenantId: string) {
     /**
      * Condición WHERE que filtra por tenant_id para una tabla.
      * La tabla debe tener una columna `tenant_id`.
+     * Arrow function — no usa `this`, segura para destructuring.
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    forTenant(table: { tenant_id: any }): SQL {
-      return eq(table.tenant_id, tenantId)
-    },
+    forTenant: (table: { tenant_id: any }): SQL => eq(table.tenant_id, tenantId),
   }
 }
 
