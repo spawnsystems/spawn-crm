@@ -10,7 +10,7 @@ import { NewLeadDialog } from '@/components/leads/new-lead-dialog'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { cn } from '@/lib/utils'
+import { cn, formatRelative, getInitials, safeRefetch } from '@/lib/utils'
 import { Search, Plus, X } from 'lucide-react'
 import { getAllLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
@@ -36,7 +36,9 @@ export function AllLeadsView({ initialLeads, vendedores, canCreate }: AllLeadsVi
   const [showNewLead, setShowNewLead] = useState(false)
 
   function refresh() {
-    getAllLeads().then(setLeads)
+    // safeRefetch ya atrapa errores; la promesa se descarta intencionalmente.
+    void safeRefetch(() => getAllLeads(), 'No se pudieron actualizar los leads')
+      .then((next) => { if (next) setLeads(next) })
   }
 
   const hasFilters = filterVend !== ALL || filterStatus !== ALL || filterSource !== ALL || search.trim() !== ''
@@ -192,7 +194,7 @@ export function AllLeadsView({ initialLeads, vendedores, canCreate }: AllLeadsVi
                       {vendorName ? (
                         <div className="flex items-center gap-1.5 text-muted-foreground">
                           <div className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-primary text-[9px] font-semibold shrink-0">
-                            {vendorName.split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase()}
+                            {getInitials(vendorName)}
                           </div>
                           <span className="text-xs">{vendorName}</span>
                         </div>
@@ -245,12 +247,3 @@ export function AllLeadsView({ initialLeads, vendedores, canCreate }: AllLeadsVi
   )
 }
 
-function formatRelative(date: Date): string {
-  const diffMs = Date.now() - date.getTime()
-  const diffH  = Math.floor(diffMs / 3_600_000)
-  const diffD  = Math.floor(diffH / 24)
-  if (diffH < 1)   return 'Hace menos de 1h'
-  if (diffH < 24)  return `Hace ${diffH}h`
-  if (diffD === 1) return 'Ayer'
-  return `Hace ${diffD} días`
-}

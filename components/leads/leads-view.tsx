@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/status-badge'
 import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
 import { NewLeadDialog } from '@/components/leads/new-lead-dialog'
-import { cn } from '@/lib/utils'
+import { cn, formatRelative, safeRefetch } from '@/lib/utils'
 import {
   AlertTriangle, MessageCircle, Phone, ChevronRight, Clock, Target, Plus,
 } from 'lucide-react'
@@ -32,7 +32,9 @@ export function LeadsView({ initialLeads, vendedores, canCreate }: LeadsViewProp
   const [showNewLead, setShowNewLead] = useState(false)
 
   function refresh() {
-    getMyLeads().then(setLeads)
+    // safeRefetch ya atrapa errores; la promesa se descarta intencionalmente.
+    void safeRefetch(() => getMyLeads(), 'No se pudieron actualizar tus leads')
+      .then((next) => { if (next) setLeads(next) })
   }
 
   // ── Derived ──────────────────────────────────────────────────
@@ -238,14 +240,3 @@ function LeadCard({ lead, onOpen }: { lead: Lead; onOpen: () => void }) {
   )
 }
 
-function formatRelative(date: Date): string {
-  const diffMs = Date.now() - date.getTime()
-  const diffMin = Math.floor(diffMs / 60_000)
-  const diffH = Math.floor(diffMin / 60)
-  const diffD = Math.floor(diffH / 24)
-  if (diffMin < 2)   return 'Justo ahora'
-  if (diffMin < 60)  return `Hace ${diffMin} min`
-  if (diffH < 24)    return `Hace ${diffH}h`
-  if (diffD === 1)   return 'Ayer'
-  return `Hace ${diffD} días`
-}

@@ -28,6 +28,7 @@ import {
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues } from '@/lib/schemas/leads'
 import type { Lead } from '@/lib/db'
+import { parseNumeric, safeRefetch } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -56,18 +57,33 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const [editForm,  setEditForm]  = useState<Partial<Lead>>({})
   const [isPending, startTransition] = useTransition()
 
-  // Fetch lead detail + vendedores when sheet opens
+  // Fetch lead detail + vendedores when sheet opens.
+  // `cancelled` evita actualizar estado si el usuario cierra el sheet o cambia de lead
+  // antes de que termine la fetch (race condition al abrir/cerrar rápido).
   useEffect(() => {
     if (!leadId) { setDetail(null); setEditing(false); return }
     setLoading(true)
+    let cancelled = false
     Promise.all([
       getLeadDetail(leadId),
       getVendedoresDelTenant(),
-    ]).then(([d, v]) => {
-      setDetail(d)
-      setVendedores(v)
-      if (d) setEditForm(d.lead)
-    }).finally(() => setLoading(false))
+    ])
+      .then(([d, v]) => {
+        if (cancelled) return
+        setDetail(d)
+        setVendedores(v)
+        if (d) setEditForm(d.lead)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        console.error('[lead-detail-sheet] load', err)
+        toast.error('No se pudo cargar el lead')
+      })
+      .finally(() => {
+        if (cancelled) return
+        setLoading(false)
+      })
+    return () => { cancelled = true }
   }, [leadId])
 
   const lead     = detail?.lead
@@ -107,29 +123,33 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
 
   function handleAddNote() {
     if (!lead || !newNote.trim()) return
+    const leadId = lead.id
     startTransition(async () => {
-      const res = await addNote(lead.id, newNote.trim())
-      if (res.success) {
-        setNewNote('')
-        getLeadDetail(lead.id).then(setDetail)
-        toast.success('Nota guardada')
-      } else {
-        toast.error(res.error)
-      }
+      const res = await addNote(leadId, newNote.trim())
+      if (!res.success) { toast.error(res.error); return }
+      setNewNote('')
+      const updated = await safeRefetch(
+        () => getLeadDetail(leadId),
+        'Nota guardada, pero no se pudo refrescar la ficha',
+      )
+      if (updated) setDetail(updated)
+      toast.success('Nota guardada')
     })
   }
 
   function handleAddTask() {
     if (!lead || !newTask.trim()) return
+    const leadId = lead.id
     startTransition(async () => {
-      const res = await addTask(lead.id, newTask.trim())
-      if (res.success) {
-        setNewTask('')
-        getLeadDetail(lead.id).then(setDetail)
-        toast.success('Tarea agregada')
-      } else {
-        toast.error(res.error)
-      }
+      const res = await addTask(leadId, newTask.trim())
+      if (!res.success) { toast.error(res.error); return }
+      setNewTask('')
+      const updated = await safeRefetch(
+        () => getLeadDetail(leadId),
+        'Tarea agregada, pero no se pudo refrescar la ficha',
+      )
+      if (updated) setDetail(updated)
+      toast.success('Tarea agregada')
     })
   }
 
@@ -156,7 +176,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
         modelo:      editForm.modelo   ?? undefined,
         source:      editForm.source,
         next_action: editForm.next_action ?? undefined,
-        est_value:   editForm.est_value ? parseFloat(String(editForm.est_value)) : undefined,
+        est_value:   parseNumeric(editForm.est_value),
       })
       if (res.success) {
         setDetail((d) => d ? { ...d, lead: { ...d.lead, ...editForm } } : d)

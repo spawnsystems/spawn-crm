@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, formatCurrencyARS } from '@/lib/utils'
 import { Info, LifeBuoy, UserPlus, XCircle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -11,7 +11,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { assignLead, markAsLost, getAbandonedLeads } from '@/app/actions/leads'
+import { assignLead, markAsLost, type getAbandonedLeads } from '@/app/actions/leads'
 import type { getVendedoresDelTenant } from '@/app/actions/users'
 
 type LeadRow = Awaited<ReturnType<typeof getAbandonedLeads>>[number]
@@ -42,10 +42,6 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
   const [reassignLead, setReassignLead] = useState<LeadRow | null>(null)
   const [selectedVendedor, setSelectedVendedor] = useState('')
   const [isPending, startTransition]  = useTransition()
-
-  function refresh() {
-    getAbandonedLeads().then(setLeads)
-  }
 
   const filtered = activeFilter === 'all'
     ? leads
@@ -185,12 +181,8 @@ function RescueCard({ lead, isPending, onReassign, onMarkLost }: {
   const daysAgo     = lead.abandoned_at
     ? Math.floor((Date.now() - new Date(lead.abandoned_at).getTime()) / 86_400_000)
     : 0
-  const estValue = lead.est_value ? parseFloat(lead.est_value) : 0
-  const formattedValue = estValue >= 1_000_000
-    ? `$${(estValue / 1_000_000).toFixed(1)}M`
-    : estValue > 0
-    ? `$${estValue.toLocaleString('es-AR')}`
-    : '—'
+  const formattedValue = formatCurrencyARS(lead.est_value, { compact: true })
+  const hasValue       = formattedValue !== '—'
 
   return (
     <div className="relative rounded-xl border border-border bg-card overflow-hidden hover:shadow-md transition-shadow pl-[4px]">
@@ -220,7 +212,7 @@ function RescueCard({ lead, isPending, onReassign, onMarkLost }: {
               Vendedor: <span className="font-medium text-foreground/70">{vendorName}</span>
             </>
           )}
-          {estValue > 0 && (
+          {hasValue && (
             <>
               <span className="mx-2">·</span>
               Valor: <span className="font-medium text-foreground/70">{formattedValue}</span>
