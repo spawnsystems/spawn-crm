@@ -22,10 +22,11 @@ const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'En ri
 interface LeadsViewProps {
   initialLeads: Lead[]
   vendedores: Vendedor[]
+  modelos: string[]
   canCreate: boolean
 }
 
-export function LeadsView({ initialLeads, vendedores, canCreate }: LeadsViewProps) {
+export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: LeadsViewProps) {
   const [leads, setLeads] = useState<Lead[]>(initialLeads)
   const [filter, setFilter] = useState<FilterTab>('Todos')
   const [openLeadId, setOpenLeadId] = useState<string | null>(null)
@@ -144,6 +145,7 @@ export function LeadsView({ initialLeads, vendedores, canCreate }: LeadsViewProp
         open={showNewLead}
         onOpenChange={setShowNewLead}
         vendedores={vendedores}
+        modelos={modelos}
         onCreated={refresh}
       />
     </div>

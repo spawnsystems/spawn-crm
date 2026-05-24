@@ -19,15 +19,6 @@ import { getInitials } from '@/lib/utils'
 
 const emailSchema = z.string().email('Ingresá un email válido')
 
-// Static model list — later sourced from modelos_vehiculo table
-const MODELS = [
-  'Onix LT', 'Onix Plus 1.2 Turbo', 'Onix Plus Premier',
-  'Tracker LT', 'Tracker Premier',
-  'Cruze 5 Premier',
-  'Spin LTZ 7as', 'Spin Activ',
-  'S10 High Country', 'S10 Midnight',
-]
-
 interface Vendedor {
   user_id: string
   nombre:  string | null
@@ -39,6 +30,8 @@ interface NewLeadDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   vendedores: Vendedor[]
+  /** Nombres de modelos activos, cargados del servidor (modelos_vehiculo). */
+  modelos?: string[]
   onCreated?: (id: string) => void
 }
 
@@ -50,6 +43,7 @@ export function NewLeadDialog({
   open,
   onOpenChange,
   vendedores,
+  modelos = [],
   onCreated,
 }: NewLeadDialogProps) {
   const [form, setForm] = useState(EMPTY)
@@ -155,9 +149,16 @@ export function NewLeadDialog({
                   <SelectValue placeholder="Seleccionar modelo..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {MODELS.map((m) => (
-                    <SelectItem key={m} value={m}>{m}</SelectItem>
-                  ))}
+                  {modelos.length === 0 ? (
+                    <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                      Sin modelos — agregá uno en{' '}
+                      <span className="font-medium">Configuración → Modelos</span>
+                    </div>
+                  ) : (
+                    modelos.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>

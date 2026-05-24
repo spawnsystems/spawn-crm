@@ -2,9 +2,11 @@ import {
   pgTable,
   uuid,
   text,
+  boolean,
   integer,
   numeric,
   timestamp,
+  jsonb,
 } from 'drizzle-orm/pg-core'
 import { tenants } from './tenants'
 
@@ -18,12 +20,15 @@ export const modelosVehiculo = pgTable('modelos_vehiculo', {
   tenant_id: uuid('tenant_id')
     .notNull()
     .references(() => tenants.id, { onDelete: 'cascade' }),
-  nombre: text('nombre').notNull(),        // "Chevrolet Tracker"
-  motor: text('motor'),                    // "1.2T Turbo"
-  transmision: text('transmision'),        // "Automática 6 vel"
-  consumo: text('consumo'),               // "13.5 km/l"
+  nombre: text('nombre').notNull(),              // "Chevrolet Tracker"
+  motor: text('motor'),                          // "1.2T Turbo"
+  transmision: text('transmision'),              // "Automática 6 vel"
+  consumo: text('consumo'),                      // "13.5 km/l"
   precio: numeric('precio', { precision: 14, scale: 2 }),
   stock: integer('stock').default(0),
-  colores: text('colores').array(),        // ["Blanco Artic", "Negro Onyx"]
+  colores: text('colores').array(),              // ["Blanco Artic", "Negro Onyx"]
+  // Added in migration 010
+  caracteristicas: jsonb('caracteristicas'),     // { anio, segmento, equipamiento[], badge, descripcion }
+  activo: boolean('activo').notNull().default(true),
   ...timestamps,
 })

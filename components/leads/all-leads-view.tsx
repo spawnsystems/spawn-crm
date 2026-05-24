@@ -21,12 +21,13 @@ type LeadRow = Awaited<ReturnType<typeof getAllLeads>>[number]
 interface AllLeadsViewProps {
   initialLeads: LeadRow[]
   vendedores: Awaited<ReturnType<typeof getVendedoresDelTenant>>
+  modelos: string[]
   canCreate: boolean
 }
 
 const ALL = '__all__'
 
-export function AllLeadsView({ initialLeads, vendedores, canCreate }: AllLeadsViewProps) {
+export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: AllLeadsViewProps) {
   const [leads,       setLeads]       = useState<LeadRow[]>(initialLeads)
   const [search,      setSearch]      = useState('')
   const [filterVend,  setFilterVend]  = useState(ALL)
@@ -241,6 +242,7 @@ export function AllLeadsView({ initialLeads, vendedores, canCreate }: AllLeadsVi
         open={showNewLead}
         onOpenChange={setShowNewLead}
         vendedores={vendedores}
+        modelos={modelos}
         onCreated={refresh}
       />
     </div>
