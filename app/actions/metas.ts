@@ -6,17 +6,18 @@ import { getCurrentTenantId } from '@/lib/tenant/server'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and } from 'drizzle-orm'
 import { metaVentasSchema } from '@/lib/schemas/configuracion'
+import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
 
 // ── Guard ─────────────────────────────────────────────────────
 
 async function requireDueno() {
   const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
-  if (!user || !tenantId) return { error: 'No autenticado' as const, tenantId: null }
+  if (!user || !tenantId) return { error: 'No autenticado' as const, user: null, tenantId: null }
   if (!['platform_admin', 'dueno'].includes(user.rol)) {
-    return { error: 'Solo el dueño puede gestionar metas' as const, tenantId: null }
+    return { error: 'Solo el dueño puede gestionar metas' as const, user: null, tenantId: null }
   }
-  return { error: null, tenantId }
+  return { error: null, user, tenantId }
 }
 
 // ── getMetasMensuales ─────────────────────────────────────────
@@ -48,8 +49,8 @@ export async function getMetasMensuales(anio: number) {
 export async function upsertMetaMensual(
   input: unknown,
 ): Promise<ActionResult<void>> {
-  const { error, tenantId } = await requireDueno()
-  if (error || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
+  const { error, user, tenantId } = await requireDueno()
+  if (error || !user || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
 
   const parsed = metaVentasSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
@@ -77,6 +78,13 @@ export async function upsertMetaMensual(
         updated_at: new Date(),
       },
     })
+
+  void logAudit({
+    tenantId, actorId: user.id,
+    action: 'meta.set', entity: 'meta',
+    meta: { user_id, anio, mes, value: meta_ventas },
+    visibleToDueno: true,
+  })
 
   revalidatePath('/configuracion')
   revalidatePath('/performance')

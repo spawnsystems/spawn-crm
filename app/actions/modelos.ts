@@ -6,17 +6,18 @@ import { getCurrentTenantId } from '@/lib/tenant/server'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and } from 'drizzle-orm'
 import { modeloSchema } from '@/lib/schemas/configuracion'
+import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
 
 // ── Guard ─────────────────────────────────────────────────────
 
 async function requireDueno() {
   const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
-  if (!user || !tenantId) return { error: 'No autenticado' as const, tenantId: null }
+  if (!user || !tenantId) return { error: 'No autenticado' as const, user: null, tenantId: null }
   if (!['platform_admin', 'dueno'].includes(user.rol)) {
-    return { error: 'Solo el dueño puede gestionar modelos' as const, tenantId: null }
+    return { error: 'Solo el dueño puede gestionar modelos' as const, user: null, tenantId: null }
   }
-  return { error: null, tenantId }
+  return { error: null, user, tenantId }
 }
 
 // ── getModelosVehiculo ────────────────────────────────────────
@@ -65,8 +66,8 @@ export async function getActiveModelNames(): Promise<string[]> {
 // ── createModelo ──────────────────────────────────────────────
 
 export async function createModelo(input: unknown): Promise<ActionResult<{ id: string }>> {
-  const { error, tenantId } = await requireDueno()
-  if (error || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
+  const { error, user, tenantId } = await requireDueno()
+  if (error || !user || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
 
   const parsed = modeloSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
@@ -86,6 +87,13 @@ export async function createModelo(input: unknown): Promise<ActionResult<{ id: s
     })
     .returning({ id: schema.modelosVehiculo.id })
 
+  void logAudit({
+    tenantId, actorId: user.id,
+    action: 'modelo.create', entity: 'modelo', entityId: row.id,
+    meta: { nombre: data.nombre },
+    visibleToDueno: true,
+  })
+
   revalidatePath('/configuracion')
   return { success: true, data: { id: row.id } }
 }
@@ -96,8 +104,8 @@ export async function updateModelo(
   id:    string,
   input: unknown,
 ): Promise<ActionResult<void>> {
-  const { error, tenantId } = await requireDueno()
-  if (error || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
+  const { error, user, tenantId } = await requireDueno()
+  if (error || !user || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
 
   const parsed = modeloSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
@@ -121,6 +129,13 @@ export async function updateModelo(
       ),
     )
 
+  void logAudit({
+    tenantId, actorId: user.id,
+    action: 'modelo.update', entity: 'modelo', entityId: id,
+    meta: { nombre: data.nombre },
+    visibleToDueno: true,
+  })
+
   revalidatePath('/configuracion')
   return { success: true, data: undefined }
 }
@@ -128,8 +143,8 @@ export async function updateModelo(
 // ── toggleModeloActivo ────────────────────────────────────────
 
 export async function toggleModeloActivo(id: string): Promise<ActionResult<void>> {
-  const { error, tenantId } = await requireDueno()
-  if (error || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
+  const { error, user, tenantId } = await requireDueno()
+  if (error || !user || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
 
   const [row] = await dbAdmin
     .select({ activo: schema.modelosVehiculo.activo })
@@ -153,6 +168,14 @@ export async function toggleModeloActivo(id: string): Promise<ActionResult<void>
         eq(schema.modelosVehiculo.tenant_id, tenantId),
       ),
     )
+
+  void logAudit({
+    tenantId, actorId: user.id,
+    action: row.activo ? 'modelo.delete' : 'modelo.update',
+    entity: 'modelo', entityId: id,
+    meta: { activo: !row.activo },
+    visibleToDueno: true,
+  })
 
   revalidatePath('/configuracion')
   return { success: true, data: undefined }

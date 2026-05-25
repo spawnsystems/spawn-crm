@@ -6,6 +6,7 @@ import { getCurrentTenantId } from '@/lib/tenant/server'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and } from 'drizzle-orm'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
 import type { AppRole } from '@/lib/auth/get-current-user'
 
@@ -133,6 +134,16 @@ export async function inviteUserToTenant(input: {
       }).onConflictDoNothing()
     }
 
+    void logAudit({
+      tenantId,
+      actorId:        user.id,
+      action:         'user.invite',
+      entity:         'user',
+      entityId:       userId,
+      meta:           { email, rol: input.rol, nombre: input.nombre },
+      visibleToDueno: true,
+    })
+
     revalidatePath('/equipo')
     revalidatePath('/platform')
     return { success: true, data: { userId } }
@@ -163,6 +174,15 @@ export async function deactivateMember(memberId: string): Promise<ActionResult<v
         eq(schema.tenantMembers.user_id, memberId),
       ),
     )
+
+  void logAudit({
+    tenantId,
+    actorId:        user.id,
+    action:         'user.deactivate',
+    entity:         'user',
+    entityId:       memberId,
+    visibleToDueno: true,
+  })
 
   revalidatePath('/equipo')
   return { success: true, data: undefined }

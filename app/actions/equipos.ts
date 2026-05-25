@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/auth/get-current-user'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and } from 'drizzle-orm'
+import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
 
 // ── Guard ─────────────────────────────────────────────────────
@@ -53,6 +54,13 @@ export async function createEquipo(input: {
       )
   }
 
+  void logAudit({
+    tenantId, actorId: user.id,
+    action: 'equipo.create', entity: 'equipo', entityId: row.id,
+    meta: { nombre: input.nombre },
+    visibleToDueno: true,
+  })
+
   revalidatePath('/equipo')
   revalidatePath('/dashboard')
   return { success: true, data: { id: row.id } }
@@ -86,6 +94,13 @@ export async function updateEquipo(
         eq(schema.equipos.tenant_id, tenantId),
       ),
     )
+
+  void logAudit({
+    tenantId, actorId: user.id,
+    action: 'equipo.update', entity: 'equipo', entityId: equipoId,
+    meta: { ...input },
+    visibleToDueno: true,
+  })
 
   revalidatePath('/equipo')
   return { success: true, data: undefined }

@@ -181,11 +181,12 @@ export async function changeStatus(
 
   void logAudit({
     tenantId,
-    actorId:  user.id,
-    action:   'lead.status_change',
-    entity:   'lead',
-    entityId: leadId,
-    meta:     { from: current[0].status, to: newStatus },
+    actorId:        user.id,
+    action:         'lead.status_change',
+    entity:         'lead',
+    entityId:       leadId,
+    meta:           { from: current[0].status, to: newStatus },
+    visibleToDueno: true,
   })
 
   revalidatePath('/leads')
@@ -234,11 +235,12 @@ export async function assignLead(
 
   void logAudit({
     tenantId,
-    actorId:  user.id,
-    action:   'lead.assign',
-    entity:   'lead',
-    entityId: leadId,
-    meta:     { vendedor_id: vendedorId },
+    actorId:        user.id,
+    action:         'lead.assign',
+    entity:         'lead',
+    entityId:       leadId,
+    meta:           { vendedor_id: vendedorId },
+    visibleToDueno: true,
   })
 
   revalidatePath('/leads')

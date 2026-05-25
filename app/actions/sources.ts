@@ -6,17 +6,18 @@ import { getCurrentTenantId } from '@/lib/tenant/server'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and } from 'drizzle-orm'
 import { sourceCustomSchema } from '@/lib/schemas/configuracion'
+import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
 
 // ── Guard ─────────────────────────────────────────────────────
 
 async function requireGerente() {
   const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
-  if (!user || !tenantId) return { error: 'No autenticado' as const, tenantId: null }
+  if (!user || !tenantId) return { error: 'No autenticado' as const, user: null, tenantId: null }
   if (!['platform_admin', 'dueno', 'gerente'].includes(user.rol)) {
-    return { error: 'Sin permisos para gestionar fuentes' as const, tenantId: null }
+    return { error: 'Sin permisos para gestionar fuentes' as const, user: null, tenantId: null }
   }
-  return { error: null, tenantId }
+  return { error: null, user, tenantId }
 }
 
 // ── getSourcesCustom ──────────────────────────────────────────
@@ -41,8 +42,8 @@ export async function getSourcesCustom() {
 export async function createSourceCustom(
   nombre: string,
 ): Promise<ActionResult<{ id: string }>> {
-  const { error, tenantId } = await requireGerente()
-  if (error || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
+  const { error, user, tenantId } = await requireGerente()
+  if (error || !user || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
 
   const parsed = sourceCustomSchema.safeParse({ nombre })
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Nombre inválido' }
@@ -65,6 +66,13 @@ export async function createSourceCustom(
     .insert(schema.leadSourcesCustom)
     .values({ tenant_id: tenantId, nombre: parsed.data.nombre.trim() })
     .returning({ id: schema.leadSourcesCustom.id })
+
+  void logAudit({
+    tenantId, actorId: user.id,
+    action: 'source.create', entity: 'source', entityId: row.id,
+    meta: { nombre: parsed.data.nombre },
+    visibleToDueno: true,
+  })
 
   revalidatePath('/configuracion')
   return { success: true, data: { id: row.id } }
@@ -106,8 +114,8 @@ export async function toggleSourceCustom(id: string): Promise<ActionResult<void>
 // ── deleteSourceCustom ────────────────────────────────────────
 
 export async function deleteSourceCustom(id: string): Promise<ActionResult<void>> {
-  const { error, tenantId } = await requireGerente()
-  if (error || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
+  const { error, user, tenantId } = await requireGerente()
+  if (error || !user || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
 
   await dbAdmin
     .delete(schema.leadSourcesCustom)
@@ -117,6 +125,12 @@ export async function deleteSourceCustom(id: string): Promise<ActionResult<void>
         eq(schema.leadSourcesCustom.tenant_id, tenantId),
       ),
     )
+
+  void logAudit({
+    tenantId, actorId: user.id,
+    action: 'source.delete', entity: 'source', entityId: id,
+    visibleToDueno: true,
+  })
 
   revalidatePath('/configuracion')
   return { success: true, data: undefined }

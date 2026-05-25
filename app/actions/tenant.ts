@@ -6,24 +6,25 @@ import { getCurrentTenantId } from '@/lib/tenant/server'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq } from 'drizzle-orm'
 import { tenantInfoSchema } from '@/lib/schemas/configuracion'
+import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
 
 // ── Guard ─────────────────────────────────────────────────────
 
 async function requireDueno() {
   const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
-  if (!user || !tenantId) return { error: 'No autenticado' as const, tenantId: null }
+  if (!user || !tenantId) return { error: 'No autenticado' as const, user: null, tenantId: null }
   if (!['platform_admin', 'dueno'].includes(user.rol)) {
-    return { error: 'Solo el dueño puede editar la concesionaria' as const, tenantId: null }
+    return { error: 'Solo el dueño puede editar la concesionaria' as const, user: null, tenantId: null }
   }
-  return { error: null, tenantId }
+  return { error: null, user, tenantId }
 }
 
 // ── updateTenantInfo ──────────────────────────────────────────
 
 export async function updateTenantInfo(input: unknown): Promise<ActionResult<void>> {
-  const { error, tenantId } = await requireDueno()
-  if (error || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
+  const { error, user, tenantId } = await requireDueno()
+  if (error || !user || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
 
   const parsed = tenantInfoSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0]?.message ?? 'Datos inválidos' }
@@ -36,6 +37,16 @@ export async function updateTenantInfo(input: unknown): Promise<ActionResult<voi
       updated_at:    new Date(),
     })
     .where(eq(schema.tenants.id, tenantId))
+
+  void logAudit({
+    tenantId,
+    actorId:        user.id,
+    action:         'tenant.update',
+    entity:         'tenant',
+    entityId:       tenantId,
+    meta:           { nombre: parsed.data.nombre, concesionaria: parsed.data.concesionaria },
+    visibleToDueno: true,
+  })
 
   revalidatePath('/', 'layout')
   revalidatePath('/configuracion')
