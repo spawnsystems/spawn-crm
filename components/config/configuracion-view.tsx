@@ -26,12 +26,14 @@ import { ModelosTab }  from '@/components/config/modelos-tab'
 import { FuentesTab }  from '@/components/config/fuentes-tab'
 import { MetasTab }    from '@/components/config/metas-tab'
 import { EquiposTab }  from '@/components/config/equipos-tab'
+import { AuditTab }   from '@/components/config/audit-tab'
 import type { CurrentUser } from '@/lib/auth/get-current-user'
 import type { TenantData } from '@/lib/tenant/server'
 import type { getMiembrosDelTenant, getEquiposConMiembros } from '@/app/actions/equipos'
 import type { getModelosVehiculo } from '@/app/actions/modelos'
 import type { getSourcesCustom } from '@/app/actions/sources'
 import type { getMetasMensuales } from '@/app/actions/metas'
+import type { getAuditLogs } from '@/app/actions/audit'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -40,6 +42,7 @@ type EquipoCM      = Awaited<ReturnType<typeof getEquiposConMiembros>>[number]
 type Modelo        = Awaited<ReturnType<typeof getModelosVehiculo>>[number]
 type SourceCustom  = Awaited<ReturnType<typeof getSourcesCustom>>[number]
 type MetaRow       = Awaited<ReturnType<typeof getMetasMensuales>>[number]
+type AuditRow      = Awaited<ReturnType<typeof getAuditLogs>>[number]
 
 type InviteRole = 'gerente' | 'supervisor' | 'vendedor'
 
@@ -58,6 +61,7 @@ interface Props {
   modelos:       Modelo[]
   sourcesCustom: SourceCustom[]
   metas:         MetaRow[]
+  auditLogs:     AuditRow[]
   vendedores:    { user_id: string; nombre: string | null; alias: string | null }[]
   canManage:     boolean
   currentYear:   number
@@ -69,7 +73,7 @@ interface Props {
 
 export function ConfiguracionView({
   user, tenant, miembros: initialMiembros, equipos, modelos, sourcesCustom,
-  metas, vendedores, canManage, currentYear, currentMonth, defaultTab,
+  metas, auditLogs, vendedores, canManage, currentYear, currentMonth, defaultTab,
 }: Props) {
   const router       = useRouter()
   const searchParams = useSearchParams()
@@ -105,6 +109,7 @@ export function ConfiguracionView({
           {canManage && <TabsTrigger value="equipos">Equipos</TabsTrigger>}
           <TabsTrigger value="miembros">Miembros</TabsTrigger>
           {canManage && <TabsTrigger value="metas">Metas</TabsTrigger>}
+          {canManage && <TabsTrigger value="audit">Auditoría</TabsTrigger>}
         </TabsList>
 
         {/* ── Mi cuenta ─────────────────────────────── */}
@@ -187,6 +192,13 @@ export function ConfiguracionView({
               currentYear={currentYear}
               currentMonth={currentMonth}
             />
+          </TabsContent>
+        )}
+
+        {/* ── Auditoría ─────────────────────────────── */}
+        {canManage && (
+          <TabsContent value="audit">
+            <AuditTab initialLogs={auditLogs} miembros={initialMiembros} />
           </TabsContent>
         )}
       </Tabs>

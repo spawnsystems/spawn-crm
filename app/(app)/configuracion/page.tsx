@@ -5,6 +5,7 @@ import { getVendedoresDelTenant } from '@/app/actions/users'
 import { getModelosVehiculo } from '@/app/actions/modelos'
 import { getSourcesCustom } from '@/app/actions/sources'
 import { getMetasMensuales } from '@/app/actions/metas'
+import { getAuditLogs } from '@/app/actions/audit'
 import { ConfiguracionView } from '@/components/config/configuracion-view'
 
 export const dynamic = 'force-dynamic'
@@ -21,7 +22,7 @@ export default async function ConfiguracionPage({
   const currentYear = now.getFullYear()
   const currentMonth = now.getMonth() + 1
 
-  const [user, tenant, miembros, equipos, modelos, sourcesCustom, vendedores, metas] =
+  const [user, tenant, miembros, equipos, modelos, sourcesCustom, vendedores, metas, auditLogs] =
     await Promise.all([
       requireAuth(),
       getCurrentTenant(),
@@ -31,6 +32,7 @@ export default async function ConfiguracionPage({
       getSourcesCustom(),
       getVendedoresDelTenant(),
       getMetasMensuales(currentYear),
+      getAuditLogs(),
     ])
 
   const canManage = ['platform_admin', 'dueno'].includes(user.rol)
@@ -44,6 +46,7 @@ export default async function ConfiguracionPage({
       modelos={modelos}
       sourcesCustom={sourcesCustom}
       metas={metas}
+      auditLogs={auditLogs}
       vendedores={vendedores}
       canManage={canManage}
       currentYear={currentYear}
