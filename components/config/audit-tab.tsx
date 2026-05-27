@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +9,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Search, X, RefreshCw } from 'lucide-react'
+import { Paginator } from '@/components/ui/paginator'
 import { getAuditLogs } from '@/app/actions/audit'
 import type { getVendedoresDelTenant } from '@/app/actions/users'
 import type { getMiembrosDelTenant } from '@/app/actions/equipos'
@@ -60,7 +61,8 @@ const ENTITY_COLOR: Record<string, string> = {
   meta:   'bg-yellow-500/10 text-yellow-700',
 }
 
-const ALL = '__all__'
+const ALL       = '__all__'
+const PAGE_SIZE = 50
 
 // ── Component ─────────────────────────────────────────────────
 
@@ -76,6 +78,7 @@ export function AuditTab({
   const [filterEntity, setFilterEntity] = useState(ALL)
   const [filterActor,  setFilterActor]  = useState(ALL)
   const [isPending, startTransition]  = useTransition()
+  const [page,      setPage]          = useState(1)
 
   // Filtrado client-side (ya tenemos 200 filas máx)
   const filtered = logs.filter((l) => {
@@ -92,6 +95,11 @@ export function AuditTab({
   })
 
   const hasFilters = filterEntity !== ALL || filterActor !== ALL || search.trim() !== ''
+
+  useEffect(() => { setPage(1) }, [search, filterEntity, filterActor])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function clearFilters() {
     setSearch('')
@@ -199,7 +207,7 @@ export function AuditTab({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((log) => (
+                {paginated.map((log) => (
                   <AuditRow key={log.id} log={log} />
                 ))}
               </tbody>
@@ -207,6 +215,15 @@ export function AuditTab({
           </div>
         </Card>
       )}
+
+      <Paginator
+        page={page}
+        totalPages={totalPages}
+        totalItems={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        className="mt-3"
+      />
     </div>
   )
 }

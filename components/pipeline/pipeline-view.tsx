@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
 import {
@@ -161,6 +161,8 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
 
 // ── Kanban Column ─────────────────────────────────────────────────
 
+const COLUMN_PAGE_SIZE = 15
+
 interface KanbanColumnProps {
   stage: { id: string; label: string; color: string }
   leads: LeadLike[]
@@ -171,6 +173,14 @@ interface KanbanColumnProps {
 
 function KanbanColumn({ stage, leads, totalValue, onCardClick, onDrop }: KanbanColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(COLUMN_PAGE_SIZE)
+
+  // Resetear al colapso mínimo cuando cambia el filtro de vendedor
+  useEffect(() => { setVisibleCount(COLUMN_PAGE_SIZE) }, [leads.length])
+
+  const visible  = leads.slice(0, visibleCount)
+  const hidden   = leads.length - visibleCount
+  const showMore = hidden > 0
 
   const formattedValue = totalValue >= 1_000_000
     ? `$${(totalValue / 1_000_000).toFixed(1)}M`
@@ -203,7 +213,7 @@ function KanbanColumn({ stage, leads, totalValue, onCardClick, onDrop }: KanbanC
       </div>
 
       <div className="space-y-2 min-h-[80px]">
-        {leads.map((lead) => (
+        {visible.map((lead) => (
           <KanbanCard
             key={lead.id}
             lead={lead}
@@ -219,6 +229,14 @@ function KanbanColumn({ stage, leads, totalValue, onCardClick, onDrop }: KanbanC
               Arrastrá un lead aquí
             </span>
           </div>
+        )}
+        {showMore && (
+          <button
+            onClick={() => setVisibleCount((n) => n + COLUMN_PAGE_SIZE)}
+            className="w-full py-2 text-xs text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted/50"
+          >
+            Ver {Math.min(hidden, COLUMN_PAGE_SIZE)} más de {hidden}
+          </button>
         )}
       </div>
     </div>

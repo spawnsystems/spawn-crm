@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { cn, formatRelative, getInitials, safeRefetch } from '@/lib/utils'
+import { Paginator } from '@/components/ui/paginator'
 import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { getAllLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
@@ -26,7 +27,8 @@ interface AllLeadsViewProps {
   canCreate: boolean
 }
 
-const ALL = '__all__'
+const ALL       = '__all__'
+const PAGE_SIZE = 50
 
 type SortKey = 'last_contact_at' | 'vendedor' | 'status'
 type SortDir = 'asc' | 'desc'
@@ -41,6 +43,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
   const [showNewLead,  setShowNewLead]  = useState(false)
   const [sortKey,      setSortKey]      = useState<SortKey>('last_contact_at')
   const [sortDir,      setSortDir]      = useState<SortDir>('asc')
+  const [page,         setPage]         = useState(1)
 
   function refresh() {
     void safeRefetch(() => getAllLeads(), 'No se pudieron actualizar los leads')
@@ -64,6 +67,9 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
       setSortDir('asc')
     }
   }
+
+  // Reset a página 1 cuando cambia cualquier filtro o sort
+  useEffect(() => { setPage(1) }, [search, filterVend, filterStatus, filterSource, sortKey, sortDir])
 
   const filtered = useMemo(() => {
     const result = leads.filter((l) => {
@@ -114,6 +120,9 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
       return sortDir === 'asc' ? cmp : -cmp
     })
   }, [leads, search, filterVend, filterStatus, filterSource, sortKey, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div className="p-4 md:p-8 max-w-[1500px] mx-auto">
@@ -215,7 +224,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
               </tr>
             </thead>
             <tbody>
-              {filtered.map((l) => {
+              {paginated.map((l) => {
                 const vendorName = l.vendedor_alias || l.vendedor_nombre
                 const lastContact = l.last_contact_at
                   ? formatRelative(new Date(l.last_contact_at))
@@ -266,6 +275,15 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
           </table>
         </div>
       </Card>
+
+      <Paginator
+        page={page}
+        totalPages={totalPages}
+        totalItems={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        className="mt-4"
+      />
 
       <LeadDetailSheet
         leadId={openLeadId}

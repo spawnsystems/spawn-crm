@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
+import { Paginator } from '@/components/ui/paginator'
 import { cn, formatCurrencyARS } from '@/lib/utils'
 import { LifeBuoy, UserPlus, RotateCcw, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -16,6 +17,8 @@ import type { getVendedoresDelTenant } from '@/app/actions/users'
 
 type LeadRow = Awaited<ReturnType<typeof getAbandonedLeads>>[number]
 
+const PAGE_SIZE = 20
+
 interface RescueViewProps {
   initialLeads: LeadRow[]
   vendedores:   Awaited<ReturnType<typeof getVendedoresDelTenant>>
@@ -26,6 +29,10 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
   const [reassignLead,     setReassignLead]     = useState<LeadRow | null>(null)
   const [selectedVendedor, setSelectedVendedor] = useState('')
   const [isPending,        startTransition]     = useTransition()
+  const [page,             setPage]             = useState(1)
+
+  const totalPages = Math.max(1, Math.ceil(leads.length / PAGE_SIZE))
+  const paginated  = leads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function handleReactivate(leadId: string) {
     startTransition(async () => {
@@ -81,17 +88,27 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
           🎉 Ningún lead inactivo. Todo bajo control.
         </div>
       ) : (
-        <div className="space-y-3">
-          {leads.map((lead) => (
-            <RescueCard
-              key={lead.id}
-              lead={lead}
-              isPending={isPending}
-              onReassign={() => setReassignLead(lead)}
-              onReactivate={() => handleReactivate(lead.id)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="space-y-3">
+            {paginated.map((lead) => (
+              <RescueCard
+                key={lead.id}
+                lead={lead}
+                isPending={isPending}
+                onReassign={() => setReassignLead(lead)}
+                onReactivate={() => handleReactivate(lead.id)}
+              />
+            ))}
+          </div>
+          <Paginator
+            page={page}
+            totalPages={totalPages}
+            totalItems={leads.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setPage}
+            className="mt-4"
+          />
+        </>
       )}
 
       {/* Reassign dialog */}

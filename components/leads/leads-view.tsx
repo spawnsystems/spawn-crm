@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/status-badge'
 import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
 import { NewLeadDialog } from '@/components/leads/new-lead-dialog'
+import { Paginator } from '@/components/ui/paginator'
 import { cn, formatRelative, safeRefetch } from '@/lib/utils'
 import {
   AlertTriangle, MessageCircle, Phone, ChevronRight, Clock, Target, Plus,
@@ -24,6 +25,8 @@ const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'En ri
 type SortKey = 'last_contact_at' | 'status'
 type SortDir = 'asc' | 'desc'
 
+const PAGE_SIZE = 25
+
 interface LeadsViewProps {
   initialLeads: Lead[]
   vendedores: Vendedor[]
@@ -38,6 +41,7 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
   const [showNewLead, setShowNewLead] = useState(false)
   const [sortKey,     setSortKey]     = useState<SortKey>('last_contact_at')
   const [sortDir,     setSortDir]     = useState<SortDir>('asc')
+  const [page,        setPage]        = useState(1)
 
   function refresh() {
     void safeRefetch(() => getMyLeads(), 'No se pudieron actualizar tus leads')
@@ -86,6 +90,12 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
       return sortDir === 'asc' ? cmp : -cmp
     })
   }, [leads, filter, sortKey, sortDir])
+
+  // Reset a página 1 cuando cambia filtro o sort
+  useEffect(() => { setPage(1) }, [filter, sortKey, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div className="p-4 md:p-8 max-w-[1400px] mx-auto">
@@ -162,7 +172,7 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
 
       {/* Lead list */}
       <div className="space-y-3">
-        {filtered.map((lead) => (
+        {paginated.map((lead) => (
           <LeadCard key={lead.id} lead={lead} onOpen={() => setOpenLeadId(lead.id)} />
         ))}
         {filtered.length === 0 && (
@@ -171,6 +181,15 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
           </div>
         )}
       </div>
+
+      <Paginator
+        page={page}
+        totalPages={totalPages}
+        totalItems={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        className="mt-5"
+      />
 
       {/* Lead detail sheet */}
       <LeadDetailSheet
