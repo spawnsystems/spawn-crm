@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect } from 'react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose,
+  Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -248,7 +248,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
 
   return (
     <Sheet open={!!leadId} onOpenChange={(o) => !o && onClose()}>
-      {/* [&>button]:hidden oculta el X absoluto por defecto de shadcn SheetContent */}
+      {/* [&>button]:hidden oculta el X absoluto por defecto de shadcn */}
       <SheetContent className="w-full sm:max-w-3xl overflow-y-auto p-0 [&>button]:hidden">
 
         {loading && (
@@ -260,119 +260,115 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
         {!loading && lead && (
           <>
             {/* ── Header ── */}
-            <SheetHeader className="p-5 pb-4 border-b border-border">
+            <SheetHeader className="p-6 border-b border-border">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
 
-              {/* Top row: nombre + botón cerrar */}
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2 flex-wrap min-w-0">
-                  <SheetTitle className="text-xl leading-tight">{lead.nombre}</SheetTitle>
-                  {wasRescued && lead.status !== 'Para rescate' && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-amber-100 text-amber-700 border border-amber-200/60 rounded-full px-2 py-0.5">
-                      <RotateCcw className="size-2.5" />
-                      Reactivado del rescate
-                    </span>
-                  )}
-                  <button
-                    onClick={() => setEditing((v) => !v)}
-                    className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                    title="Editar lead"
-                  >
-                    {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
-                  </button>
-                </div>
-
-                {/* Cerrar sheet — siempre visible, sin conflicto */}
-                <SheetClose asChild>
-                  <button className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                    <X className="size-4" />
-                    <span className="sr-only">Cerrar</span>
-                  </button>
-                </SheetClose>
-              </div>
-
-              {/* Contact info */}
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                {lead.telefono && (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Phone className="size-3.5" />{lead.telefono}
-                  </span>
-                )}
-                {lead.email && (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Mail className="size-3.5" />{lead.email}
-                  </span>
-                )}
-              </div>
-
-              {/* Model + Status dropdown */}
-              <div className="mt-2.5 flex items-center gap-2 flex-wrap">
-                <Car className="size-4 text-primary" />
-                <span className="font-medium">{lead.modelo ?? 'Sin modelo'}</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-1 rounded-md hover:bg-accent px-1 py-0.5 transition-colors">
-                      <StatusBadge status={lead.status} />
-                      <ChevronDown className="size-3 text-muted-foreground" />
+                  {/* Name + badges */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <SheetTitle className="text-xl">{lead.nombre}</SheetTitle>
+                    {wasRescued && lead.status !== 'Para rescate' && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-amber-100 text-amber-700 border border-amber-200/60 rounded-full px-2 py-0.5">
+                        <RotateCcw className="size-2.5" />
+                        Reactivado del rescate
+                      </span>
+                    )}
+                    <button
+                      onClick={() => setEditing((v) => !v)}
+                      className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground ml-auto sm:ml-0"
+                      title="Editar lead"
+                    >
+                      {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
                     </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {leadStatusValues.map((s) => (
-                      <DropdownMenuItem
-                        key={s}
-                        onClick={() => handleStatusChange(s)}
-                        className="gap-2"
+                  </div>
+
+                  {/* Contact info */}
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                    {lead.telefono && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Phone className="size-3.5" />{lead.telefono}
+                      </span>
+                    )}
+                    {lead.email && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Mail className="size-3.5" />{lead.email}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Model + Status dropdown */}
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <Car className="size-4 text-primary" />
+                    <span className="font-medium">{lead.modelo ?? 'Sin modelo'}</span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="flex items-center gap-1 rounded-md hover:bg-accent px-1 py-0.5 transition-colors">
+                          <StatusBadge status={lead.status} />
+                          <ChevronDown className="size-3 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        {leadStatusValues.map((s) => (
+                          <DropdownMenuItem
+                            key={s}
+                            onClick={() => handleStatusChange(s)}
+                            className="gap-2"
+                          >
+                            <StatusBadge status={s} />
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  {/* Vendedor asignado */}
+                  {vendedores.length > 0 && (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <UserCircle className="size-3.5 text-muted-foreground shrink-0" />
+                      <Select
+                        value={lead.assigned_to ?? '__none__'}
+                        onValueChange={(v) => handleAssign(v === '__none__' ? null : v)}
+                        disabled={isPending}
                       >
-                        <StatusBadge status={s} />
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              {/* Vendedor asignado */}
-              {vendedores.length > 0 && (
-                <div className="mt-2 flex items-center gap-1.5">
-                  <UserCircle className="size-3.5 text-muted-foreground shrink-0" />
-                  <Select
-                    value={lead.assigned_to ?? '__none__'}
-                    onValueChange={(v) => handleAssign(v === '__none__' ? null : v)}
-                    disabled={isPending}
-                  >
-                    <SelectTrigger className="h-7 text-xs w-48 border-dashed">
-                      <SelectValue placeholder="Sin asignar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">
-                        <span className="text-muted-foreground italic">Sin asignar</span>
-                      </SelectItem>
-                      {vendedores.map((v) => {
-                        const name = v.alias || v.nombre || v.user_id
-                        return (
-                          <SelectItem key={v.user_id} value={v.user_id}>
-                            {name}
+                        <SelectTrigger className="h-7 text-xs w-48 border-dashed">
+                          <SelectValue placeholder="Sin asignar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">
+                            <span className="text-muted-foreground italic">Sin asignar</span>
                           </SelectItem>
-                        )
-                      })}
-                    </SelectContent>
-                  </Select>
+                          {vendedores.map((v) => {
+                            const name = v.alias || v.nombre || v.user_id
+                            return (
+                              <SelectItem key={v.user_id} value={v.user_id}>
+                                {name}
+                              </SelectItem>
+                            )
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
-              )}
 
-              {/* Botones de contacto rápido — fila horizontal, nunca tapados por el X */}
-              {lead.telefono && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" className="gap-1.5" asChild>
-                    <a href={`https://wa.me/${lead.telefono.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">
-                      <MessageCircle className="size-3.5 text-success" />WhatsApp
-                    </a>
-                  </Button>
-                  <Button size="sm" variant="outline" className="gap-1.5" asChild>
-                    <a href={`tel:${lead.telefono}`}>
-                      <Phone className="size-3.5" />Llamar
-                    </a>
-                  </Button>
+                {/* Quick-action buttons */}
+                <div className="flex shrink-0 flex-col gap-2">
+                  {lead.telefono && (
+                    <Button size="sm" variant="outline" className="gap-1.5" asChild>
+                      <a href={`https://wa.me/${lead.telefono.replace(/\D/g, '')}`} target="_blank" rel="noreferrer">
+                        <MessageCircle className="size-3.5 text-success" />WhatsApp
+                      </a>
+                    </Button>
+                  )}
+                  {lead.telefono && (
+                    <Button size="sm" variant="outline" className="gap-1.5" asChild>
+                      <a href={`tel:${lead.telefono}`}>
+                        <Phone className="size-3.5" />Llamar
+                      </a>
+                    </Button>
+                  )}
                 </div>
-              )}
+              </div>
             </SheetHeader>
 
             {/* ── Next action card ── */}
@@ -618,26 +614,31 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                 {timeline.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Sin actividad.</p>
                 ) : (
-                  <div className="relative pl-6">
-                    <div className="absolute left-2 top-1 bottom-1 w-px bg-border" />
+                  <div className="relative">
+                    {/* línea vertical centrada bajo los íconos */}
+                    <div className="absolute left-[9px] top-5 bottom-0 w-px bg-border" />
                     {timeline.map((e) => {
                       const { bg, Icon } = TIMELINE_EVENT_STYLE[e.event_type] ?? TIMELINE_EVENT_STYLE._default
                       return (
-                        <div key={e.id} className="relative pb-4">
+                        <div key={e.id} className="relative flex gap-3 pb-4">
+                          {/* ícono en el eje de la línea, nunca superpuesto al texto */}
                           <div className={cn(
-                            'absolute -left-[15px] top-0.5 size-[22px] rounded-full',
-                            'ring-2 ring-background flex items-center justify-center text-white shrink-0',
+                            'relative z-10 shrink-0 size-[18px] rounded-full mt-0.5',
+                            'ring-2 ring-background flex items-center justify-center text-white',
                             bg,
                           )}>
                             <Icon className="size-2.5" />
                           </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            {format(toBADate(e.created_at), 'dd/MM HH:mm')}
+                          {/* contenido */}
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[11px] text-muted-foreground leading-none mb-0.5">
+                              {format(toBADate(e.created_at), 'dd/MM HH:mm')}
+                            </div>
+                            <div className="text-sm font-medium">{e.title}</div>
+                            {e.description && (
+                              <div className="text-xs text-muted-foreground mt-0.5">{e.description}</div>
+                            )}
                           </div>
-                          <div className="text-sm font-medium mt-0.5">{e.title}</div>
-                          {e.description && (
-                            <div className="text-xs text-muted-foreground mt-0.5">{e.description}</div>
-                          )}
                         </div>
                       )
                     })}
