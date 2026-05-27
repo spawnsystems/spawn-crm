@@ -6,9 +6,10 @@ import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { cn, toBADate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import { AppointmentDialog } from '@/components/leads/appointment-dialog'
 import {
-  Phone, CalendarCheck, CheckCircle2, LifeBuoy, Plus, RotateCcw, Loader2,
+  Phone, CalendarCheck, CheckCircle2, LifeBuoy, Plus, RotateCcw, Loader2, Send,
 } from 'lucide-react'
 import { markContacted, markAsClosed, reactivateFromRescue } from '@/app/actions/leads'
 import { markAppointmentDone, cancelAppointment } from '@/app/actions/appointments'
@@ -218,31 +219,88 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
 
   // ── Contactado o Citado sin cita viva ─────────────────────────
   return (
+    <ContactadoCard
+      lead={lead}
+      isPending={isPending}
+      showDialog={showDialog}
+      setShowDialog={setShowDialog}
+      onLeadUpdated={onLeadUpdated}
+      run={run}
+    />
+  )
+}
+
+// ── Sub-componente para el estado Contactado ──────────────────────
+// Separado para poder tener su propio estado de UI (llamada inline)
+// sin contaminar el hook isPending/startTransition del padre.
+
+function ContactadoCard({
+  lead,
+  isPending,
+  showDialog,
+  setShowDialog,
+  onLeadUpdated,
+  run,
+}: {
+  lead: NextActionCardProps['lead']
+  isPending: boolean
+  showDialog: boolean
+  setShowDialog: (v: boolean) => void
+  onLeadUpdated: () => void
+  run: (fn: () => Promise<{ success: boolean; error?: string; data?: unknown }>, msg?: string) => void
+}) {
+  const [showCallForm, setShowCallForm] = useState(false)
+  const [callNote,     setCallNote]     = useState('')
+  const isCitado = lead.status === 'Citado'
+
+  function handleRegisterCall() {
+    run(
+      () => markContacted(lead.id, callNote.trim() || undefined),
+      'Llamada registrada',
+    )
+    setCallNote('')
+    setShowCallForm(false)
+  }
+
+  return (
     <div className="mx-6 mb-4 rounded-xl bg-blue-50 border border-blue-200/60 px-4 py-3">
       <div className="flex items-center gap-2 mb-1.5">
         <CalendarCheck className="size-4 text-blue-600 shrink-0" />
         <span className="text-sm font-semibold text-blue-900">
-          {lead.status === 'Citado' ? 'Sin cita activa' : 'Próxima acción'}
+          {isCitado ? 'Sin cita activa' : 'En seguimiento'}
         </span>
       </div>
       <p className="text-xs text-blue-700/60 mb-3">
-        {lead.status === 'Citado'
-          ? 'La cita anterior fue completada. Organizá una nueva o cerrá la venta.'
-          : 'Organizá una cita para avanzar en el proceso de venta.'}
+        {isCitado
+          ? 'La cita anterior fue completada. Organizá una nueva cita o cerrá la venta.'
+          : 'Registrá cada llamada o contacto, y organizá una cita cuando el cliente esté listo.'}
       </p>
+
+      {/* Acciones principales */}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" className="gap-1.5" onClick={() => setShowDialog(true)}>
           <Plus className="size-3.5" />
           Organizar cita
         </Button>
+
+        {/* Registrar llamada — solo para Contactado, no para Citado sin cita */}
+        {!isCitado && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => setShowCallForm((v) => !v)}
+          >
+            <Phone className="size-3.5" />
+            Registrar llamada
+          </Button>
+        )}
+
         <Button
           size="sm"
           variant="outline"
           className="gap-1.5"
-          onClick={() => run(
-            () => markAsClosed(lead.id),
-            'Lead cerrado — venta confirmada',
-          )}
+          onClick={() => run(() => markAsClosed(lead.id), 'Lead cerrado — venta confirmada')}
           disabled={isPending}
         >
           {isPending
@@ -251,6 +309,44 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
           Marcar como cerrado
         </Button>
       </div>
+
+      {/* Mini-form inline para la nota de la llamada */}
+      {showCallForm && (
+        <div className="mt-3 pt-3 border-t border-blue-200/60 space-y-2">
+          <p className="text-[11px] text-blue-700/60">
+            Opcional: dejá una nota sobre la llamada (resultado, qué dijo el cliente, etc.)
+          </p>
+          <Textarea
+            placeholder="Ej: llamé, interesado pero viaja esta semana. Vuelvo a llamar el lunes."
+            className="text-sm min-h-[60px] resize-none bg-white border-blue-200"
+            value={callNote}
+            onChange={(e) => setCallNote(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) handleRegisterCall() }}
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={handleRegisterCall}
+              disabled={isPending}
+            >
+              {isPending
+                ? <Loader2 className="size-3.5 animate-spin" />
+                : <Send className="size-3.5" />}
+              Guardar
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground"
+              onClick={() => { setShowCallForm(false); setCallNote('') }}
+            >
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
 
       <AppointmentDialog
         open={showDialog}
