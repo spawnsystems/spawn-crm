@@ -11,7 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { cn, formatRelative, getInitials, safeRefetch } from '@/lib/utils'
-import { Search, Plus, X } from 'lucide-react'
+import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { getAllLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues, leadStatusValues } from '@/lib/schemas/leads'
@@ -27,17 +27,21 @@ interface AllLeadsViewProps {
 
 const ALL = '__all__'
 
+type SortKey = 'nombre' | 'last_contact_at'
+type SortDir = 'asc' | 'desc'
+
 export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: AllLeadsViewProps) {
-  const [leads,       setLeads]       = useState<LeadRow[]>(initialLeads)
-  const [search,      setSearch]      = useState('')
-  const [filterVend,  setFilterVend]  = useState(ALL)
+  const [leads,        setLeads]        = useState<LeadRow[]>(initialLeads)
+  const [search,       setSearch]       = useState('')
+  const [filterVend,   setFilterVend]   = useState(ALL)
   const [filterStatus, setFilterStatus] = useState(ALL)
   const [filterSource, setFilterSource] = useState(ALL)
-  const [openLeadId,  setOpenLeadId]  = useState<string | null>(null)
-  const [showNewLead, setShowNewLead] = useState(false)
+  const [openLeadId,   setOpenLeadId]   = useState<string | null>(null)
+  const [showNewLead,  setShowNewLead]  = useState(false)
+  const [sortKey,      setSortKey]      = useState<SortKey>('last_contact_at')
+  const [sortDir,      setSortDir]      = useState<SortDir>('asc')
 
   function refresh() {
-    // safeRefetch ya atrapa errores; la promesa se descarta intencionalmente.
     void safeRefetch(() => getAllLeads(), 'No se pudieron actualizar los leads')
       .then((next) => { if (next) setLeads(next) })
   }
@@ -51,8 +55,17 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
     setFilterSource(ALL)
   }
 
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
   const filtered = useMemo(() => {
-    return leads.filter((l) => {
+    const result = leads.filter((l) => {
       if (filterVend !== ALL) {
         if (filterVend === '__unassigned__') {
           if (l.assigned_to !== null) return false
@@ -74,7 +87,22 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
       }
       return true
     })
-  }, [leads, search, filterVend, filterStatus, filterSource])
+
+    return result.sort((a, b) => {
+      if (sortKey === 'nombre') {
+        const cmp = a.nombre.localeCompare(b.nombre, 'es')
+        return sortDir === 'asc' ? cmp : -cmp
+      }
+      // last_contact_at: null (sin contactar) siempre primero en ASC
+      const aTime = a.last_contact_at ? new Date(a.last_contact_at).getTime() : null
+      const bTime = b.last_contact_at ? new Date(b.last_contact_at).getTime() : null
+      if (aTime === null && bTime === null) return 0
+      if (aTime === null) return sortDir === 'asc' ? -1 : 1
+      if (bTime === null) return sortDir === 'asc' ? 1 : -1
+      const cmp = aTime - bTime
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [leads, search, filterVend, filterStatus, filterSource, sortKey, sortDir])
 
   return (
     <div className="p-4 md:p-8 max-w-[1500px] mx-auto">
@@ -166,12 +194,12 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
           <table className="w-full min-w-[700px] text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                <th className="px-4 py-3 font-medium">Lead</th>
+                <SortableTh label="Lead"            col="nombre"          sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
                 <th className="px-4 py-3 font-medium">Modelo</th>
                 <th className="px-4 py-3 font-medium">Origen</th>
                 <th className="px-4 py-3 font-medium">Vendedor</th>
                 <th className="px-4 py-3 font-medium">Estado</th>
-                <th className="px-4 py-3 font-medium">Último contacto</th>
+                <SortableTh label="Último contacto" col="last_contact_at" sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -246,6 +274,37 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
         onCreated={refresh}
       />
     </div>
+  )
+}
+
+// ── SortableTh ────────────────────────────────────────────────
+
+function SortableTh({
+  label, col, sortKey, sortDir, onToggle,
+}: {
+  label:    string
+  col:      SortKey
+  sortKey:  SortKey
+  sortDir:  SortDir
+  onToggle: (col: SortKey) => void
+}) {
+  const active = sortKey === col
+  return (
+    <th
+      className="px-4 py-3 font-medium cursor-pointer select-none whitespace-nowrap group"
+      onClick={() => onToggle(col)}
+    >
+      <span className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+        {label}
+        {active ? (
+          sortDir === 'asc'
+            ? <ArrowUp   className="size-3 text-primary" />
+            : <ArrowDown className="size-3 text-primary" />
+        ) : (
+          <ArrowUpDown className="size-3 opacity-0 group-hover:opacity-40 transition-opacity" />
+        )}
+      </span>
+    </th>
   )
 }
 

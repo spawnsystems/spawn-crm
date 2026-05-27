@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/status-badge'
@@ -9,6 +9,7 @@ import { NewLeadDialog } from '@/components/leads/new-lead-dialog'
 import { cn, formatRelative, safeRefetch } from '@/lib/utils'
 import {
   AlertTriangle, MessageCircle, Phone, ChevronRight, Clock, Target, Plus,
+  ArrowUp, ArrowDown,
 } from 'lucide-react'
 import type { Lead } from '@/lib/db'
 import { getVendedoresDelTenant } from '@/app/actions/users'
@@ -19,6 +20,9 @@ type Vendedor = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 type FilterTab = 'Todos' | 'Sin contactar' | 'En seguimiento' | 'En riesgo' | 'Cerrados'
 const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'En riesgo', 'Cerrados']
 
+type SortKey = 'nombre' | 'last_contact_at'
+type SortDir = 'asc' | 'desc'
+
 interface LeadsViewProps {
   initialLeads: Lead[]
   vendedores: Vendedor[]
@@ -27,33 +31,60 @@ interface LeadsViewProps {
 }
 
 export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: LeadsViewProps) {
-  const [leads, setLeads] = useState<Lead[]>(initialLeads)
-  const [filter, setFilter] = useState<FilterTab>('Todos')
-  const [openLeadId, setOpenLeadId] = useState<string | null>(null)
+  const [leads,       setLeads]       = useState<Lead[]>(initialLeads)
+  const [filter,      setFilter]      = useState<FilterTab>('Todos')
+  const [openLeadId,  setOpenLeadId]  = useState<string | null>(null)
   const [showNewLead, setShowNewLead] = useState(false)
+  const [sortKey,     setSortKey]     = useState<SortKey>('last_contact_at')
+  const [sortDir,     setSortDir]     = useState<SortDir>('asc')
 
   function refresh() {
-    // safeRefetch ya atrapa errores; la promesa se descarta intencionalmente.
     void safeRefetch(() => getMyLeads(), 'No se pudieron actualizar tus leads')
       .then((next) => { if (next) setLeads(next) })
   }
 
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
   // ── Derived ──────────────────────────────────────────────────
 
-  const activeLeads  = leads.filter((l) => !['Cerrado', 'Perdido'].includes(l.status))
-  const atRiskCount  = leads.filter((l) => l.at_risk).length
-  const closedMonth  = leads.filter((l) => l.status === 'Cerrado').length
-  const closeRate    = leads.length > 0 ? Math.round((closedMonth / leads.length) * 100) : 0
+  const activeLeads = leads.filter((l) => !['Cerrado', 'Perdido'].includes(l.status))
+  const atRiskCount = leads.filter((l) => l.at_risk).length
+  const closedMonth = leads.filter((l) => l.status === 'Cerrado').length
+  const closeRate   = leads.length > 0 ? Math.round((closedMonth / leads.length) * 100) : 0
 
-  const filtered = leads.filter((l) => {
-    switch (filter) {
-      case 'Sin contactar':  return l.status === 'Nuevo'
-      case 'En seguimiento': return ['Contactado', 'Cotizado', 'Test drive', 'Negociación'].includes(l.status)
-      case 'En riesgo':      return l.at_risk
-      case 'Cerrados':       return l.status === 'Cerrado'
-      default:               return true
-    }
-  })
+  const filtered = useMemo(() => {
+    const base = leads.filter((l) => {
+      switch (filter) {
+        case 'Sin contactar':  return l.status === 'Nuevo'
+        case 'En seguimiento': return ['Contactado', 'Cotizado', 'Test drive', 'Negociación'].includes(l.status)
+        case 'En riesgo':      return l.at_risk
+        case 'Cerrados':       return l.status === 'Cerrado'
+        default:               return true
+      }
+    })
+
+    return base.sort((a, b) => {
+      if (sortKey === 'nombre') {
+        const cmp = a.nombre.localeCompare(b.nombre, 'es')
+        return sortDir === 'asc' ? cmp : -cmp
+      }
+      // last_contact_at: null (sin contactar) primero en ASC
+      const aTime = a.last_contact_at ? new Date(a.last_contact_at).getTime() : null
+      const bTime = b.last_contact_at ? new Date(b.last_contact_at).getTime() : null
+      if (aTime === null && bTime === null) return 0
+      if (aTime === null) return sortDir === 'asc' ? -1 : 1
+      if (bTime === null) return sortDir === 'asc' ? 1 : -1
+      const cmp = aTime - bTime
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [leads, filter, sortKey, sortDir])
 
   return (
     <div className="p-4 md:p-8 max-w-[1400px] mx-auto">
@@ -96,27 +127,36 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
         />
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex items-center gap-1.5 mb-5 border-b border-border">
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={cn(
-              'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
-              filter === f
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {f}
-            {f === 'En riesgo' && atRiskCount > 0 && (
-              <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-                {atRiskCount}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Filter tabs + sort controls */}
+      <div className="flex items-center justify-between border-b border-border mb-5">
+        <div className="flex items-center gap-1.5">
+          {FILTERS.map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={cn(
+                'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+                filter === f
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {f}
+              {f === 'En riesgo' && atRiskCount > 0 && (
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+                  {atRiskCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Sort controls */}
+        <div className="flex items-center gap-0.5 pb-px">
+          <span className="text-xs text-muted-foreground mr-1.5">Ordenar:</span>
+          <SortButton label="Último contacto" col="last_contact_at" sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+          <SortButton label="Lead"            col="nombre"          sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+        </div>
       </div>
 
       {/* Lead list */}
@@ -174,6 +214,40 @@ function KpiCard({ icon, label, value, sub, accent }: {
     </Card>
   )
 }
+
+// ── Sort button ───────────────────────────────────────────────
+
+function SortButton({
+  label, col, sortKey, sortDir, onToggle,
+}: {
+  label:    string
+  col:      SortKey
+  sortKey:  SortKey
+  sortDir:  SortDir
+  onToggle: (col: SortKey) => void
+}) {
+  const active = sortKey === col
+  return (
+    <button
+      onClick={() => onToggle(col)}
+      className={cn(
+        'inline-flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+        active
+          ? 'bg-primary/8 text-primary font-medium'
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+      )}
+    >
+      {label}
+      {active && (
+        sortDir === 'asc'
+          ? <ArrowUp   className="size-3" />
+          : <ArrowDown className="size-3" />
+      )}
+    </button>
+  )
+}
+
+// ── Lead card ─────────────────────────────────────────────────
 
 function LeadCard({ lead, onOpen }: { lead: Lead; onOpen: () => void }) {
   const lastContact = lead.last_contact_at
