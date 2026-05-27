@@ -12,7 +12,7 @@ import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
 import {
   Loader2, CalendarIcon, MapPin, Clock, User, ExternalLink, CheckCircle2, X,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, toBADate } from '@/lib/utils'
 import { markAppointmentDone, cancelAppointment } from '@/app/actions/appointments'
 import {
   APPOINTMENT_TIPO_LABEL,
@@ -80,7 +80,7 @@ export function AppointmentDetailSheet({
                 {/* Date / Time */}
                 <InfoRow icon={<CalendarIcon className="size-4" />} label="Fecha y hora">
                   <span className="capitalize">
-                    {format(new Date(appt.scheduled_at), "EEEE d 'de' MMMM, HH:mm 'hs'", { locale: es })}
+                    {format(toBADate(appt.scheduled_at), "EEEE d 'de' MMMM, HH:mm 'hs'", { locale: es })}
                   </span>
                 </InfoRow>
 

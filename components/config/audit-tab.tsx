@@ -282,5 +282,8 @@ function formatDate(date: Date | string): string {
   if (diffD === 1) return 'Ayer'
   if (diffD < 7)  return `Hace ${diffD} días`
 
-  return d.toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })
+  return new Intl.DateTimeFormat('es-AR', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    timeZone: 'America/Argentina/Buenos_Aires',
+  }).format(d)
 }

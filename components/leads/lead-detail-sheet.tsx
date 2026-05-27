@@ -36,7 +36,7 @@ import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues, leadStatusValues } from '@/lib/schemas/leads'
 import type { Lead } from '@/lib/db'
-import { cn, parseNumeric, safeRefetch } from '@/lib/utils'
+import { cn, parseNumeric, safeRefetch, fmtDayMonthAR, toBADate } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -471,7 +471,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                             </div>
                             {t.due_at && (
                               <div className="text-[11px] text-muted-foreground mt-0.5">
-                                {new Date(t.due_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}
+                                {fmtDayMonthAR(t.due_at)}
                               </div>
                             )}
                           </div>
@@ -555,7 +555,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       <div key={n.id} className="rounded-lg border border-border p-3 bg-muted/30">
                         <div className="text-xs text-muted-foreground mb-1">
                           {n.autor ?? 'Usuario'} ·{' '}
-                          {new Date(n.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}
+                          {fmtDayMonthAR(n.created_at)}
                         </div>
                         <div className="text-sm">{n.texto}</div>
                       </div>
@@ -604,8 +604,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                             : 'bg-primary',
                         )} />
                         <div className="text-[11px] text-muted-foreground">
-                          {new Date(e.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}{' '}
-                          {new Date(e.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                          {format(toBADate(e.created_at), 'dd/MM HH:mm')}
                         </div>
                         <div className="text-sm font-medium mt-0.5">{e.title}</div>
                         {e.description && (

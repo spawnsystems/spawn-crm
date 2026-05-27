@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { AppointmentDetailSheet } from '@/components/appointments/appointment-detail-sheet'
 import { AppointmentDialog } from '@/components/leads/appointment-dialog'
-import { cn } from '@/lib/utils'
+import { cn, fmtDateKeyAR, toBADate } from '@/lib/utils'
 import {
   ChevronLeft, ChevronRight, Plus, Search, CalendarCheck,
 } from 'lucide-react'
@@ -125,7 +125,7 @@ export function AppointmentsView({
   const grouped = useMemo(() => {
     const map = new Map<string, ApptRow[]>()
     for (const a of filtered) {
-      const key = format(new Date(a.scheduled_at), 'yyyy-MM-dd')
+      const key = fmtDateKeyAR(a.scheduled_at)
       if (!map.has(key)) map.set(key, [])
       map.get(key)!.push(a)
     }
@@ -431,9 +431,9 @@ const CARD_ACCENT: Record<string, string> = {
 }
 
 function ApptCard({ appt, onClick }: { appt: ApptRow; onClick: () => void }) {
-  const apptDate = new Date(appt.scheduled_at)
+  const apptDate = toBADate(appt.scheduled_at)
   const dur      = appt.duration_min
-  const isPast   = appt.status === 'programada' && apptDate.getTime() < Date.now()
+  const isPast   = appt.status === 'programada' && new Date(appt.scheduled_at).getTime() < Date.now()
 
   return (
     <div

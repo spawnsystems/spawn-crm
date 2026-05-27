@@ -12,6 +12,64 @@ export function cn(...inputs: ClassValue[]) {
 // ── Date / time ────────────────────────────────────────────────────
 
 /**
+ * Zona horaria del negocio. Todos los formatos de fechas visibles al usuario
+ * se basan en este valor para que sean independientes del timezone del servidor
+ * (UTC) y del navegador del usuario.
+ */
+export const BA_TZ = 'America/Argentina/Buenos_Aires'
+
+/**
+ * Convierte un timestamp UTC a un Date "falso-local" en horario de Buenos Aires.
+ * Útil para pasarlo a date-fns/format y obtener horas locales correctas
+ * sin necesidad de instalar date-fns-tz.
+ *
+ * Ejemplo: un UTC 2024-06-15T18:00:00Z → BA 15:00 → new Date(2024, 5, 15, 15, 0, 0)
+ */
+export function toBADate(date: Date | string | number): Date {
+  const d = new Date(date)
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: BA_TZ,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  })
+  const parts = fmt.formatToParts(d)
+  const get = (type: string) => parseInt(parts.find((p) => p.type === type)!.value)
+  // hour12:false puede devolver 24 para la medianoche — normalizar
+  const h = get('hour') % 24
+  return new Date(get('year'), get('month') - 1, get('day'), h, get('minute'), get('second'))
+}
+
+/**
+ * "15/06" — día y mes en horario Buenos Aires.
+ */
+export function fmtDayMonthAR(date: Date | string | number): string {
+  return new Intl.DateTimeFormat('es-AR', {
+    day: '2-digit', month: '2-digit', timeZone: BA_TZ,
+  }).format(new Date(date))
+}
+
+/**
+ * "02 jun. 2025" — fecha corta legible en horario Buenos Aires.
+ */
+export function fmtDateShortAR(date: Date | string | number): string {
+  return new Intl.DateTimeFormat('es-AR', {
+    day: '2-digit', month: 'short', year: 'numeric', timeZone: BA_TZ,
+  }).format(new Date(date))
+}
+
+/**
+ * "yyyy-MM-dd" en horario Buenos Aires — para claves de agrupación por día.
+ * Evita que un evento a las 22:00 BA (01:00 UTC del día siguiente) agrupe mal.
+ */
+export function fmtDateKeyAR(date: Date | string | number): string {
+  // en-CA usa formato ISO (YYYY-MM-DD) de forma nativa
+  return new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric', month: '2-digit', day: '2-digit', timeZone: BA_TZ,
+  }).format(new Date(date))
+}
+
+/**
  * Formatea una fecha como tiempo relativo en español rioplatense.
  * Reemplaza las copias previas que vivían en leads-view.tsx y all-leads-view.tsx.
  *

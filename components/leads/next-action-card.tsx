@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+import { cn, toBADate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { AppointmentDialog } from '@/components/leads/appointment-dialog'
 import {
@@ -132,8 +132,8 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
 
   // ── Citado — con cita programada ──────────────────────────────
   if (lead.status === 'Citado' && nextAppointment) {
-    const apptDate = new Date(nextAppointment.scheduled_at)
-    const isPast   = apptDate.getTime() < Date.now()
+    const apptDate = toBADate(nextAppointment.scheduled_at)
+    const isPast   = new Date(nextAppointment.scheduled_at).getTime() < Date.now()
     const dur      = nextAppointment.duration_min
 
     return (
