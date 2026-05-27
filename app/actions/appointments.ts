@@ -6,7 +6,6 @@ import { eq, and, gte, lte, ne, sql } from 'drizzle-orm'
 import { requireTenant, appendTimeline } from '@/lib/leads/server-helpers'
 import { getCurrentUserTeamScope, buildAppointmentScopeWhere } from '@/lib/tenant/teams'
 import { logAudit } from '@/lib/audit/log'
-import { statusChangeLabel } from '@/lib/leads/constants'
 import {
   createAppointmentSchema,
   updateAppointmentSchema,
@@ -142,18 +141,15 @@ export async function createAppointment(
         'Reactivado — volvió al seguimiento activo',
       )
     }
-    await appendTimeline(
-      tenantId, data.lead_id, user.id,
-      'status_changed',
-      statusChangeLabel(previousStatus, 'Citado'),
-    )
+    // No agregamos evento 'status_changed' separado: el appointment_scheduled
+    // ya cubre el avance de etapa en el historial visible al vendedor.
   }
 
   await appendTimeline(
     tenantId, data.lead_id, user.id,
     'appointment_scheduled',
-    `${APPOINTMENT_TIPO_LABEL[data.tipo]} pautado`,
-    fmtApptDateBA(data.scheduled_at),
+    'Cita pautada con el cliente',
+    `${APPOINTMENT_TIPO_LABEL[data.tipo]} · ${fmtApptDateBA(data.scheduled_at)}`,
   )
 
   void logAudit({
@@ -311,8 +307,8 @@ export async function markAppointmentDone(
   await appendTimeline(
     tenantId, appt[0].lead_id, user.id,
     'appointment_done',
-    `${APPOINTMENT_TIPO_LABEL[appt[0].tipo]} realizado`,
-    outcomeNotes?.trim(),
+    'Cita realizada',
+    outcomeNotes?.trim() ?? `${APPOINTMENT_TIPO_LABEL[appt[0].tipo]} completado`,
   )
 
   void logAudit({
@@ -422,7 +418,7 @@ export async function rescheduleAppointment(
     tenantId, o.lead_id, user.id,
     'appointment_rescheduled',
     'Cita reagendada',
-    fmtApptDateBA(data.newScheduledAt),
+    `${APPOINTMENT_TIPO_LABEL[o.tipo]} · ${fmtApptDateBA(data.newScheduledAt)}`,
   )
 
   void logAudit({
