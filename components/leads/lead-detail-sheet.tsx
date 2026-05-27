@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { format } from 'date-fns'
 import { toast } from 'sonner'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
@@ -9,7 +10,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
 import { StatusBadge } from '@/components/status-badge'
+import { NextActionCard } from '@/components/leads/next-action-card'
+import { LeadStatusStepper } from '@/components/leads/lead-status-stepper'
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
@@ -17,60 +24,65 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Phone, Mail, Car, CheckCircle2, Circle, Calendar, FileText,
+  Phone, Mail, Car, CheckCircle2, Circle, CalendarIcon, FileText,
   MessageCircle, Send, ChevronDown, Loader2, Pencil, X, Check,
-  UserCircle, Plus,
+  UserCircle, Plus, RotateCcw,
 } from 'lucide-react'
 import {
-  changeStatus, addNote, toggleTask, getLeadDetail, markContacted,
+  changeStatus, addNote, toggleTask, getLeadDetail,
   updateLead, addTask, assignLead,
 } from '@/app/actions/leads'
+import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresDelTenant } from '@/app/actions/users'
-import { leadSourceValues } from '@/lib/schemas/leads'
+import { leadSourceValues, leadStatusValues } from '@/lib/schemas/leads'
 import type { Lead } from '@/lib/db'
-import { parseNumeric, safeRefetch } from '@/lib/utils'
+import { cn, parseNumeric, safeRefetch } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────
 
-type DetailData  = Awaited<ReturnType<typeof getLeadDetail>>
-type Vendedor    = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
-
-const STATUSES = [
-  'Nuevo', 'Contactado', 'Cotizado', 'Test drive', 'Negociación', 'Cerrado', 'Perdido',
-] as const
+type DetailData   = Awaited<ReturnType<typeof getLeadDetail>>
+type Vendedor     = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
+// getNextAppointmentForLead returns rows[0] which may be undefined at runtime
+// even though TS infers the non-nullable element type; we always allow null.
+type Appointment  = Awaited<ReturnType<typeof getNextAppointmentForLead>> | null
 
 // ── Main component ────────────────────────────────────────────────
 
 interface LeadDetailSheetProps {
-  leadId: string | null
-  onClose: () => void
+  leadId:          string | null
+  onClose:         () => void
   onStatusChange?: (leadId: string, status: string) => void
 }
 
 export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailSheetProps) {
-  const [detail,    setDetail]    = useState<DetailData | null>(null)
-  const [loading,   setLoading]   = useState(false)
-  const [vendedores, setVendedores] = useState<Vendedor[]>([])
-  const [newNote,   setNewNote]   = useState('')
-  const [newTask,   setNewTask]   = useState('')
-  const [editing,   setEditing]   = useState(false)
-  const [editForm,  setEditForm]  = useState<Partial<Lead>>({})
-  const [isPending, startTransition] = useTransition()
+  const [detail,          setDetail]          = useState<DetailData | null>(null)
+  const [nextAppointment, setNextAppointment] = useState<Appointment>(null)
+  const [loading,         setLoading]         = useState(false)
+  const [vendedores,      setVendedores]      = useState<Vendedor[]>([])
+  const [newNote,         setNewNote]         = useState('')
+  const [newTask,         setNewTask]         = useState('')
+  const [taskDueAt,       setTaskDueAt]       = useState<Date | undefined>()
+  const [dueCalendarOpen, setDueCalendarOpen] = useState(false)
+  const [editing,         setEditing]         = useState(false)
+  const [editForm,        setEditForm]        = useState<Partial<Lead>>({})
+  const [isPending,       startTransition]    = useTransition()
 
-  // Fetch lead detail + vendedores when sheet opens.
-  // `cancelled` evita actualizar estado si el usuario cierra el sheet o cambia de lead
-  // antes de que termine la fetch (race condition al abrir/cerrar rápido).
+  // Fetch all data when sheet opens.
+  // `cancelled` flag prevents stale updates on quick open/close.
   useEffect(() => {
-    if (!leadId) { setDetail(null); setEditing(false); return }
+    if (!leadId) { setDetail(null); setNextAppointment(null); setEditing(false); return }
     setLoading(true)
     let cancelled = false
+
     Promise.all([
       getLeadDetail(leadId),
+      getNextAppointmentForLead(leadId),
       getVendedoresDelTenant(),
     ])
-      .then(([d, v]) => {
+      .then(([d, appt, v]) => {
         if (cancelled) return
         setDetail(d)
+        setNextAppointment(appt)
         setVendedores(v)
         if (d) setEditForm(d.lead)
       })
@@ -83,6 +95,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
         if (cancelled) return
         setLoading(false)
       })
+
     return () => { cancelled = true }
   }, [leadId])
 
@@ -90,6 +103,26 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const notes    = detail?.notes    ?? []
   const timeline = detail?.timeline ?? []
   const tasks    = detail?.tasks    ?? []
+
+  /** Re-fetch everything (called after mutations in NextActionCard) */
+  async function refreshAll() {
+    if (!leadId) return
+    const [d, appt] = await Promise.all([
+      safeRefetch(() => getLeadDetail(leadId),             'No se pudo actualizar la ficha'),
+      safeRefetch(() => getNextAppointmentForLead(leadId), 'No se pudo actualizar la cita'),
+    ])
+    if (d) {
+      setDetail(d)
+      setEditForm(d.lead)
+      if (d.lead.status !== lead?.status) {
+        onStatusChange?.(leadId, d.lead.status)
+      }
+    }
+    setNextAppointment(appt ?? null)
+  }
+
+  // Was this lead ever rescued from rescate?
+  const wasRescued = timeline.some((e) => e.event_type === 'reactivated_from_rescue')
 
   // ── Mutations ──────────────────────────────────────────────────
 
@@ -123,13 +156,13 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
 
   function handleAddNote() {
     if (!lead || !newNote.trim()) return
-    const leadId = lead.id
+    const id = lead.id
     startTransition(async () => {
-      const res = await addNote(leadId, newNote.trim())
+      const res = await addNote(id, newNote.trim())
       if (!res.success) { toast.error(res.error); return }
       setNewNote('')
       const updated = await safeRefetch(
-        () => getLeadDetail(leadId),
+        () => getLeadDetail(id),
         'Nota guardada, pero no se pudo refrescar la ficha',
       )
       if (updated) setDetail(updated)
@@ -139,30 +172,18 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
 
   function handleAddTask() {
     if (!lead || !newTask.trim()) return
-    const leadId = lead.id
+    const id = lead.id
     startTransition(async () => {
-      const res = await addTask(leadId, newTask.trim())
+      const res = await addTask(id, newTask.trim(), taskDueAt)
       if (!res.success) { toast.error(res.error); return }
       setNewTask('')
+      setTaskDueAt(undefined)
       const updated = await safeRefetch(
-        () => getLeadDetail(leadId),
+        () => getLeadDetail(id),
         'Tarea agregada, pero no se pudo refrescar la ficha',
       )
       if (updated) setDetail(updated)
       toast.success('Tarea agregada')
-    })
-  }
-
-  function handleMarkContacted() {
-    if (!lead) return
-    startTransition(async () => {
-      const res = await markContacted(lead.id)
-      if (res.success) {
-        setDetail((d) => d ? { ...d, lead: { ...d.lead, at_risk: false, last_contact_critical: false } } : d)
-        toast.success('Contacto registrado')
-      } else {
-        toast.error(res.error)
-      }
     })
   }
 
@@ -206,6 +227,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   return (
     <Sheet open={!!leadId} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-full sm:max-w-3xl overflow-y-auto p-0">
+
         {loading && (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -218,16 +240,26 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
             <SheetHeader className="p-6 border-b border-border">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+
+                  {/* Name + badges */}
+                  <div className="flex items-center gap-2 flex-wrap">
                     <SheetTitle className="text-xl">{lead.nombre}</SheetTitle>
+                    {wasRescued && lead.status !== 'Para rescate' && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-amber-100 text-amber-700 border border-amber-200/60 rounded-full px-2 py-0.5">
+                        <RotateCcw className="size-2.5" />
+                        Reactivado del rescate
+                      </span>
+                    )}
                     <button
                       onClick={() => setEditing((v) => !v)}
-                      className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                      className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground ml-auto sm:ml-0"
                       title="Editar lead"
                     >
                       {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
                     </button>
                   </div>
+
+                  {/* Contact info */}
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                     {lead.telefono && (
                       <span className="inline-flex items-center gap-1.5">
@@ -240,6 +272,8 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       </span>
                     )}
                   </div>
+
+                  {/* Model + Status dropdown */}
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <Car className="size-4 text-primary" />
                     <span className="font-medium">{lead.modelo ?? 'Sin modelo'}</span>
@@ -251,7 +285,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
-                        {STATUSES.map((s) => (
+                        {leadStatusValues.map((s) => (
                           <DropdownMenuItem
                             key={s}
                             onClick={() => handleStatusChange(s)}
@@ -294,6 +328,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                   )}
                 </div>
 
+                {/* Quick-action buttons */}
                 <div className="flex shrink-0 flex-col gap-2">
                   {lead.telefono && (
                     <Button size="sm" variant="outline" className="gap-1.5" asChild>
@@ -309,24 +344,22 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       </a>
                     </Button>
                   )}
-                  {lead.at_risk && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5 border-success/30 text-success hover:bg-success/10"
-                      onClick={handleMarkContacted}
-                      disabled={isPending}
-                    >
-                      Registrar contacto
-                    </Button>
-                  )}
                 </div>
               </div>
             </SheetHeader>
 
+            {/* ── Next action card ── */}
+            <div className="pt-4">
+              <NextActionCard
+                lead={lead}
+                nextAppointment={nextAppointment}
+                onLeadUpdated={refreshAll}
+              />
+            </div>
+
             {/* ── Edit form ── */}
             {editing && (
-              <div className="border-b border-border bg-muted/30 p-6">
+              <div className="border-b border-border bg-muted/30 px-6 pb-6">
                 <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">Editar lead</div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2 space-y-1.5">
@@ -415,7 +448,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
               <div className="col-span-2 space-y-6">
 
                 {/* Tasks */}
-                <Section icon={<Calendar className="size-4" />} title="Próximas acciones">
+                <Section icon={<CalendarIcon className="size-4" />} title="Próximas acciones">
                   {tasks.length > 0 && (
                     <div className="space-y-2 mb-3">
                       {tasks.map((t) => (
@@ -433,7 +466,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                               : <Circle className="size-4 text-muted-foreground hover:text-primary transition-colors" />}
                           </button>
                           <div className="flex-1">
-                            <div className={`text-sm ${t.done ? 'line-through text-muted-foreground' : ''}`}>
+                            <div className={cn('text-sm', t.done && 'line-through text-muted-foreground')}>
                               {t.texto}
                             </div>
                             {t.due_at && (
@@ -455,22 +488,63 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       ))}
                     </div>
                   )}
-                  {/* Add task */}
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Nueva tarea..."
-                      className="h-8 text-sm"
-                      value={newTask}
-                      onChange={(e) => setNewTask(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleAddTask() }}
-                    />
-                    <Button
-                      size="sm" variant="outline" className="h-8 gap-1 shrink-0"
-                      onClick={handleAddTask}
-                      disabled={!newTask.trim() || isPending}
-                    >
-                      <Plus className="size-3.5" />Agregar
-                    </Button>
+
+                  {/* Add task — with optional due date */}
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Nueva tarea..."
+                        className="h-8 text-sm"
+                        value={newTask}
+                        onChange={(e) => setNewTask(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleAddTask() }}
+                      />
+                      {/* Due date picker */}
+                      <Popover open={dueCalendarOpen} onOpenChange={setDueCalendarOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className={cn(
+                              'h-8 gap-1.5 shrink-0 text-xs px-2',
+                              taskDueAt ? 'border-primary text-primary' : 'text-muted-foreground',
+                            )}
+                            title="Fecha límite"
+                          >
+                            <CalendarIcon className="size-3.5" />
+                            {taskDueAt ? format(taskDueAt, 'dd/MM') : 'Fecha'}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="end">
+                          <Calendar
+                            mode="single"
+                            selected={taskDueAt}
+                            onSelect={(d) => { setTaskDueAt(d); setDueCalendarOpen(false) }}
+                            initialFocus
+                          />
+                          {taskDueAt && (
+                            <div className="p-2 border-t border-border">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="w-full h-7 text-xs text-muted-foreground"
+                                onClick={() => { setTaskDueAt(undefined); setDueCalendarOpen(false) }}
+                              >
+                                <X className="size-3 mr-1" />Quitar fecha
+                              </Button>
+                            </div>
+                          )}
+                        </PopoverContent>
+                      </Popover>
+
+                      <Button
+                        size="sm" variant="outline" className="h-8 gap-1 shrink-0"
+                        onClick={handleAddTask}
+                        disabled={!newTask.trim() || isPending}
+                      >
+                        <Plus className="size-3.5" />Agregar
+                      </Button>
+                    </div>
                   </div>
                 </Section>
 
@@ -521,7 +595,14 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                     <div className="absolute left-1.5 top-1 bottom-1 w-px bg-border" />
                     {timeline.map((e) => (
                       <div key={e.id} className="relative pb-4">
-                        <div className="absolute -left-[14px] top-1 size-2.5 rounded-full bg-primary ring-4 ring-background" />
+                        <div className={cn(
+                          'absolute -left-[14px] top-1 size-2.5 rounded-full ring-4 ring-background',
+                          e.event_type === 'reactivated_from_rescue'
+                            ? 'bg-amber-500'
+                            : e.event_type === 'closed_won'
+                            ? 'bg-emerald-500'
+                            : 'bg-primary',
+                        )} />
                         <div className="text-[11px] text-muted-foreground">
                           {new Date(e.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}{' '}
                           {new Date(e.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
@@ -535,6 +616,17 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* ── Status stepper (footer) ── */}
+            <div className="border-t border-border px-6 py-4 bg-muted/20">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-3">
+                Progreso del lead
+              </div>
+              <LeadStatusStepper
+                status={lead.status}
+                wasRescued={wasRescued}
+              />
             </div>
           </>
         )}

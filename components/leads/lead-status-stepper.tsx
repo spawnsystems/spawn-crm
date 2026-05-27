@@ -1,0 +1,87 @@
+'use client'
+
+import { cn } from '@/lib/utils'
+
+const STEPS = ['Nuevo', 'Contactado', 'Citado', 'Cerrado'] as const
+type Step = (typeof STEPS)[number]
+
+const STEP_INDEX: Record<Step, number> = {
+  Nuevo:      0,
+  Contactado: 1,
+  Citado:     2,
+  Cerrado:    3,
+}
+
+interface LeadStatusStepperProps {
+  status:     string   // Lead['status']
+  wasRescued: boolean  // timeline has at least one 'reactivated_from_rescue' event
+  className?: string
+}
+
+export function LeadStatusStepper({ status, wasRescued, className }: LeadStatusStepperProps) {
+  const isRescue     = status === 'Para rescate'
+  const currentIndex = isRescue ? -1 : (STEP_INDEX[status as Step] ?? -1)
+
+  return (
+    <div className={cn('select-none', className)}>
+      {/* Stepper row */}
+      <div className="flex items-start">
+        {STEPS.map((step, i) => {
+          const isCompleted = !isRescue && currentIndex > i
+          const isCurrent   = !isRescue && currentIndex === i
+
+          return (
+            <div
+              key={step}
+              className={cn('flex items-start', i < STEPS.length - 1 && 'flex-1')}
+            >
+              {/* Dot + label */}
+              <div className="flex flex-col items-center gap-1.5 shrink-0">
+                <div className={cn(
+                  'size-3 rounded-full border-2 transition-colors',
+                  isCurrent
+                    ? 'bg-primary border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.15)]'
+                    : isCompleted
+                    ? 'bg-primary border-primary'
+                    : 'bg-background border-muted-foreground/25',
+                )} />
+                <span className={cn(
+                  'text-[10px] font-medium leading-none whitespace-nowrap',
+                  isCurrent   ? 'text-primary'
+                  : isCompleted ? 'text-foreground/60'
+                  : 'text-muted-foreground/40',
+                )}>
+                  {step}
+                </span>
+              </div>
+
+              {/* Connector — between dots, vertically centred with dot (top 5px) */}
+              {i < STEPS.length - 1 && (
+                <div className={cn(
+                  'flex-1 h-[2px] mt-[5px] mx-1.5 rounded-full transition-colors',
+                  isCompleted ? 'bg-primary/40' : 'bg-muted-foreground/15',
+                )} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Rescue branch — shown if current or historical */}
+      {(isRescue || wasRescued) && (
+        <div className="mt-2 ml-[13px] flex items-center gap-1.5">
+          {/* Short vertical + horizontal indicator */}
+          <div className="flex flex-col items-center">
+            <div className={cn('w-px h-2', isRescue ? 'bg-amber-400' : 'bg-muted-foreground/20')} />
+          </div>
+          <span className={cn(
+            'text-[10px] font-medium leading-none',
+            isRescue ? 'text-amber-600' : 'text-muted-foreground/50',
+          )}>
+            {isRescue ? '↳ Para rescate' : '↳ Estuvo en rescate'}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
