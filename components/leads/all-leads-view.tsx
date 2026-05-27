@@ -208,6 +208,15 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
         )}
       </div>
 
+      <Paginator
+        page={page}
+        totalPages={totalPages}
+        totalItems={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        className="mb-3"
+      />
+
       {/* Table */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">

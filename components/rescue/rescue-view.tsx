@@ -82,6 +82,15 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
           : `${leads.length} lead${leads.length !== 1 ? 's' : ''} para rescatar`}
       </div>
 
+      <Paginator
+        page={page}
+        totalPages={totalPages}
+        totalItems={leads.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        className="mb-4"
+      />
+
       {/* Lead cards */}
       {leads.length === 0 ? (
         <div className="py-16 text-center text-sm text-muted-foreground border-2 border-dashed rounded-xl">

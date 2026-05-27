@@ -185,6 +185,15 @@ export function AuditTab({
           : `${logs.length} registros`}
       </p>
 
+      <Paginator
+        page={page}
+        totalPages={totalPages}
+        totalItems={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        className="mb-1"
+      />
+
       {/* Tabla */}
       {filtered.length === 0 ? (
         <Card className="p-8 text-center">

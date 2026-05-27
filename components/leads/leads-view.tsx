@@ -170,6 +170,15 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
         </div>
       </div>
 
+      <Paginator
+        page={page}
+        totalPages={totalPages}
+        totalItems={filtered.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        className="mb-4"
+      />
+
       {/* Lead list */}
       <div className="space-y-3">
         {paginated.map((lead) => (
