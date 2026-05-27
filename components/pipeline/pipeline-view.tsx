@@ -210,6 +210,16 @@ function KanbanColumn({ stage, leads, totalValue, onCardClick, onDrop }: KanbanC
             onClick={() => onCardClick(lead.id)}
           />
         ))}
+        {leads.length === 0 && (
+          <div className={cn(
+            'flex items-center justify-center rounded-lg border-2 border-dashed min-h-[72px] transition-colors',
+            isDragOver ? 'border-primary/40 bg-primary/5' : 'border-border/30',
+          )}>
+            <span className="text-xs text-muted-foreground/35 select-none">
+              Arrastrá un lead aquí
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )

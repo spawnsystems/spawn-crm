@@ -38,7 +38,7 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
 
   /** Fire an action, show a toast, then refresh the parent */
   function run(
-    fn:          () => Promise<{ success: boolean; error?: string }>,
+    fn:          () => Promise<{ success: boolean; error?: string; data?: unknown }>,
     successMsg?: string,
   ) {
     startTransition(async () => {
@@ -107,10 +107,18 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
         <Button
           size="sm"
           className="gap-1.5"
-          onClick={() => run(
-            () => markContacted(lead.id),
-            'Primer contacto registrado',
-          )}
+          onClick={() => {
+            startTransition(async () => {
+              const res = await markContacted(lead.id)
+              if (!res.success) { toast.error(res.error); return }
+              toast.success(
+                res.data?.advanced
+                  ? 'Contacto registrado — lead avanzado a Contactado'
+                  : 'Contacto registrado',
+              )
+              onLeadUpdated()
+            })
+          }}
           disabled={isPending}
         >
           {isPending

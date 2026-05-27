@@ -321,16 +321,29 @@ export async function reactivateFromRescue(
 }
 
 // ── markContacted ─────────────────────────────────────────────
-// Registra un contacto — resetea at_risk y last_contact_at
+// Registra un contacto — resetea at_risk y last_contact_at.
+// Si el lead estaba en 'Nuevo', lo avanza automáticamente a 'Contactado'.
 
 export async function markContacted(
   leadId: string,
   nota?:  string,
-): Promise<ActionResult<void>> {
+): Promise<ActionResult<{ advanced: boolean }>> {
   const { user, tenantId, q, forTenant } = await requireTenant()
+
+  // Leer el estado actual para saber si avanzamos
+  const current = await dbAdmin
+    .select({ status: schema.leads.status })
+    .from(schema.leads)
+    .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+    .limit(1)
+
+  if (!current[0]) return { success: false, error: 'Lead no encontrado' }
+
+  const advanced = current[0].status === 'Nuevo'
 
   await q.update(schema.leads)
     .set({
+      ...(advanced ? { status: 'Contactado' } : {}),
       last_contact_at:       new Date(),
       last_contact_critical: false,
       at_risk:               false,
@@ -360,7 +373,7 @@ export async function markContacted(
 
   revalidatePath('/leads')
   revalidatePath('/all-leads')
-  return { success: true, data: undefined }
+  return { success: true, data: { advanced } }
 }
 
 // ── addNote ───────────────────────────────────────────────────

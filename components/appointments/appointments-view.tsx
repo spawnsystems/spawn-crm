@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { getAppointmentsInRange } from '@/app/actions/appointments'
 import { getAllLeads } from '@/app/actions/leads'
+import { getVendedoresDelTenant } from '@/app/actions/users'
 import {
   appointmentTipoValues,
   appointmentStatusValues,
@@ -29,8 +30,9 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────
 
-type ApptRow = Awaited<ReturnType<typeof getAppointmentsInRange>>[number]
-type LeadRow = Awaited<ReturnType<typeof getAllLeads>>[number]
+type ApptRow    = Awaited<ReturnType<typeof getAppointmentsInRange>>[number]
+type LeadRow    = Awaited<ReturnType<typeof getAllLeads>>[number]
+type VendedorRow = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 
 const ALL = '__all__'
 
@@ -39,16 +41,21 @@ const ALL = '__all__'
 interface AppointmentsViewProps {
   initialAppointments: ApptRow[]
   initialMonth:        Date
+  vendedores?:         VendedorRow[]  // populated for supervisor+ roles
 }
 
 // ── Component ─────────────────────────────────────────────────────
 
-export function AppointmentsView({ initialAppointments, initialMonth }: AppointmentsViewProps) {
+export function AppointmentsView({
+  initialAppointments, initialMonth, vendedores = [],
+}: AppointmentsViewProps) {
   const [month,           setMonth]           = useState(initialMonth)
   const [appointments,    setAppointments]     = useState<ApptRow[]>(initialAppointments)
   const [filterTipo,      setFilterTipo]       = useState(ALL)
   const [filterStatus,    setFilterStatus]     = useState<string>('programada')
+  const [filterVend,      setFilterVend]       = useState(ALL)
   const [showCanceladas,  setShowCanceladas]   = useState(false)
+  const [isLoadingMonth,  setIsLoadingMonth]   = useState(false)
   const [selectedAppt,    setSelectedAppt]     = useState<ApptRow | null>(null)
 
   // Nueva cita flow — step 1: select lead
@@ -63,15 +70,25 @@ export function AppointmentsView({ initialAppointments, initialMonth }: Appointm
 
   // ── Helpers ──────────────────────────────────────────────────
 
-  async function fetchMonth(newMonth: Date, includeCancelled = showCanceladas) {
+  async function fetchMonth(
+    newMonth:         Date,
+    includeCancelled: boolean = showCanceladas,
+    vendedorId:       string  = filterVend,
+  ) {
+    setIsLoadingMonth(true)
     setMonth(newMonth)
     const from = startOfMonth(newMonth)
     const to   = endOfMonth(newMonth)
     try {
-      const res = await getAppointmentsInRange(from, to, { includeCancelled })
+      const res = await getAppointmentsInRange(from, to, {
+        includeCancelled,
+        vendedorId: vendedorId !== ALL ? vendedorId : undefined,
+      })
       setAppointments(res)
     } catch {
       toast.error('No se pudieron cargar las citas')
+    } finally {
+      setIsLoadingMonth(false)
     }
   }
 
@@ -98,9 +115,9 @@ export function AppointmentsView({ initialAppointments, initialMonth }: Appointm
   // ── Derived ──────────────────────────────────────────────────
 
   const filtered = useMemo(() => appointments.filter((a) => {
-    if (filterTipo !== ALL && a.tipo !== filterTipo) return false
-    if (!showCanceladas && a.status === 'cancelada') return false
+    if (filterTipo   !== ALL && a.tipo   !== filterTipo)   return false
     if (filterStatus !== ALL && a.status !== filterStatus) return false
+    if (!showCanceladas && a.status === 'cancelada')        return false
     return true
   }), [appointments, filterTipo, filterStatus, showCanceladas])
 
@@ -153,6 +170,7 @@ export function AppointmentsView({ initialAppointments, initialMonth }: Appointm
           <Button
             size="icon" variant="ghost" className="size-8"
             onClick={() => fetchMonth(subMonths(month, 1))}
+            disabled={isLoadingMonth}
           >
             <ChevronLeft className="size-4" />
           </Button>
@@ -162,10 +180,34 @@ export function AppointmentsView({ initialAppointments, initialMonth }: Appointm
           <Button
             size="icon" variant="ghost" className="size-8"
             onClick={() => fetchMonth(addMonths(month, 1))}
+            disabled={isLoadingMonth}
           >
             <ChevronRight className="size-4" />
           </Button>
         </div>
+
+        {/* Vendedor — solo si hay lista (supervisor+) */}
+        {vendedores.length > 0 && (
+          <Select
+            value={filterVend}
+            onValueChange={(v) => {
+              setFilterVend(v)
+              void fetchMonth(month, showCanceladas, v)
+            }}
+          >
+            <SelectTrigger className={cn('h-9 w-44 text-sm', filterVend !== ALL && 'border-primary text-primary')}>
+              <SelectValue placeholder="Vendedor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Todos los vendedores</SelectItem>
+              {vendedores.map((v) => (
+                <SelectItem key={v.user_id} value={v.user_id}>
+                  {v.alias || v.nombre || v.user_id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         {/* Tipo */}
         <Select value={filterTipo} onValueChange={setFilterTipo}>
@@ -211,26 +253,47 @@ export function AppointmentsView({ initialAppointments, initialMonth }: Appointm
       </div>
 
       {/* ── Agenda view ── */}
-      {grouped.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <CalendarCheck className="size-10 text-muted-foreground/25 mb-3" />
-          <p className="text-sm font-medium text-muted-foreground">Sin citas para este período</p>
-          <p className="text-xs text-muted-foreground/60 mt-1">
-            Organizá una cita desde la ficha de un lead o usá el botón "Nueva cita".
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-7">
-          {grouped.map(({ date, items }) => (
-            <DaySection
-              key={date.toISOString()}
-              date={date}
-              items={items}
-              onApptClick={setSelectedAppt}
-            />
-          ))}
-        </div>
-      )}
+      <div className={cn('transition-opacity duration-150', isLoadingMonth && 'opacity-40 pointer-events-none')}>
+        {isLoadingMonth && grouped.length === 0 ? (
+          // Skeleton while first load of a new month
+          <div className="space-y-7">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="animate-pulse">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-11 h-11 rounded-lg bg-muted" />
+                  <div className="space-y-1.5">
+                    <div className="h-3.5 w-36 bg-muted rounded" />
+                    <div className="h-2.5 w-16 bg-muted/60 rounded" />
+                  </div>
+                </div>
+                <div className="ml-[56px] space-y-2">
+                  <div className="h-16 rounded-lg bg-muted/60" />
+                  {i === 0 && <div className="h-16 rounded-lg bg-muted/40" />}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : grouped.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <CalendarCheck className="size-10 text-muted-foreground/25 mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">Sin citas para este período</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">
+              Organizá una cita desde la ficha de un lead o usá el botón "Nueva cita".
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-7">
+            {grouped.map(({ date, items }) => (
+              <DaySection
+                key={date.toISOString()}
+                date={date}
+                items={items}
+                onApptClick={setSelectedAppt}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ── Appointment detail sheet ── */}
       <AppointmentDetailSheet

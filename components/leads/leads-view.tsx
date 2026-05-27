@@ -55,7 +55,7 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
 
   // ── Derived ──────────────────────────────────────────────────
 
-  const activeLeads = leads.filter((l) => !['Cerrado', 'Perdido'].includes(l.status))
+  const activeLeads = leads.filter((l) => !['Cerrado', 'Para rescate'].includes(l.status))
   const atRiskCount = leads.filter((l) => l.at_risk).length
   const closedMonth = leads.filter((l) => l.status === 'Cerrado').length
   const closeRate   = leads.length > 0 ? Math.round((closedMonth / leads.length) * 100) : 0
