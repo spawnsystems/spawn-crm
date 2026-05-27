@@ -1,42 +1,17 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { getCurrentUser } from '@/lib/auth/get-current-user'
-import { getCurrentTenantId } from '@/lib/tenant/server'
-import { db, dbAdmin, schema } from '@/lib/db'
-import { eq, and, desc, isNotNull, inArray } from 'drizzle-orm'
+import { dbAdmin, schema } from '@/lib/db'
+import { eq, and, desc, inArray } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema } from '@/lib/schemas/leads'
 import { logAudit } from '@/lib/audit/log'
+import { requireTenant, appendTimeline } from '@/lib/leads/server-helpers'
 import type { ActionResult } from './auth'
 
-// ── Guard ─────────────────────────────────────────────────────
-
-async function requireTenant() {
-  const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
-  if (!user || !tenantId) throw new Error('No autenticado')
-  const { q, forTenant } = db(tenantId)
-  return { user, tenantId, q, forTenant }
-}
-
-// ── Helpers ───────────────────────────────────────────────────
-
-async function appendTimeline(
-  tenantId: string,
-  leadId:   string,
-  actorId:  string,
-  eventType: string,
-  title:    string,
-  description?: string,
-) {
-  await dbAdmin.insert(schema.leadTimeline).values({
-    tenant_id:   tenantId,
-    lead_id:     leadId,
-    actor_id:    actorId,
-    event_type:  eventType,
-    title,
-    description: description ?? null,
-  })
-}
+// requireTenant + appendTimeline viven en lib/leads/server-helpers.ts
+// para poder ser importados desde otros archivos de actions sin que
+// queden expuestos como server actions (Next.js trata todo lo exportado
+// desde un archivo 'use server' como una action invocable).
 
 // ── createLead ────────────────────────────────────────────────
 
@@ -249,28 +224,99 @@ export async function assignLead(
   return { success: true, data: undefined }
 }
 
-// ── markAsLost ────────────────────────────────────────────────
+// ── markAsClosed ──────────────────────────────────────────────
+// Marca el lead como cerrado positivamente (venta).
+// "Perdido" no existe: los leads inactivos quedan en 'Para rescate'.
 
-export async function markAsLost(leadId: string): Promise<ActionResult<void>> {
+export async function markAsClosed(leadId: string): Promise<ActionResult<void>> {
   const { user, tenantId, q, forTenant } = await requireTenant()
 
   await q.update(schema.leads)
-    .set({ status: 'Perdido', abandoned_at: null, rescue_category: null, updated_by: user.id })
+    .set({ status: 'Cerrado', abandoned_at: null, updated_by: user.id })
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
 
-  await appendTimeline(tenantId, leadId, user.id, 'status_changed', 'Marcado como Perdido')
+  await appendTimeline(tenantId, leadId, user.id, 'closed_won', 'Lead cerrado — venta confirmada')
 
   void logAudit({
     tenantId,
     actorId:        user.id,
-    action:         'lead.mark_lost',
+    action:         'lead.closed_won',
     entity:         'lead',
     entityId:       leadId,
     visibleToDueno: true,
   })
 
-  revalidatePath('/rescate')
+  revalidatePath('/leads')
   revalidatePath('/all-leads')
+  revalidatePath('/dashboard')
+  revalidatePath('/pipeline')
+  return { success: true, data: undefined }
+}
+
+// ── reactivateFromRescue ──────────────────────────────────────
+// Trae un lead de 'Para rescate' de vuelta al flujo activo ('Contactado').
+// Limpia abandoned_at, registra last_contact_at = now, agrega evento al timeline
+// para que la UI muestre "Reactivado del rescate".
+
+export async function reactivateFromRescue(
+  leadId: string,
+  nota?:  string,
+): Promise<ActionResult<void>> {
+  const { user, tenantId, q, forTenant } = await requireTenant()
+
+  const current = await dbAdmin
+    .select({ status: schema.leads.status, abandoned_at: schema.leads.abandoned_at })
+    .from(schema.leads)
+    .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+    .limit(1)
+
+  if (!current[0]) return { success: false, error: 'Lead no encontrado' }
+  if (current[0].status !== 'Para rescate') {
+    return { success: false, error: 'El lead no está en rescate' }
+  }
+
+  await q.update(schema.leads)
+    .set({
+      status:                'Contactado',
+      last_contact_at:       new Date(),
+      last_contact_critical: false,
+      at_risk:               false,
+      abandoned_at:          null,
+      updated_by:            user.id,
+    })
+    .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+
+  if (nota?.trim()) {
+    await dbAdmin.insert(schema.leadNotes).values({
+      tenant_id: tenantId,
+      lead_id:   leadId,
+      author_id: user.id,
+      texto:     nota.trim(),
+    })
+  }
+
+  // Evento crítico — lo usa el lead-detail-sheet para mostrar el badge
+  // "Reactivado del rescate" y el stepper sabe que hubo bifurcación.
+  await appendTimeline(
+    tenantId, leadId, user.id,
+    'reactivated_from_rescue',
+    'Reactivado del rescate',
+    nota?.trim(),
+  )
+
+  void logAudit({
+    tenantId,
+    actorId:        user.id,
+    action:         'lead.reactivated_from_rescue',
+    entity:         'lead',
+    entityId:       leadId,
+    visibleToDueno: true,
+  })
+
+  revalidatePath('/leads')
+  revalidatePath('/all-leads')
+  revalidatePath('/rescate')
+  revalidatePath('/dashboard')
   return { success: true, data: undefined }
 }
 
@@ -538,7 +584,7 @@ export async function getAllLeads() {
 }
 
 // ── getAbandonedLeads ─────────────────────────────────────────
-// Leads abandonados visibles para el usuario (mismo scoping que getAllLeads)
+// Leads en 'Para rescate' visibles para el usuario (mismo scoping que getAllLeads)
 
 export async function getAbandonedLeads() {
   const { user, tenantId } = await requireTenant()
@@ -551,7 +597,6 @@ export async function getAbandonedLeads() {
       status:          schema.leads.status,
       est_value:       schema.leads.est_value,
       abandoned_at:    schema.leads.abandoned_at,
-      rescue_category: schema.leads.rescue_category,
       assigned_to:     schema.leads.assigned_to,
       equipo_id:       schema.leads.equipo_id,
       vendedor_nombre: schema.usuarios.nombre,
@@ -562,7 +607,10 @@ export async function getAbandonedLeads() {
 
   if (['platform_admin', 'dueno'].includes(user.rol)) {
     return base
-      .where(and(eq(schema.leads.tenant_id, tenantId), isNotNull(schema.leads.abandoned_at)))
+      .where(and(
+        eq(schema.leads.tenant_id, tenantId),
+        eq(schema.leads.status, 'Para rescate'),
+      ))
       .orderBy(desc(schema.leads.abandoned_at))
   }
 
@@ -572,7 +620,7 @@ export async function getAbandonedLeads() {
   return base
     .where(and(
       eq(schema.leads.tenant_id, tenantId),
-      isNotNull(schema.leads.abandoned_at),
+      eq(schema.leads.status, 'Para rescate'),
       inArray(schema.leads.equipo_id, teamIds),
     ))
     .orderBy(desc(schema.leads.abandoned_at))

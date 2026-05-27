@@ -11,11 +11,9 @@ export const appRoleEnum = pgEnum('app_role', [
 export const leadStatusEnum = pgEnum('lead_status', [
   'Nuevo',
   'Contactado',
-  'Cotizado',
-  'Test drive',
-  'Negociación',
+  'Citado',
   'Cerrado',
-  'Perdido',
+  'Para rescate',
 ])
 
 export const leadSourceEnum = pgEnum('lead_source', [
@@ -52,4 +50,19 @@ export const moduleKeyEnum = pgEnum('module_key', [
   'cotizaciones',
   'inventario',
   'reportes',
+])
+
+export const appointmentTipoEnum = pgEnum('appointment_tipo', [
+  'test_drive',
+  'visita_showroom',
+  'videollamada',
+  'entrega',
+])
+
+export const appointmentStatusEnum = pgEnum('appointment_status', [
+  'programada',
+  'realizada',
+  'no_se_presento',
+  'reagendada',
+  'cancelada',
 ])

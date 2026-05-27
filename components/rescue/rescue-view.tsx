@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn, formatCurrencyARS } from '@/lib/utils'
-import { Info, LifeBuoy, UserPlus, XCircle, Loader2 } from 'lucide-react'
+import { LifeBuoy, UserPlus, RotateCcw, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -11,47 +11,27 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { assignLead, markAsLost, type getAbandonedLeads } from '@/app/actions/leads'
+import { assignLead, reactivateFromRescue, type getAbandonedLeads } from '@/app/actions/leads'
 import type { getVendedoresDelTenant } from '@/app/actions/users'
 
 type LeadRow = Awaited<ReturnType<typeof getAbandonedLeads>>[number]
 
-type RescueCategory = 'all' | 'cotizado_sin_respuesta' | 'no_se_presento' | 'negociacion_abandonada'
-
-const FILTER_LABELS: { id: RescueCategory; label: string }[] = [
-  { id: 'all',                     label: 'Todos' },
-  { id: 'cotizado_sin_respuesta',  label: 'Cotizados sin respuesta' },
-  { id: 'no_se_presento',         label: 'No se presentaron' },
-  { id: 'negociacion_abandonada', label: 'Negociación abandonada' },
-]
-
-const RESCUE_LABELS: Record<string, string> = {
-  cotizado_sin_respuesta:  'Cotizado sin respuesta',
-  no_se_presento:         'No se presentó',
-  negociacion_abandonada: 'Negociación abandonada',
-}
-
 interface RescueViewProps {
   initialLeads: LeadRow[]
-  vendedores: Awaited<ReturnType<typeof getVendedoresDelTenant>>
+  vendedores:   Awaited<ReturnType<typeof getVendedoresDelTenant>>
 }
 
 export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
-  const [leads, setLeads]             = useState<LeadRow[]>(initialLeads)
-  const [activeFilter, setActiveFilter] = useState<RescueCategory>('all')
-  const [reassignLead, setReassignLead] = useState<LeadRow | null>(null)
+  const [leads,            setLeads]            = useState<LeadRow[]>(initialLeads)
+  const [reassignLead,     setReassignLead]     = useState<LeadRow | null>(null)
   const [selectedVendedor, setSelectedVendedor] = useState('')
-  const [isPending, startTransition]  = useTransition()
+  const [isPending,        startTransition]     = useTransition()
 
-  const filtered = activeFilter === 'all'
-    ? leads
-    : leads.filter((l) => l.rescue_category === activeFilter)
-
-  function handleMarkLost(leadId: string) {
+  function handleReactivate(leadId: string) {
     startTransition(async () => {
-      const res = await markAsLost(leadId)
+      const res = await reactivateFromRescue(leadId)
       if (res.success) {
-        toast.success('Lead marcado como Perdido')
+        toast.success('Lead reactivado', { description: 'Volvió a estado Contactado.' })
         setLeads((ls) => ls.filter((l) => l.id !== leadId))
       } else {
         toast.error(res.error)
@@ -74,57 +54,41 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
     })
   }
 
-  // Build filter labels with counts
-  const filters = FILTER_LABELS.map((f) => ({
-    ...f,
-    count: f.id === 'all' ? leads.length : leads.filter((l) => l.rescue_category === f.id).length,
-  }))
-
   return (
     <div className="p-4 md:p-8 max-w-[1100px] mx-auto">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-2.5 mb-1">
-          <LifeBuoy className="size-5 text-primary" />
+          <LifeBuoy className="size-5 text-amber-600" />
           <h1 className="text-2xl font-semibold tracking-tight">Rescate de leads</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Leads abandonados hace +15 días — Campaña de reactivación
+          Leads inactivos por +15 días — campaña de reactivación.
+          Reactivá un lead para devolverlo al flujo, o reasignalo a otro vendedor.
         </p>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-1.5 mb-5 border-b border-border">
-        {filters.map((f) => (
-          <button
-            key={f.id}
-            onClick={() => setActiveFilter(f.id)}
-            className={cn(
-              'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
-              activeFilter === f.id
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {f.label} ({f.count})
-          </button>
-        ))}
+      {/* Contador */}
+      <div className="mb-5 text-sm text-muted-foreground">
+        {leads.length === 0
+          ? 'No hay leads en rescate.'
+          : `${leads.length} lead${leads.length !== 1 ? 's' : ''} para rescatar`}
       </div>
 
       {/* Lead cards */}
-      {filtered.length === 0 ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">
-          No hay leads en esta categoría. 🎉
+      {leads.length === 0 ? (
+        <div className="py-16 text-center text-sm text-muted-foreground border-2 border-dashed rounded-xl">
+          🎉 Ningún lead inactivo. Todo bajo control.
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((lead) => (
+          {leads.map((lead) => (
             <RescueCard
               key={lead.id}
               lead={lead}
               isPending={isPending}
               onReassign={() => setReassignLead(lead)}
-              onMarkLost={() => handleMarkLost(lead.id)}
+              onReactivate={() => handleReactivate(lead.id)}
             />
           ))}
         </div>
@@ -156,10 +120,7 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setReassignLead(null)}>Cancelar</Button>
-            <Button
-              onClick={handleReassign}
-              disabled={!selectedVendedor || isPending}
-            >
+            <Button onClick={handleReassign} disabled={!selectedVendedor || isPending}>
               {isPending ? <Loader2 className="size-4 animate-spin" /> : 'Reasignar'}
             </Button>
           </DialogFooter>
@@ -171,22 +132,25 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
 
 // ── Lead card ─────────────────────────────────────────────────────
 
-function RescueCard({ lead, isPending, onReassign, onMarkLost }: {
-  lead: LeadRow
-  isPending: boolean
-  onReassign: () => void
-  onMarkLost: () => void
+function RescueCard({ lead, isPending, onReassign, onReactivate }: {
+  lead:         LeadRow
+  isPending:    boolean
+  onReassign:   () => void
+  onReactivate: () => void
 }) {
-  const vendorName  = lead.vendedor_alias || lead.vendedor_nombre
-  const daysAgo     = lead.abandoned_at
+  const vendorName     = lead.vendedor_alias || lead.vendedor_nombre
+  const daysAgo        = lead.abandoned_at
     ? Math.floor((Date.now() - new Date(lead.abandoned_at).getTime()) / 86_400_000)
     : 0
   const formattedValue = formatCurrencyARS(lead.est_value, { compact: true })
   const hasValue       = formattedValue !== '—'
 
   return (
-    <div className="relative rounded-xl border border-border bg-card overflow-hidden hover:shadow-md transition-shadow pl-[4px]">
-      <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-muted-foreground/30" />
+    <div className={cn(
+      'relative rounded-xl border bg-card overflow-hidden hover:shadow-md transition-shadow pl-[4px]',
+      'border-amber-200/60',
+    )}>
+      <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-amber-500/60" />
       <div className="p-5">
         {/* Row 1 */}
         <div className="flex items-start justify-between gap-4 mb-2">
@@ -198,39 +162,29 @@ function RescueCard({ lead, isPending, onReassign, onMarkLost }: {
               </span>
             )}
           </div>
-          <span className="text-xs text-muted-foreground shrink-0 mt-0.5">
-            Hace {daysAgo} días
-          </span>
+          {daysAgo > 0 && (
+            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200/60 rounded px-2 py-0.5 shrink-0 mt-0.5">
+              Inactivo hace {daysAgo} días
+            </span>
+          )}
         </div>
 
         {/* Row 2 */}
-        <div className="text-xs text-muted-foreground mb-2.5">
-          Estado al abandono: <span className="font-medium text-foreground/70">{lead.status}</span>
+        <div className="text-xs text-muted-foreground mb-4">
           {vendorName && (
             <>
-              <span className="mx-2">·</span>
               Vendedor: <span className="font-medium text-foreground/70">{vendorName}</span>
             </>
           )}
           {hasValue && (
             <>
-              <span className="mx-2">·</span>
+              {vendorName && <span className="mx-2">·</span>}
               Valor: <span className="font-medium text-foreground/70">{formattedValue}</span>
             </>
           )}
         </div>
 
-        {/* Row 3 — category tag */}
-        {lead.rescue_category && (
-          <div className="inline-flex items-center gap-1.5 rounded-md bg-muted/60 px-2.5 py-1.5 mb-4">
-            <Info className="size-3.5 text-muted-foreground shrink-0" />
-            <span className="text-xs text-muted-foreground">
-              {RESCUE_LABELS[lead.rescue_category] ?? lead.rescue_category}
-            </span>
-          </div>
-        )}
-
-        {/* Row 4 — actions */}
+        {/* Row 3 — actions */}
         <div className="flex items-center justify-end gap-2">
           <Button
             size="sm"
@@ -244,13 +198,12 @@ function RescueCard({ lead, isPending, onReassign, onMarkLost }: {
           </Button>
           <Button
             size="sm"
-            variant="ghost"
-            className="gap-1.5 text-muted-foreground hover:text-destructive"
-            onClick={onMarkLost}
+            className="gap-1.5"
+            onClick={onReactivate}
             disabled={isPending}
           >
-            <XCircle className="size-3.5" />
-            Marcar como perdido
+            <RotateCcw className="size-3.5" />
+            Reactivar contacto
           </Button>
         </div>
       </div>

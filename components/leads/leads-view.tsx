@@ -14,6 +14,7 @@ import {
 import type { Lead } from '@/lib/db'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { getMyLeads } from '@/app/actions/leads'
+import { STATUS_ORDER } from '@/lib/leads/constants'
 
 type Vendedor = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 
@@ -22,11 +23,6 @@ const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'En ri
 
 type SortKey = 'last_contact_at' | 'status'
 type SortDir = 'asc' | 'desc'
-
-const STATUS_ORDER: Record<string, number> = {
-  'Nuevo': 0, 'Contactado': 1, 'Cotizado': 2,
-  'Test drive': 3, 'Negociación': 4, 'Cerrado': 5, 'Perdido': 6,
-}
 
 interface LeadsViewProps {
   initialLeads: Lead[]
@@ -68,7 +64,7 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
     const base = leads.filter((l) => {
       switch (filter) {
         case 'Sin contactar':  return l.status === 'Nuevo'
-        case 'En seguimiento': return ['Contactado', 'Cotizado', 'Test drive', 'Negociación'].includes(l.status)
+        case 'En seguimiento': return ['Contactado', 'Citado'].includes(l.status)
         case 'En riesgo':      return l.at_risk
         case 'Cerrados':       return l.status === 'Cerrado'
         default:               return true

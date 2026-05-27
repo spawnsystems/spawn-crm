@@ -109,3 +109,34 @@ export function buildScopeWhere(scope: TeamScope): SQL | null {
       return eq(schema.leads.id, 'no-match')
   }
 }
+
+/**
+ * Construye la condición WHERE para filtrar lead_appointments según el TeamScope.
+ *
+ * Diferencias con buildScopeWhere (leads):
+ *   - usa vendedor_id en vez de assigned_to
+ *   - vendedor NO ve citas sin asignar (no hay concepto de bandeja general acá)
+ */
+export function buildAppointmentScopeWhere(scope: TeamScope): SQL | null {
+  const { inArray, eq } = require('drizzle-orm')
+
+  switch (scope.type) {
+    case 'all':
+      return null
+
+    case 'teams':
+      return scope.equipoIds.length > 0
+        ? inArray(schema.leadAppointments.equipo_id, scope.equipoIds)
+        : eq(schema.leadAppointments.id, 'no-match')
+
+    case 'team':
+      return eq(schema.leadAppointments.equipo_id, scope.equipoId)
+
+    case 'self':
+      return eq(schema.leadAppointments.vendedor_id, scope.userId)
+
+    case 'none':
+    default:
+      return eq(schema.leadAppointments.id, 'no-match')
+  }
+}

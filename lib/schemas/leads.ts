@@ -5,7 +5,7 @@ export const leadSourceValues = [
 ] as const
 
 export const leadStatusValues = [
-  'Nuevo', 'Contactado', 'Cotizado', 'Test drive', 'Negociación', 'Cerrado', 'Perdido',
+  'Nuevo', 'Contactado', 'Citado', 'Cerrado', 'Para rescate',
 ] as const
 
 export const createLeadSchema = z.object({

@@ -15,6 +15,7 @@ import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { getAllLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues, leadStatusValues } from '@/lib/schemas/leads'
+import { STATUS_ORDER } from '@/lib/leads/constants'
 
 type LeadRow = Awaited<ReturnType<typeof getAllLeads>>[number]
 
@@ -29,11 +30,6 @@ const ALL = '__all__'
 
 type SortKey = 'last_contact_at' | 'vendedor' | 'status'
 type SortDir = 'asc' | 'desc'
-
-const STATUS_ORDER: Record<string, number> = {
-  'Nuevo': 0, 'Contactado': 1, 'Cotizado': 2,
-  'Test drive': 3, 'Negociación': 4, 'Cerrado': 5, 'Perdido': 6,
-}
 
 export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: AllLeadsViewProps) {
   const [leads,        setLeads]        = useState<LeadRow[]>(initialLeads)

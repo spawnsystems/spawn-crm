@@ -7,7 +7,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { ChevronDown } from 'lucide-react'
+import { LifeBuoy } from 'lucide-react'
 import type { Lead } from '@/lib/db'
 import { changeStatus } from '@/app/actions/leads'
 import { toast } from 'sonner'
@@ -18,12 +18,10 @@ const ALL = '__all__'
 type LeadLike = Lead & { vendedor_nombre?: string | null; vendedor_alias?: string | null }
 
 const STAGES = [
-  { id: 'Nuevo',       label: 'Nuevos',      color: 'bg-info' },
-  { id: 'Contactado',  label: 'Contactados', color: 'bg-primary' },
-  { id: 'Cotizado',    label: 'Cotizados',   color: 'bg-warning' },
-  { id: 'Test drive',  label: 'Test Drive',  color: 'bg-purple-500' },
-  { id: 'Negociación', label: 'Negociación', color: 'bg-warning' },
-  { id: 'Cerrado',     label: 'Cerrados',    color: 'bg-success' },
+  { id: 'Nuevo',      label: 'Nuevos',      color: 'bg-slate-500'   },
+  { id: 'Contactado', label: 'Contactados', color: 'bg-blue-500'    },
+  { id: 'Citado',     label: 'Citados',     color: 'bg-violet-500'  },
+  { id: 'Cerrado',    label: 'Cerrados',    color: 'bg-emerald-500' },
 ] as const
 
 interface PipelineViewProps {
@@ -32,7 +30,6 @@ interface PipelineViewProps {
 
 export function PipelineView({ initialLeads }: PipelineViewProps) {
   const [leads,       setLeads]       = useState<LeadLike[]>(initialLeads)
-  const [showLost,    setShowLost]    = useState(false)
   const [openLeadId,  setOpenLeadId]  = useState<string | null>(null)
   const [filterVend,  setFilterVend]  = useState(ALL)
 
@@ -52,8 +49,8 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
     [leads, filterVend],
   )
 
-  const activeLeads = visibleLeads.filter((l) => l.status !== 'Perdido')
-  const lostLeads   = visibleLeads.filter((l) => l.status === 'Perdido')
+  const activeLeads  = visibleLeads.filter((l) => l.status !== 'Para rescate')
+  const rescueLeads  = visibleLeads.filter((l) => l.status === 'Para rescate')
 
   async function handleDrop(leadId: string, newStatus: LeadLike['status']) {
     const prev = leads.find((l) => l.id === leadId)?.status
@@ -109,36 +106,39 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
           )
         })}
 
-        {/* Lost column */}
-        <div className="w-72 shrink-0">
-          <button
-            onClick={() => setShowLost(!showLost)}
-            className="w-full flex items-center justify-between mb-3 px-1"
-          >
-            <div className="flex items-center gap-2">
-              <span className="size-2 rounded-full bg-muted-foreground" />
-              <span className="text-sm font-semibold text-muted-foreground">Perdidos</span>
-              <span className="text-xs text-muted-foreground">{lostLeads.length}</span>
-            </div>
-            <ChevronDown className={cn('size-4 text-muted-foreground transition-transform', showLost && 'rotate-180')} />
-          </button>
-          {showLost && (
-            <div className="space-y-2">
-              {lostLeads.map((lead) => (
-                <Card
-                  key={lead.id}
-                  className="p-3 opacity-70 cursor-pointer hover:opacity-100 transition-opacity"
-                  onClick={() => setOpenLeadId(lead.id)}
-                >
-                  <div className="text-sm font-medium">{lead.nombre}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{lead.modelo ?? '—'}</div>
-                  <div className="mt-2 text-[11px] text-muted-foreground">
-                    Perdido hace {lead.days_in_stage}d
-                  </div>
-                </Card>
-              ))}
-            </div>
+        {/* Para rescate — columna apartada visualmente con borde ámbar */}
+        <div
+          className={cn(
+            'w-64 shrink-0 rounded-xl border-l-2 border-amber-400/60 pl-3 bg-amber-50/30',
           )}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault()
+            const leadId = e.dataTransfer.getData('leadId')
+            if (leadId) handleDrop(leadId, 'Para rescate' as LeadLike['status'])
+          }}
+        >
+          <div className="flex items-center justify-between mb-3 px-1 pt-1">
+            <div className="flex items-center gap-2">
+              <LifeBuoy className="size-3.5 text-amber-600" />
+              <span className="text-sm font-semibold text-amber-700">Para rescate</span>
+              <span className="text-xs text-amber-700/70">{rescueLeads.length}</span>
+            </div>
+          </div>
+          <div className="space-y-2 min-h-[80px]">
+            {rescueLeads.map((lead) => (
+              <KanbanCard
+                key={lead.id}
+                lead={lead}
+                onClick={() => setOpenLeadId(lead.id)}
+              />
+            ))}
+            {rescueLeads.length === 0 && (
+              <p className="text-xs text-amber-700/50 italic px-1 py-3">
+                Sin leads inactivos.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
