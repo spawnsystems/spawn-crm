@@ -6,12 +6,29 @@ import { eq, and, gte, lte, ne, sql } from 'drizzle-orm'
 import { requireTenant, appendTimeline } from '@/lib/leads/server-helpers'
 import { getCurrentUserTeamScope, buildAppointmentScopeWhere } from '@/lib/tenant/teams'
 import { logAudit } from '@/lib/audit/log'
+import { statusChangeLabel } from '@/lib/leads/constants'
 import {
   createAppointmentSchema,
   updateAppointmentSchema,
   rescheduleAppointmentSchema,
+  APPOINTMENT_TIPO_LABEL,
 } from '@/lib/schemas/appointments'
 import type { ActionResult } from './auth'
+
+const BA_TZ = 'America/Argentina/Buenos_Aires'
+
+/** Formatea un Date en horario Buenos Aires como "lunes 15 de junio a las 15:30 hs". */
+function fmtApptDateBA(date: Date): string {
+  return date.toLocaleString('es-AR', {
+    timeZone:  BA_TZ,
+    weekday:   'long',
+    day:       'numeric',
+    month:     'long',
+    hour:      '2-digit',
+    minute:    '2-digit',
+    hour12:    false,
+  }).replace(',', '')
+}
 
 // ── createAppointment ────────────────────────────────────────
 // Crea una nueva cita para un lead. Side-effects:
@@ -122,21 +139,21 @@ export async function createAppointment(
       await appendTimeline(
         tenantId, data.lead_id, user.id,
         'reactivated_from_rescue',
-        'Reactivado del rescate al agendar cita',
+        'Reactivado — volvió al seguimiento activo',
       )
     }
     await appendTimeline(
       tenantId, data.lead_id, user.id,
       'status_changed',
-      `Estado: ${previousStatus} → Citado`,
+      statusChangeLabel(previousStatus, 'Citado'),
     )
   }
 
   await appendTimeline(
     tenantId, data.lead_id, user.id,
     'appointment_scheduled',
-    `Cita programada — ${data.scheduled_at.toLocaleString('es-AR')}`,
-    data.notas?.trim(),
+    `${APPOINTMENT_TIPO_LABEL[data.tipo]} pautado`,
+    fmtApptDateBA(data.scheduled_at),
   )
 
   void logAudit({
@@ -294,7 +311,7 @@ export async function markAppointmentDone(
   await appendTimeline(
     tenantId, appt[0].lead_id, user.id,
     'appointment_done',
-    'Cita realizada',
+    `${APPOINTMENT_TIPO_LABEL[appt[0].tipo]} realizado`,
     outcomeNotes?.trim(),
   )
 
@@ -404,7 +421,8 @@ export async function rescheduleAppointment(
   await appendTimeline(
     tenantId, o.lead_id, user.id,
     'appointment_rescheduled',
-    `Cita reagendada para ${data.newScheduledAt.toLocaleString('es-AR')}`,
+    'Cita reagendada',
+    fmtApptDateBA(data.newScheduledAt),
   )
 
   void logAudit({

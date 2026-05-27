@@ -26,7 +26,8 @@ import {
 import {
   Phone, Mail, Car, CheckCircle2, Circle, CalendarIcon, FileText,
   MessageCircle, Send, ChevronDown, Loader2, Pencil, X, Check,
-  UserCircle, Plus, RotateCcw,
+  UserCircle, Plus, RotateCcw, UserPlus, UserCheck, ArrowRight,
+  CalendarCheck, Trophy, LifeBuoy, AlertTriangle, CalendarX,
 } from 'lucide-react'
 import {
   changeStatus, addNote, toggleTask, getLeadDetail,
@@ -45,6 +46,27 @@ type Vendedor     = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 // getNextAppointmentForLead returns rows[0] which may be undefined at runtime
 // even though TS infers the non-nullable element type; we always allow null.
 type Appointment  = Awaited<ReturnType<typeof getNextAppointmentForLead>> | null
+
+// ── Timeline event styles ─────────────────────────────────────────
+
+type EventStyle = { bg: string; Icon: React.FC<{ className?: string }> }
+
+const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
+  lead_created:            { bg: 'bg-slate-500',   Icon: UserPlus      },
+  contacted:               { bg: 'bg-blue-500',    Icon: Phone         },
+  status_changed:          { bg: 'bg-primary',     Icon: ArrowRight    },
+  reassigned:              { bg: 'bg-indigo-500',  Icon: UserCheck     },
+  note_added:              { bg: 'bg-slate-400',   Icon: FileText      },
+  task_done:               { bg: 'bg-teal-500',    Icon: CheckCircle2  },
+  appointment_scheduled:   { bg: 'bg-violet-500',  Icon: CalendarCheck },
+  appointment_done:        { bg: 'bg-emerald-500', Icon: CheckCircle2  },
+  appointment_cancelled:   { bg: 'bg-slate-400',   Icon: CalendarX     },
+  appointment_no_show:     { bg: 'bg-orange-400',  Icon: AlertTriangle },
+  appointment_rescheduled: { bg: 'bg-amber-400',   Icon: RotateCcw     },
+  closed_won:              { bg: 'bg-emerald-600', Icon: Trophy        },
+  reactivated_from_rescue: { bg: 'bg-amber-500',   Icon: LifeBuoy      },
+  _default:                { bg: 'bg-muted-foreground', Icon: ArrowRight },
+}
 
 // ── Main component ────────────────────────────────────────────────
 
@@ -591,27 +613,29 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                 {timeline.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Sin actividad.</p>
                 ) : (
-                  <div className="relative pl-5">
-                    <div className="absolute left-1.5 top-1 bottom-1 w-px bg-border" />
-                    {timeline.map((e) => (
-                      <div key={e.id} className="relative pb-4">
-                        <div className={cn(
-                          'absolute -left-[14px] top-1 size-2.5 rounded-full ring-4 ring-background',
-                          e.event_type === 'reactivated_from_rescue'
-                            ? 'bg-amber-500'
-                            : e.event_type === 'closed_won'
-                            ? 'bg-emerald-500'
-                            : 'bg-primary',
-                        )} />
-                        <div className="text-[11px] text-muted-foreground">
-                          {format(toBADate(e.created_at), 'dd/MM HH:mm')}
+                  <div className="relative pl-6">
+                    <div className="absolute left-2 top-1 bottom-1 w-px bg-border" />
+                    {timeline.map((e) => {
+                      const { bg, Icon } = TIMELINE_EVENT_STYLE[e.event_type] ?? TIMELINE_EVENT_STYLE._default
+                      return (
+                        <div key={e.id} className="relative pb-4">
+                          <div className={cn(
+                            'absolute -left-[15px] top-0.5 size-[22px] rounded-full',
+                            'ring-2 ring-background flex items-center justify-center text-white shrink-0',
+                            bg,
+                          )}>
+                            <Icon className="size-2.5" />
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {format(toBADate(e.created_at), 'dd/MM HH:mm')}
+                          </div>
+                          <div className="text-sm font-medium mt-0.5">{e.title}</div>
+                          {e.description && (
+                            <div className="text-xs text-muted-foreground mt-0.5">{e.description}</div>
+                          )}
                         </div>
-                        <div className="text-sm font-medium mt-0.5">{e.title}</div>
-                        {e.description && (
-                          <div className="text-xs text-muted-foreground">{e.description}</div>
-                        )}
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>

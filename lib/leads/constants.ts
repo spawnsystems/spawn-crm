@@ -35,3 +35,16 @@ export const PIPELINE_COLUMNS: readonly LeadStatus[] = [
   'Cerrado',
   'Para rescate',
 ] as const
+
+/**
+ * Texto amigable para un cambio de etapa, sin usar la palabra "estado".
+ * Usado en el timeline del lead sheet.
+ */
+export function statusChangeLabel(from: string, to: string): string {
+  if (to === 'Para rescate') return 'Enviado a rescate por inactividad'
+  if (to === 'Cerrado')      return '¡Venta cerrada!'
+  if (to === 'Citado')       return 'Cita agendada'
+  if (to === 'Contactado')   return 'Marcado como contactado'
+  if (to === 'Nuevo')        return 'Reiniciado a etapa inicial'
+  return `Etapa actualizada: ${from} → ${to}`
+}

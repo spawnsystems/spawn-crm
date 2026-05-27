@@ -6,7 +6,20 @@ import { eq, and, desc, inArray } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema } from '@/lib/schemas/leads'
 import { logAudit } from '@/lib/audit/log'
 import { requireTenant, appendTimeline } from '@/lib/leads/server-helpers'
+import { statusChangeLabel } from '@/lib/leads/constants'
 import type { ActionResult } from './auth'
+
+// ── Helpers ───────────────────────────────────────────────────────
+
+/** Busca el nombre visible de un usuario por su ID. */
+async function getVendedorName(userId: string): Promise<string> {
+  const row = await dbAdmin
+    .select({ nombre: schema.usuarios.nombre, alias: schema.usuarios.alias })
+    .from(schema.usuarios)
+    .where(eq(schema.usuarios.id, userId))
+    .limit(1)
+  return row[0]?.alias || row[0]?.nombre || 'vendedor'
+}
 
 // requireTenant + appendTimeline viven en lib/leads/server-helpers.ts
 // para poder ser importados desde otros archivos de actions sin que
@@ -61,8 +74,9 @@ export async function createLead(
     updated_by:  user.id,
   }).returning({ id: schema.leads.id })
 
-  await appendTimeline(tenantId, row.id, user.id, 'lead_created', 'Lead creado',
-    data.assigned_to ? `Asignado al crear` : 'Sin asignar — Bandeja General',
+  const assignedName = data.assigned_to ? await getVendedorName(data.assigned_to) : null
+  await appendTimeline(tenantId, row.id, user.id, 'lead_created', 'Lead ingresado al sistema',
+    assignedName ? `Asignado a ${assignedName}` : 'Sin asignar — en Bandeja General',
   )
 
   void logAudit({
@@ -151,7 +165,7 @@ export async function changeStatus(
   await appendTimeline(
     tenantId, leadId, user.id,
     'status_changed',
-    `Estado: ${current[0].status} → ${newStatus}`,
+    statusChangeLabel(current[0].status, newStatus),
   )
 
   void logAudit({
@@ -202,10 +216,11 @@ export async function assignLead(
     .set({ assigned_to: vendedorId, equipo_id: equipoId, updated_by: user.id })
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
 
+  const vendedorName = vendedorId ? await getVendedorName(vendedorId) : null
   await appendTimeline(
     tenantId, leadId, user.id,
     'reassigned',
-    vendedorId ? 'Lead asignado' : 'Lead enviado a Bandeja General',
+    vendedorName ? `Asignado a ${vendedorName}` : 'Enviado a Bandeja General',
   )
 
   void logAudit({
@@ -235,7 +250,7 @@ export async function markAsClosed(leadId: string): Promise<ActionResult<void>> 
     .set({ status: 'Cerrado', abandoned_at: null, updated_by: user.id })
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
 
-  await appendTimeline(tenantId, leadId, user.id, 'closed_won', 'Lead cerrado — venta confirmada')
+  await appendTimeline(tenantId, leadId, user.id, 'closed_won', '¡Venta cerrada! Trato confirmado')
 
   void logAudit({
     tenantId,
@@ -300,7 +315,7 @@ export async function reactivateFromRescue(
   await appendTimeline(
     tenantId, leadId, user.id,
     'reactivated_from_rescue',
-    'Reactivado del rescate',
+    'Reactivado — volvió al seguimiento activo',
     nota?.trim(),
   )
 
@@ -351,6 +366,7 @@ export async function markContacted(
     })
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
 
+  const contactedTitle = advanced ? 'Primer contacto registrado' : 'Contacto registrado'
   if (nota?.trim()) {
     await dbAdmin.insert(schema.leadNotes).values({
       tenant_id: tenantId,
@@ -358,9 +374,9 @@ export async function markContacted(
       author_id: user.id,
       texto:     nota.trim(),
     })
-    await appendTimeline(tenantId, leadId, user.id, 'contacted', 'Contactado', nota.trim())
+    await appendTimeline(tenantId, leadId, user.id, 'contacted', contactedTitle, nota.trim())
   } else {
-    await appendTimeline(tenantId, leadId, user.id, 'contacted', 'Contactado')
+    await appendTimeline(tenantId, leadId, user.id, 'contacted', contactedTitle)
   }
 
   void logAudit({
