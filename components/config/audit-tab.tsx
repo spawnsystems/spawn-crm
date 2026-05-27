@@ -20,49 +20,60 @@ type Miembro   = Awaited<ReturnType<typeof getMiembrosDelTenant>>[number]
 // ── Etiquetas legibles ────────────────────────────────────────
 
 const ACTION_LABEL: Record<string, string> = {
-  'lead.create':        'Creó un lead',
-  'lead.assign':        'Asignó lead',
-  'lead.status_change': 'Cambió estado',
-  'lead.mark_lost':     'Marcó como perdido',
-  'lead.contacted':     'Registró contacto',
-  'lead.rescue':        'Rescató lead',
-  'lead.note_add':      'Agregó nota',
-  'lead.task_add':      'Agregó tarea',
-  'user.invite':        'Invitó usuario',
-  'user.deactivate':    'Desactivó usuario',
-  'tenant.update':      'Actualizó concesionaria',
-  'equipo.create':      'Creó equipo',
-  'equipo.update':      'Actualizó equipo',
-  'modelo.create':      'Creó modelo',
-  'modelo.update':      'Actualizó modelo',
-  'modelo.delete':      'Eliminó modelo',
-  'source.create':      'Creó fuente',
-  'source.delete':      'Eliminó fuente',
-  'meta.set':           'Estableció meta',
+  // Lead
+  'lead.create':                   'Ingresó un lead',
+  'lead.assign':                   'Asignó lead',
+  'lead.status_change':            'Cambió etapa',
+  'lead.contacted':                'Registró contacto',
+  'lead.closed_won':               'Cerró venta',
+  'lead.reactivated_from_rescue':  'Reactivó lead',
+  'lead.note_add':                 'Agregó nota',
+  'lead.task_add':                 'Agregó tarea',
+  // Citas
+  'appointment.create':            'Pautó cita',
+  'appointment.cancel':            'Canceló cita',
+  'appointment.done':              'Marcó cita realizada',
+  'appointment.no_show':           'Registró no-show',
+  'appointment.reschedule':        'Reagendó cita',
+  // Usuarios
+  'user.invite':                   'Invitó usuario',
+  'user.deactivate':               'Desactivó usuario',
+  // Configuración
+  'tenant.update':                 'Actualizó concesionaria',
+  'equipo.create':                 'Creó equipo',
+  'equipo.update':                 'Actualizó equipo',
+  'modelo.create':                 'Creó modelo',
+  'modelo.update':                 'Actualizó modelo',
+  'modelo.delete':                 'Eliminó modelo',
+  'source.create':                 'Creó fuente',
+  'source.delete':                 'Eliminó fuente',
+  'meta.set':                      'Estableció meta',
 }
 
 const ENTITY_OPTIONS = [
-  { value: 'lead',   label: 'Leads' },
-  { value: 'user',   label: 'Usuarios' },
-  { value: 'tenant', label: 'Concesionaria' },
-  { value: 'equipo', label: 'Equipos' },
-  { value: 'modelo', label: 'Modelos' },
-  { value: 'source', label: 'Fuentes' },
-  { value: 'meta',   label: 'Metas' },
+  { value: 'lead',        label: 'Leads' },
+  { value: 'appointment', label: 'Citas' },
+  { value: 'user',        label: 'Usuarios' },
+  { value: 'tenant',      label: 'Concesionaria' },
+  { value: 'equipo',      label: 'Equipos' },
+  { value: 'modelo',      label: 'Modelos' },
+  { value: 'source',      label: 'Fuentes' },
+  { value: 'meta',        label: 'Metas' },
 ]
 
 const ENTITY_COLOR: Record<string, string> = {
-  lead:   'bg-primary/10 text-primary',
-  user:   'bg-violet-500/10 text-violet-600',
-  tenant: 'bg-orange-500/10 text-orange-600',
-  equipo: 'bg-teal-500/10 text-teal-600',
-  modelo: 'bg-blue-500/10 text-blue-600',
-  source: 'bg-pink-500/10 text-pink-600',
-  meta:   'bg-yellow-500/10 text-yellow-700',
+  lead:        'bg-primary/10 text-primary',
+  appointment: 'bg-violet-500/10 text-violet-600',
+  user:        'bg-indigo-500/10 text-indigo-600',
+  tenant:      'bg-orange-500/10 text-orange-600',
+  equipo:      'bg-teal-500/10 text-teal-600',
+  modelo:      'bg-blue-500/10 text-blue-600',
+  source:      'bg-pink-500/10 text-pink-600',
+  meta:        'bg-yellow-500/10 text-yellow-700',
 }
 
 const ALL       = '__all__'
-const PAGE_SIZE = 50
+const PAGE_SIZE = 25
 
 // ── Component ─────────────────────────────────────────────────
 
@@ -280,7 +291,21 @@ function buildDetail(action: string, meta: Record<string, unknown> | null): stri
     return `${meta.from ?? '?'} → ${meta.to ?? '?'}`
   }
   if (action === 'lead.assign') {
-    return `Asignado a ${meta.vendedor ?? '?'}`
+    // vendedor_nombre agregado al meta desde la acción; fallback a Bandeja General
+    return meta.vendedor_nombre
+      ? `Asignado a ${meta.vendedor_nombre}`
+      : 'Enviado a Bandeja General'
+  }
+  if (action === 'lead.create') {
+    const asig = meta.vendedor_nombre ? ` → ${meta.vendedor_nombre}` : ''
+    return `${meta.nombre ?? '?'}${asig}`
+  }
+  if (action === 'appointment.create') {
+    const tipo = meta.tipo ? String(meta.tipo).replace('_', ' ') : 'cita'
+    return tipo.charAt(0).toUpperCase() + tipo.slice(1)
+  }
+  if (action === 'appointment.reschedule') {
+    return '—'
   }
   if (action.startsWith('lead.')) {
     return String(meta.nombre ?? meta.lead ?? '—')

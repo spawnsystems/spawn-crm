@@ -17,7 +17,7 @@ import type { getVendedoresDelTenant } from '@/app/actions/users'
 
 type LeadRow = Awaited<ReturnType<typeof getAbandonedLeads>>[number]
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 10
 
 interface RescueViewProps {
   initialLeads: LeadRow[]

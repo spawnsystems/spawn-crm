@@ -229,7 +229,7 @@ export async function assignLead(
     action:         'lead.assign',
     entity:         'lead',
     entityId:       leadId,
-    meta:           { vendedor_id: vendedorId },
+    meta:           { vendedor_id: vendedorId, vendedor_nombre: vendedorName },
     visibleToDueno: true,
   })
 

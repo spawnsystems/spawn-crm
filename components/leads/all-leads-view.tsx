@@ -28,7 +28,7 @@ interface AllLeadsViewProps {
 }
 
 const ALL       = '__all__'
-const PAGE_SIZE = 50
+const PAGE_SIZE = 20
 
 type SortKey = 'last_contact_at' | 'vendedor' | 'status'
 type SortDir = 'asc' | 'desc'

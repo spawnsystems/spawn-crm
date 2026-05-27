@@ -25,7 +25,7 @@ const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'En ri
 type SortKey = 'last_contact_at' | 'status'
 type SortDir = 'asc' | 'desc'
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 20
 
 interface LeadsViewProps {
   initialLeads: Lead[]
