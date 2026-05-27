@@ -20,8 +20,13 @@ type Vendedor = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 type FilterTab = 'Todos' | 'Sin contactar' | 'En seguimiento' | 'En riesgo' | 'Cerrados'
 const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'En riesgo', 'Cerrados']
 
-type SortKey = 'nombre' | 'last_contact_at'
+type SortKey = 'last_contact_at' | 'status'
 type SortDir = 'asc' | 'desc'
+
+const STATUS_ORDER: Record<string, number> = {
+  'Nuevo': 0, 'Contactado': 1, 'Cotizado': 2,
+  'Test drive': 3, 'Negociación': 4, 'Cerrado': 5, 'Perdido': 6,
+}
 
 interface LeadsViewProps {
   initialLeads: Lead[]
@@ -71,8 +76,8 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
     })
 
     return base.sort((a, b) => {
-      if (sortKey === 'nombre') {
-        const cmp = a.nombre.localeCompare(b.nombre, 'es')
+      if (sortKey === 'status') {
+        const cmp = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
         return sortDir === 'asc' ? cmp : -cmp
       }
       // last_contact_at: null (sin contactar) primero en ASC
@@ -155,7 +160,7 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
         <div className="flex items-center gap-0.5 pb-px">
           <span className="text-xs text-muted-foreground mr-1.5">Ordenar:</span>
           <SortButton label="Último contacto" col="last_contact_at" sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
-          <SortButton label="Lead"            col="nombre"          sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+          <SortButton label="Estado"          col="status"          sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
         </div>
       </div>
 

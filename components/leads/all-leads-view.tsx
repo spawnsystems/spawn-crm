@@ -27,8 +27,13 @@ interface AllLeadsViewProps {
 
 const ALL = '__all__'
 
-type SortKey = 'nombre' | 'last_contact_at'
+type SortKey = 'last_contact_at' | 'vendedor' | 'status'
 type SortDir = 'asc' | 'desc'
+
+const STATUS_ORDER: Record<string, number> = {
+  'Nuevo': 0, 'Contactado': 1, 'Cotizado': 2,
+  'Test drive': 3, 'Negociación': 4, 'Cerrado': 5, 'Perdido': 6,
+}
 
 export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: AllLeadsViewProps) {
   const [leads,        setLeads]        = useState<LeadRow[]>(initialLeads)
@@ -89,8 +94,18 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
     })
 
     return result.sort((a, b) => {
-      if (sortKey === 'nombre') {
-        const cmp = a.nombre.localeCompare(b.nombre, 'es')
+      if (sortKey === 'status') {
+        const cmp = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
+        return sortDir === 'asc' ? cmp : -cmp
+      }
+      if (sortKey === 'vendedor') {
+        const aName = (a.vendedor_alias || a.vendedor_nombre || '').toLowerCase()
+        const bName = (b.vendedor_alias || b.vendedor_nombre || '').toLowerCase()
+        // Sin asignar siempre al final en ASC
+        if (!aName && !bName) return 0
+        if (!aName) return sortDir === 'asc' ? 1 : -1
+        if (!bName) return sortDir === 'asc' ? -1 : 1
+        const cmp = aName.localeCompare(bName, 'es')
         return sortDir === 'asc' ? cmp : -cmp
       }
       // last_contact_at: null (sin contactar) siempre primero en ASC
@@ -194,11 +209,11 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
           <table className="w-full min-w-[700px] text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left text-xs text-muted-foreground border-b border-border">
-                <SortableTh label="Lead"            col="nombre"          sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+                <th className="px-4 py-3 font-medium">Lead</th>
                 <th className="px-4 py-3 font-medium">Modelo</th>
                 <th className="px-4 py-3 font-medium">Origen</th>
-                <th className="px-4 py-3 font-medium">Vendedor</th>
-                <th className="px-4 py-3 font-medium">Estado</th>
+                <SortableTh label="Vendedor"        col="vendedor"        sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+                <SortableTh label="Estado"          col="status"          sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
                 <SortableTh label="Último contacto" col="last_contact_at" sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
                 <th className="px-4 py-3" />
               </tr>
