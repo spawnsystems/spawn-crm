@@ -34,7 +34,7 @@ export async function createLead(
   const { user, tenantId, q } = await requireTenant()
 
   // Solo supervisor+ puede crear leads
-  if (!['platform_admin','dueno','gerente','supervisor'].includes(user.rol)) {
+  if (!['dueno','gerente','supervisor'].includes(user.rol)) {
     return { success: false, error: 'Sin permisos para crear leads' }
   }
 
@@ -193,7 +193,7 @@ export async function assignLead(
 ): Promise<ActionResult<void>> {
   const { user, tenantId, q, forTenant } = await requireTenant()
 
-  if (!['platform_admin','dueno','gerente','supervisor'].includes(user.rol)) {
+  if (!['dueno','gerente','supervisor'].includes(user.rol)) {
     return { success: false, error: 'Sin permisos para asignar leads' }
   }
 

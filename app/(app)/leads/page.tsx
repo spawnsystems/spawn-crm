@@ -14,7 +14,7 @@ export default async function LeadsPage() {
     getActiveModelNames(),
   ])
 
-  const canCreate = ['platform_admin', 'dueno', 'gerente', 'supervisor'].includes(user.rol)
+  const canCreate = ['dueno', 'gerente', 'supervisor'].includes(user.rol)
 
   return (
     <LeadsView

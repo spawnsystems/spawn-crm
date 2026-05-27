@@ -15,7 +15,7 @@ export default async function EquipoPage() {
   ])
   if (!tenantId) redirect('/login')
 
-  const canManage = ['platform_admin', 'dueno', 'gerente'].includes(user.rol)
+  const canManage = ['dueno', 'gerente'].includes(user.rol)
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
 
   const [rawRanking, equipos, miembros] = await Promise.all([

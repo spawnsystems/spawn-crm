@@ -50,7 +50,7 @@ export async function inviteUserToTenant(input: {
 }): Promise<ActionResult<{ userId: string }>> {
   const { user, tenantId } = await requireTenant()
 
-  if (!['platform_admin', 'dueno'].includes(user.rol)) {
+  if (!['dueno'].includes(user.rol)) {
     return { success: false, error: 'Solo el dueño puede invitar usuarios' }
   }
 
@@ -158,7 +158,7 @@ export async function inviteUserToTenant(input: {
 export async function deactivateMember(memberId: string): Promise<ActionResult<void>> {
   const { user, tenantId } = await requireTenant()
 
-  if (!['platform_admin', 'dueno'].includes(user.rol)) {
+  if (!['dueno'].includes(user.rol)) {
     return { success: false, error: 'Sin permisos' }
   }
   if (memberId === user.id) {
@@ -192,7 +192,7 @@ export async function deactivateMember(memberId: string): Promise<ActionResult<v
 
 export async function reactivateMember(memberId: string): Promise<ActionResult<void>> {
   const { user, tenantId } = await requireTenant()
-  if (!['platform_admin', 'dueno'].includes(user.rol)) {
+  if (!['dueno'].includes(user.rol)) {
     return { success: false, error: 'Sin permisos' }
   }
 

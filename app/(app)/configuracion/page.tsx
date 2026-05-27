@@ -35,7 +35,7 @@ export default async function ConfiguracionPage({
       getAuditLogs(),
     ])
 
-  const canManage = ['platform_admin', 'dueno'].includes(user.rol)
+  const canManage = ['dueno'].includes(user.rol)
 
   return (
     <ConfiguracionView

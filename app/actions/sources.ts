@@ -14,7 +14,7 @@ import type { ActionResult } from './auth'
 async function requireGerente() {
   const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
   if (!user || !tenantId) return { error: 'No autenticado' as const, user: null, tenantId: null }
-  if (!['platform_admin', 'dueno', 'gerente'].includes(user.rol)) {
+  if (!['dueno', 'gerente'].includes(user.rol)) {
     return { error: 'Sin permisos para gestionar fuentes' as const, user: null, tenantId: null }
   }
   return { error: null, user, tenantId }

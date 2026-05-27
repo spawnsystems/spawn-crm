@@ -14,7 +14,7 @@ import type { ActionResult } from './auth'
 async function requireDueno() {
   const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
   if (!user || !tenantId) return { error: 'No autenticado' as const, user: null, tenantId: null }
-  if (!['platform_admin', 'dueno'].includes(user.rol)) {
+  if (!['dueno'].includes(user.rol)) {
     return { error: 'Solo el dueño puede gestionar metas' as const, user: null, tenantId: null }
   }
   return { error: null, user, tenantId }
