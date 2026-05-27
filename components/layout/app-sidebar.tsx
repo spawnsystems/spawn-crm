@@ -17,6 +17,7 @@ import {
   LogOut,
   ChevronRight,
   Menu,
+  CalendarDays,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -60,6 +61,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/leads',
     label: 'Mis Leads',
     icon: <Users className="size-4" />,
+    roles: ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
+  },
+  {
+    href: '/citas',
+    label: 'Citas',
+    icon: <CalendarDays className="size-4" />,
     roles: ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
   },
   {
