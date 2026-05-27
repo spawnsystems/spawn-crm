@@ -113,6 +113,22 @@ export function PlatformView({ user, tenants: initialTenants }: PlatformViewProp
       </div>
 
       <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
+        {/* Nav tabs */}
+        <div className="flex gap-0 border-b -mt-2">
+          <Link
+            href="/platform"
+            className="px-4 py-2.5 text-sm font-medium text-foreground border-b-2 border-primary -mb-px"
+          >
+            Concesionarias
+          </Link>
+          <Link
+            href="/platform/users"
+            className="px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Usuarios
+          </Link>
+        </div>
+
         {/* Stats summary */}
         <div className="grid grid-cols-2 gap-4">
           <StatCard label="Tenants activos" value={activeCount} icon={<Building2 className="size-4" />} />

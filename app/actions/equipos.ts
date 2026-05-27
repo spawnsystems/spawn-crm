@@ -77,8 +77,8 @@ export async function updateEquipo(
     activo?:       boolean
   },
 ): Promise<ActionResult<void>> {
-  const { error, tenantId } = await requireDueno()
-  if (error || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
+  const { error, user, tenantId } = await requireDueno()
+  if (error || !user || !tenantId) return { success: false, error: error ?? 'Sin permisos' }
 
   await dbAdmin
     .update(schema.equipos)

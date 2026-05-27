@@ -11,6 +11,27 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import type { ActionResult } from './auth'
 import type { AppRole } from '@/lib/auth/get-current-user'
 
+// ── Tipos públicos ────────────────────────────────────────────
+
+export type PlatformUserStatus = 'activo' | 'pendiente' | 'expirado' | 'inactivo' | 'baneado'
+
+export interface UserRow {
+  id:                string
+  email:             string
+  nombre:            string
+  rol:               string
+  is_platform_admin: boolean
+  activo:            boolean
+  isBanned:          boolean
+  status:            PlatformUserStatus
+  tenant_id:         string | null
+  tenant_nombre:     string | null
+  concesionaria:     string | null
+  member_rol:        string | null
+  invitation_status: string | null
+  invited_at:        Date | null
+}
+
 // ── Preview mode ──────────────────────────────────────────────
 
 export async function enterPreviewMode(tenantId: string): Promise<void> {
@@ -383,5 +404,246 @@ export async function deactivateMemberAdmin(
     ))
 
   revalidatePath(`/platform/tenants/${tenantId}`)
+  return { success: true, data: undefined }
+}
+
+// ── fetchAllUsers ─────────────────────────────────────────────
+// Lista global de usuarios para el panel de platform admin.
+
+export async function fetchAllUsers(): Promise<UserRow[]> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return []
+
+  const INVITE_EXPIRY_HOURS = 24
+
+  const authListWithTimeout = Promise.race([
+    createAdminClient().auth.admin.listUsers({ perPage: 1000 }),
+    new Promise<{ data: { users: [] }; error: Error }>((resolve) =>
+      setTimeout(() => resolve({ data: { users: [] }, error: new Error('timeout') }), 3000),
+    ),
+  ])
+
+  const [rows, authListResult] = await Promise.all([
+    dbAdmin
+      .select({
+        id:                schema.usuarios.id,
+        email:             schema.usuarios.email,
+        nombre:            schema.usuarios.nombre,
+        rol:               schema.usuarios.rol,
+        is_platform_admin: schema.usuarios.is_platform_admin,
+        activo:            schema.usuarios.activo,
+        tenant_id:         schema.tenantMembers.tenant_id,
+        tenant_nombre:     schema.tenants.nombre,
+        concesionaria:     schema.tenants.concesionaria,
+        member_rol:        schema.tenantMembers.rol,
+        invitation_status: schema.tenantMembers.invitation_status,
+        invited_at:        schema.tenantMembers.invited_at,
+      })
+      .from(schema.usuarios)
+      .leftJoin(schema.tenantMembers, eq(schema.tenantMembers.user_id, schema.usuarios.id))
+      .leftJoin(schema.tenants, eq(schema.tenants.id, schema.tenantMembers.tenant_id))
+      .orderBy(schema.usuarios.nombre),
+    authListWithTimeout,
+  ])
+
+  const bannedMap = new Map<string, boolean>()
+  if (!authListResult.error && authListResult.data?.users) {
+    for (const u of authListResult.data.users) {
+      const isBanned = !!u.banned_until && new Date(u.banned_until) > new Date()
+      bannedMap.set(u.id, isBanned)
+    }
+  } else if (authListResult.error) {
+    console.warn('[fetchAllUsers] auth.listUsers slow/failed:', authListResult.error.message)
+  }
+
+  function computeStatus(r: {
+    activo:            boolean
+    invitation_status: string | null
+    invited_at:        Date | null
+    isBanned:          boolean
+  }): PlatformUserStatus {
+    if (r.isBanned) return 'baneado'
+    if (r.invitation_status === 'pending') {
+      if (!r.invited_at) return 'pendiente'
+      const expiresAt = new Date(r.invited_at)
+      expiresAt.setHours(expiresAt.getHours() + INVITE_EXPIRY_HOURS)
+      return expiresAt < new Date() ? 'expirado' : 'pendiente'
+    }
+    if (!r.activo) return 'inactivo'
+    return 'activo'
+  }
+
+  return rows.map((r) => {
+    const isBanned = bannedMap.get(r.id) ?? false
+    return {
+      id:                r.id,
+      email:             r.email,
+      nombre:            r.nombre,
+      rol:               r.rol,
+      is_platform_admin: r.is_platform_admin,
+      activo:            r.activo,
+      isBanned,
+      status: computeStatus({
+        activo:            r.activo,
+        invitation_status: r.invitation_status ?? null,
+        invited_at:        r.invited_at        ?? null,
+        isBanned,
+      }),
+      tenant_id:         r.tenant_id         ?? null,
+      tenant_nombre:     r.tenant_nombre      ?? null,
+      concesionaria:     r.concesionaria      ?? null,
+      member_rol:        r.member_rol         ?? null,
+      invitation_status: r.invitation_status  ?? null,
+      invited_at:        r.invited_at         ?? null,
+    }
+  })
+}
+
+// ── fetchTenantOptions ────────────────────────────────────────
+// Para el selector de concesionaria en el dialog de invitar usuario.
+
+export async function fetchTenantOptions(): Promise<{ id: string; nombre: string; concesionaria: string }[]> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return []
+
+  return dbAdmin
+    .select({
+      id:            schema.tenants.id,
+      nombre:        schema.tenants.nombre,
+      concesionaria: schema.tenants.concesionaria,
+    })
+    .from(schema.tenants)
+    .where(eq(schema.tenants.activo, true))
+    .orderBy(schema.tenants.nombre)
+}
+
+// ── changeUserRole ────────────────────────────────────────────
+
+export async function changeUserRole(
+  userId:   string,
+  tenantId: string,
+  newRol:   AppRole,
+): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  const [target] = await dbAdmin
+    .select({ is_platform_admin: schema.usuarios.is_platform_admin })
+    .from(schema.usuarios)
+    .where(eq(schema.usuarios.id, userId))
+    .limit(1)
+
+  if (target?.is_platform_admin) {
+    return { success: false, error: 'No se puede cambiar el rol de un Platform Admin.' }
+  }
+
+  await Promise.all([
+    dbAdmin
+      .update(schema.usuarios)
+      .set({ rol: newRol })
+      .where(eq(schema.usuarios.id, userId)),
+    dbAdmin
+      .update(schema.tenantMembers)
+      .set({ rol: newRol })
+      .where(and(
+        eq(schema.tenantMembers.user_id, userId),
+        eq(schema.tenantMembers.tenant_id, tenantId),
+      )),
+  ])
+
+  revalidatePath('/platform/users')
+  return { success: true, data: undefined }
+}
+
+// ── deactivateUserAdmin ───────────────────────────────────────
+
+export async function deactivateUserAdmin(
+  userId:   string,
+  tenantId: string,
+): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  const adminClient = createAdminClient()
+  const { error: authError } = await adminClient.auth.admin.updateUserById(userId, {
+    ban_duration: '87600h',
+  })
+  if (authError) {
+    console.error('[deactivateUserAdmin]', authError)
+    return { success: false, error: 'No se pudo desactivar el acceso.' }
+  }
+
+  await Promise.all([
+    dbAdmin
+      .update(schema.usuarios)
+      .set({ activo: false })
+      .where(eq(schema.usuarios.id, userId)),
+    dbAdmin
+      .update(schema.tenantMembers)
+      .set({ activo: false })
+      .where(and(
+        eq(schema.tenantMembers.user_id, userId),
+        eq(schema.tenantMembers.tenant_id, tenantId),
+      )),
+  ])
+
+  revalidatePath('/platform/users')
+  return { success: true, data: undefined }
+}
+
+// ── reactivateUserAdmin ───────────────────────────────────────
+
+export async function reactivateUserAdmin(
+  userId:   string,
+  tenantId: string,
+): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  const adminClient = createAdminClient()
+  const { error: authError } = await adminClient.auth.admin.updateUserById(userId, {
+    ban_duration: 'none',
+  })
+  if (authError) {
+    console.error('[reactivateUserAdmin]', authError)
+    return { success: false, error: 'No se pudo reactivar al usuario.' }
+  }
+
+  await Promise.all([
+    dbAdmin
+      .update(schema.usuarios)
+      .set({ activo: true })
+      .where(eq(schema.usuarios.id, userId)),
+    dbAdmin
+      .update(schema.tenantMembers)
+      .set({ activo: true })
+      .where(and(
+        eq(schema.tenantMembers.user_id, userId),
+        eq(schema.tenantMembers.tenant_id, tenantId),
+      )),
+  ])
+
+  revalidatePath('/platform/users')
+  return { success: true, data: undefined }
+}
+
+// ── resetUserPasswordAdmin ────────────────────────────────────
+
+export async function resetUserPasswordAdmin(userEmail: string): Promise<ActionResult<void>> {
+  const user = await getCurrentUser()
+  if (!user?.is_platform_admin) return { success: false, error: 'Sin permisos' }
+
+  const adminClient = createAdminClient()
+  const siteUrl     = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+
+  const { error } = await adminClient.auth.resetPasswordForEmail(userEmail, {
+    redirectTo: `${siteUrl}/auth/confirm?next=/update-password%3Fmode%3Drecovery`,
+  })
+
+  if (error) {
+    console.error('[resetUserPasswordAdmin]', error)
+    return { success: false, error: 'No se pudo enviar el email de recuperación.' }
+  }
+
   return { success: true, data: undefined }
 }
