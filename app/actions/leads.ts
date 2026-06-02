@@ -34,11 +34,6 @@ export async function createLead(
 ): Promise<ActionResult<{ id: string }>> {
   const { user, tenantId, q } = await requireTenant()
 
-  // Solo supervisor+ puede crear leads
-  if (!['dueno','gerente','supervisor'].includes(user.rol)) {
-    return { success: false, error: 'Sin permisos para crear leads' }
-  }
-
   const parsed = createLeadSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
 
@@ -338,6 +333,11 @@ export async function reactivateFromRescue(
   nota?:  string,
 ): Promise<ActionResult<void>> {
   const { user, tenantId, q, forTenant } = await requireTenant()
+
+  // Solo supervisor+ puede reactivar leads del rescate
+  if (!['platform_admin', 'dueno', 'gerente', 'supervisor'].includes(user.rol)) {
+    return { success: false, error: 'Solo un supervisor o superior puede reactivar leads del rescate' }
+  }
 
   const current = await dbAdmin
     .select({ status: schema.leads.status, abandoned_at: schema.leads.abandoned_at })
@@ -812,5 +812,17 @@ export async function getLeadDetail(leadId: string) {
   ])
 
   if (!lead[0]) return null
-  return { lead: lead[0], notes, timeline, tasks }
+
+  // Nombre del creador del lead (join separado para evitar alias en la misma tabla)
+  const creatorRow = lead[0].created_by
+    ? await dbAdmin
+        .select({ nombre: schema.usuarios.nombre, alias: schema.usuarios.alias })
+        .from(schema.usuarios)
+        .where(eq(schema.usuarios.id, lead[0].created_by))
+        .limit(1)
+    : []
+
+  const creator_nombre = creatorRow[0]?.alias || creatorRow[0]?.nombre || null
+
+  return { lead: { ...lead[0], creator_nombre }, notes, timeline, tasks }
 }

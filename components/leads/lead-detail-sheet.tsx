@@ -310,6 +310,12 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                         <Mail className="size-3.5" />{lead.email}
                       </span>
                     )}
+                    {detail?.lead.creator_nombre && (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/70">
+                        <UserPlus className="size-3" />
+                        Cargado por <span className="font-medium text-foreground/70">{detail.lead.creator_nombre}</span>
+                      </span>
+                    )}
                   </div>
 
                   {/* Model + Status dropdown */}

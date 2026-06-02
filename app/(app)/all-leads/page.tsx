@@ -14,7 +14,7 @@ export default async function AllLeadsPage() {
     getActiveModelNames(),
   ])
 
-  const canCreate = ['dueno', 'gerente', 'supervisor'].includes(user.rol)
+  const canCreate = true // todos los roles pueden capturar leads
 
   return (
     <AllLeadsView
