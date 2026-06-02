@@ -39,16 +39,19 @@ export async function createLead(
 
   const data = parsed.data
 
-  // Si hay assigned_to, buscar su equipo_id
+  // Vendedor siempre se auto-asigna — no puede elegir otro destinatario
+  const effectiveAssignedTo = user.rol === 'vendedor' ? user.id : (data.assigned_to ?? null)
+
+  // Buscar equipo_id del asignado
   let equipoId: string | null = null
-  if (data.assigned_to) {
+  if (effectiveAssignedTo) {
     const member = await dbAdmin
       .select({ equipo_id: schema.tenantMembers.equipo_id })
       .from(schema.tenantMembers)
       .where(
         and(
           eq(schema.tenantMembers.tenant_id, tenantId),
-          eq(schema.tenantMembers.user_id, data.assigned_to),
+          eq(schema.tenantMembers.user_id, effectiveAssignedTo),
         ),
       )
       .limit(1)
@@ -70,13 +73,13 @@ export async function createLead(
     observaciones:       data.observaciones ?? null,
     est_value:           data.est_value?.toString() ?? null,
     next_action:         data.next_action ?? null,
-    assigned_to:         data.assigned_to ?? null,
+    assigned_to:         effectiveAssignedTo,
     equipo_id:           equipoId,
     created_by:          user.id,
     updated_by:          user.id,
   }).returning({ id: schema.leads.id })
 
-  const assignedName = data.assigned_to ? await getVendedorName(data.assigned_to) : null
+  const assignedName = effectiveAssignedTo ? await getVendedorName(effectiveAssignedTo) : null
   await appendTimeline(tenantId, row.id, user.id, 'lead_created', 'Lead ingresado al sistema',
     assignedName ? `Asignado a ${assignedName}` : 'Sin asignar — en Bandeja General',
   )

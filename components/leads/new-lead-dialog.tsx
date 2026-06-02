@@ -17,6 +17,7 @@ import { UserCircle, Loader2, Car, ChevronDown } from 'lucide-react'
 import { createLead } from '@/app/actions/leads'
 import { leadSourceValues } from '@/lib/schemas/leads'
 import { getInitials } from '@/lib/utils'
+import { useCurrentUser } from '@/lib/tenant/context'
 
 const emailSchema = z.string().email('Ingresá un email válido')
 
@@ -49,6 +50,9 @@ const EMPTY = {
 export function NewLeadDialog({
   open, onOpenChange, vendedores, modelos = [], onCreated,
 }: NewLeadDialogProps) {
+  const currentUser  = useCurrentUser()
+  const isVendedor   = currentUser.rol === 'vendedor'
+
   const [form,       setForm]       = useState(EMPTY)
   const [emailError, setEmailError] = useState<string | null>(null)
   const [isPending,  startTransition] = useTransition()
@@ -304,6 +308,13 @@ export function NewLeadDialog({
                 )}
               </div>
 
+              {isVendedor ? (
+                // Vendedor siempre se auto-asigna — mostramos solo la info
+                <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                  <UserCircle className="size-4 shrink-0" />
+                  <span>Se asignará automáticamente a vos</span>
+                </div>
+              ) : (
               <div className="space-y-1.5">
                 <Label>Asignar vendedor</Label>
                 <Select
@@ -330,6 +341,7 @@ export function NewLeadDialog({
                   </SelectContent>
                 </Select>
               </div>
+              )}
             </div>
           </div>
 
