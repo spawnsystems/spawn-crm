@@ -6,6 +6,9 @@ import { toast } from 'sonner'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -28,11 +31,13 @@ import {
   MessageCircle, Send, ChevronDown, Loader2, Pencil, X, Check,
   UserCircle, Plus, RotateCcw, UserPlus, UserCheck, ArrowRight,
   CalendarCheck, Trophy, LifeBuoy, AlertTriangle, CalendarX,
+  ArrowRightLeft,
 } from 'lucide-react'
 import {
   changeStatus, addNote, toggleTask, getLeadDetail,
   updateLead, addTask, assignLead,
 } from '@/app/actions/leads'
+import { requestTransfer } from '@/app/actions/transfers'
 import { BajaDialog } from '@/components/leads/baja-dialog'
 import { CotizadorDialog } from '@/components/cotizador/cotizador-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
@@ -68,8 +73,12 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
   appointment_rescheduled: { bg: 'bg-amber-400',   Icon: RotateCcw     },
   closed_won:              { bg: 'bg-emerald-600', Icon: Trophy        },
   reactivated_from_rescue: { bg: 'bg-amber-500',   Icon: LifeBuoy      },
-  lead_baja:               { bg: 'bg-rose-500',    Icon: CalendarX     },
-  _default:                { bg: 'bg-muted-foreground', Icon: ArrowRight },
+  lead_baja:               { bg: 'bg-rose-500',      Icon: CalendarX        },
+  transfer_requested:      { bg: 'bg-indigo-500',    Icon: ArrowRightLeft   },
+  transfer_accepted:       { bg: 'bg-emerald-500',   Icon: ArrowRightLeft   },
+  transfer_rejected:       { bg: 'bg-rose-400',      Icon: ArrowRightLeft   },
+  transfer_cancelled:      { bg: 'bg-slate-400',     Icon: ArrowRightLeft   },
+  _default:                { bg: 'bg-muted-foreground', Icon: ArrowRight    },
 }
 
 // ── Main component ────────────────────────────────────────────────
@@ -93,6 +102,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const [editForm,        setEditForm]        = useState<Partial<Lead>>({})
   const [showBaja,        setShowBaja]        = useState(false)
   const [showCotizador,   setShowCotizador]   = useState(false)
+  const [showTransfer,    setShowTransfer]    = useState(false)
   const [isPending,       startTransition]    = useTransition()
 
   // Fetch all data when sheet opens.
@@ -373,12 +383,25 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       </a>
                     </Button>
                   )}
+                  {/* Transferir — solo si el lead aún está activo */}
+                  {!isBaja(lead.status) && lead.status !== 'VENTA' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 mt-1"
+                      onClick={() => setShowTransfer(true)}
+                      title="Transferir este lead a otro vendedor"
+                    >
+                      <ArrowRightLeft className="size-3.5" />
+                      Transferir
+                    </Button>
+                  )}
                   {/* Dar de baja — solo si el lead aún está activo */}
                   {!isBaja(lead.status) && lead.status !== 'VENTA' && (
                     <Button
                       size="sm"
                       variant="outline"
-                      className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30 mt-1"
+                      className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
                       onClick={() => setShowBaja(true)}
                       title="Dar de baja este lead"
                     >
@@ -717,6 +740,20 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
               provincia={lead.provincia ?? undefined}
               onCreated={() => setShowCotizador(false)}
             />
+
+            {/* ── Transfer dialog ── */}
+            <TransferDialog
+              open={showTransfer}
+              onOpenChange={setShowTransfer}
+              leadId={lead.id}
+              leadNombre={lead.nombre}
+              assignedTo={lead.assigned_to ?? null}
+              vendedores={vendedores}
+              onDone={() => {
+                setShowTransfer(false)
+                refreshAll()
+              }}
+            />
           </>
         )}
       </SheetContent>
@@ -739,5 +776,115 @@ function Section({ icon, title, children }: {
       </div>
       {children}
     </div>
+  )
+}
+
+// ── TransferDialog ─────────────────────────────────────────────────────────────
+
+function TransferDialog({
+  open, onOpenChange, leadId, leadNombre, assignedTo, vendedores, onDone,
+}: {
+  open:         boolean
+  onOpenChange: (v: boolean) => void
+  leadId:       string
+  leadNombre:   string
+  assignedTo:   string | null
+  vendedores:   Vendedor[]
+  onDone:       () => void
+}) {
+  const [toUserId,   setToUserId]   = useState('')
+  const [motivo,     setMotivo]     = useState('')
+  const [isPending,  startTransition] = useTransition()
+
+  // Exclude the currently assigned user from the picker
+  const candidates = vendedores.filter((v) => v.user_id !== assignedTo)
+
+  function handleSubmit() {
+    if (!toUserId) { toast.error('Seleccioná un vendedor'); return }
+    startTransition(async () => {
+      const res = await requestTransfer({
+        leadId,
+        toUserId,
+        motivo: motivo.trim() || undefined,
+      })
+      if (!res.success) { toast.error(res.error); return }
+      toast.success('Solicitud de traspaso enviada')
+      setToUserId('')
+      setMotivo('')
+      onDone()
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { setToUserId(''); setMotivo('') }; onOpenChange(v) }}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ArrowRightLeft className="size-4 text-indigo-600" />
+            Transferir lead
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          <p className="text-sm text-muted-foreground">
+            Seleccioná el vendedor al que querés transferir a{' '}
+            <span className="font-semibold text-foreground">{leadNombre}</span>.
+            El receptor recibirá una notificación y deberá aceptar.
+          </p>
+
+          <div className="space-y-1.5">
+            <Label>Vendedor *</Label>
+            {candidates.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">
+                No hay otros vendedores disponibles en el tenant.
+              </p>
+            ) : (
+              <Select value={toUserId} onValueChange={setToUserId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar vendedor..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {candidates.map((v) => (
+                    <SelectItem key={v.user_id} value={v.user_id}>
+                      {v.alias || v.nombre || v.user_id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Motivo (opcional)</Label>
+            <Textarea
+              placeholder="Ej: El cliente está en mi zona de cobertura"
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              rows={3}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isPending}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!toUserId || candidates.length === 0 || isPending}
+            className="gap-1.5"
+          >
+            {isPending
+              ? <Loader2 className="size-4 animate-spin" />
+              : <ArrowRightLeft className="size-4" />}
+            Solicitar traspaso
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

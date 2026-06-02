@@ -73,3 +73,10 @@ export const appointmentStatusEnum = pgEnum('appointment_status', [
   'reagendada',
   'cancelada',
 ])
+
+export const transferStatusEnum = pgEnum('transfer_status', [
+  'pendiente',
+  'aceptada',
+  'rechazada',
+  'cancelada',
+])

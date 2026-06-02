@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { useCurrentUser, useTenant } from '@/lib/tenant/context'
 import { signOut } from '@/app/actions/auth'
+import { getUnreadCount } from '@/app/actions/notifications'
 import {
   LayoutDashboard,
   Users,
@@ -18,10 +19,11 @@ import {
   ChevronRight,
   Menu,
   CalendarDays,
+  Inbox,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect, useCallback } from 'react'
 
 // ── Data ──────────────────────────────────────────────────────────
 
@@ -31,6 +33,7 @@ interface NavItem {
   icon:    React.ReactNode
   roles:   string[]
   section: string
+  badge?:  boolean  // si true, mostrará el badge de notificaciones
 }
 
 // Sections define the visual groups — rendered only if they have
@@ -77,8 +80,16 @@ const NAV_ITEMS: NavItem[] = [
     href:    '/rescate',
     label:   'Rescate',
     icon:    <LifeBuoy className="size-4" />,
-    roles:   ['platform_admin', 'dueno', 'gerente'],
+    roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor'],
     section: 'leads',
+  },
+  {
+    href:    '/bandeja',
+    label:   'Bandeja',
+    icon:    <Inbox className="size-4" />,
+    roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
+    section: 'leads',
+    badge:   true,
   },
   // ── Actividad ────────────────────────────────────────────────
   {
@@ -104,6 +115,36 @@ const NAV_ITEMS: NavItem[] = [
     section: 'equipo',
   },
 ]
+
+// ── NotificationBadge ──────────────────────────────────────────────
+// Badge que hace polling cada 60s para mostrar el conteo de novedades.
+
+function NotificationBadge() {
+  const [count, setCount] = useState(0)
+
+  const refresh = useCallback(async () => {
+    try {
+      const n = await getUnreadCount()
+      setCount(n)
+    } catch {
+      // silencioso — no interrumpe la navegación
+    }
+  }, [])
+
+  useEffect(() => {
+    refresh()
+    const interval = setInterval(refresh, 60_000)
+    return () => clearInterval(interval)
+  }, [refresh])
+
+  if (count === 0) return null
+
+  return (
+    <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white leading-none shrink-0">
+      {count > 9 ? '9+' : count}
+    </span>
+  )
+}
 
 // ── SidebarContent ─────────────────────────────────────────────────
 // Shared between desktop aside and mobile Sheet — pass onNavigate to
@@ -202,7 +243,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                         {item.icon}
                       </span>
                       <span className="flex-1">{item.label}</span>
-                      {isActive && (
+                      {item.badge && <NotificationBadge />}
+                      {isActive && !item.badge && (
                         <ChevronRight className="size-3 text-primary/50 shrink-0" />
                       )}
                     </Link>
