@@ -34,6 +34,7 @@ import {
   updateLead, addTask, assignLead,
 } from '@/app/actions/leads'
 import { BajaDialog } from '@/components/leads/baja-dialog'
+import { CotizadorDialog } from '@/components/cotizador/cotizador-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues, activeStatusValues } from '@/lib/schemas/leads'
@@ -91,6 +92,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const [editing,         setEditing]         = useState(false)
   const [editForm,        setEditForm]        = useState<Partial<Lead>>({})
   const [showBaja,        setShowBaja]        = useState(false)
+  const [showCotizador,   setShowCotizador]   = useState(false)
   const [isPending,       startTransition]    = useTransition()
 
   // Fetch all data when sheet opens.
@@ -397,6 +399,24 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
               />
             </div>
 
+            {/* ── Cotizador de usado ── */}
+            {lead.tiene_usado && (
+              <div className="mx-6 mb-4 flex items-center justify-between gap-3 rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-amber-800">Tiene auto para dar en parte de pago</p>
+                  <p className="text-xs text-amber-700/60 mt-0.5">Calculá el valor de toma con las reglas InfoAuto.</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-100"
+                  onClick={() => setShowCotizador(true)}
+                >
+                  Cotizar usado
+                </Button>
+              </div>
+            )}
+
             {/* ── Edit form ── */}
             {editing && (
               <div className="border-b border-border bg-muted/30 px-6 pb-6">
@@ -686,6 +706,16 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                 refreshAll()
                 onStatusChange?.(lead.id, lead.status)
               }}
+            />
+
+            {/* ── Cotizador dialog ── */}
+            <CotizadorDialog
+              open={showCotizador}
+              onOpenChange={setShowCotizador}
+              leadId={lead.id}
+              leadNombre={lead.nombre}
+              provincia={lead.provincia ?? undefined}
+              onCreated={() => setShowCotizador(false)}
             />
           </>
         )}

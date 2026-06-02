@@ -42,10 +42,9 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
   },
   {
     key:         'cotizaciones',
-    nombre:      'Cotizaciones PDF',
-    descripcion: 'Generación de cotizaciones personalizadas con logo y precios',
-    defaultOn:   false,
-    comingSoon:  true,
+    nombre:      'Cotizador de usados',
+    descripcion: 'Cálculo del valor de toma de autos usados con reglas InfoAuto por km y uso',
+    defaultOn:   true,
   },
   {
     key:         'inventario',
