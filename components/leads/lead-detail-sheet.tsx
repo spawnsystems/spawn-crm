@@ -33,6 +33,7 @@ import {
   changeStatus, addNote, toggleTask, getLeadDetail,
   updateLead, addTask, assignLead,
 } from '@/app/actions/leads'
+import { BajaDialog } from '@/components/leads/baja-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues, activeStatusValues } from '@/lib/schemas/leads'
@@ -89,6 +90,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const [dueCalendarOpen, setDueCalendarOpen] = useState(false)
   const [editing,         setEditing]         = useState(false)
   const [editForm,        setEditForm]        = useState<Partial<Lead>>({})
+  const [showBaja,        setShowBaja]        = useState(false)
   const [isPending,       startTransition]    = useTransition()
 
   // Fetch all data when sheet opens.
@@ -367,6 +369,19 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       <a href={`tel:${lead.telefono}`}>
                         <Phone className="size-3.5" />Llamar
                       </a>
+                    </Button>
+                  )}
+                  {/* Dar de baja — solo si el lead aún está activo */}
+                  {!isBaja(lead.status) && lead.status !== 'VENTA' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30 mt-1"
+                      onClick={() => setShowBaja(true)}
+                      title="Dar de baja este lead"
+                    >
+                      <X className="size-3.5" />
+                      Dar de baja
                     </Button>
                   )}
                 </div>
@@ -659,6 +674,19 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                 wasRescued={wasRescued}
               />
             </div>
+
+            {/* ── Baja dialog ── */}
+            <BajaDialog
+              open={showBaja}
+              onOpenChange={setShowBaja}
+              leadId={lead.id}
+              leadNombre={lead.nombre}
+              onDone={() => {
+                setShowBaja(false)
+                refreshAll()
+                onStatusChange?.(lead.id, lead.status)
+              }}
+            />
           </>
         )}
       </SheetContent>

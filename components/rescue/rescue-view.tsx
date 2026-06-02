@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/select'
 import { assignLead, reactivateFromRescue, type getAbandonedLeads } from '@/app/actions/leads'
 import type { getVendedoresDelTenant } from '@/app/actions/users'
+import { StatusBadge } from '@/components/status-badge'
+import { isBaja } from '@/lib/leads/constants'
 
 type LeadRow = Awaited<ReturnType<typeof getAbandonedLeads>>[number]
 
@@ -165,18 +167,20 @@ function RescueCard({ lead, isPending, onReassign, onReactivate }: {
   onReactivate: () => void
 }) {
   const vendorName     = lead.vendedor_alias || lead.vendedor_nombre
-  const daysAgo        = lead.abandoned_at
-    ? Math.floor((Date.now() - new Date(lead.abandoned_at).getTime()) / 86_400_000)
+  const refDate        = lead.baja_at ?? lead.abandoned_at
+  const daysAgo        = refDate
+    ? Math.floor((Date.now() - new Date(refDate).getTime()) / 86_400_000)
     : 0
   const formattedValue = formatCurrencyARS(lead.est_value, { compact: true })
   const hasValue       = formattedValue !== '—'
+  const enBaja         = isBaja(lead.status)
 
   return (
     <div className={cn(
       'relative rounded-xl border bg-card overflow-hidden hover:shadow-md transition-shadow pl-[4px]',
-      'border-amber-200/60',
+      enBaja ? 'border-rose-200/60' : 'border-amber-200/60',
     )}>
-      <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-amber-500/60" />
+      <div className={cn('absolute left-0 top-0 bottom-0 w-[4px]', enBaja ? 'bg-rose-500/60' : 'bg-amber-500/60')} />
       <div className="p-5">
         {/* Row 1 */}
         <div className="flex items-start justify-between gap-4 mb-2">
@@ -187,16 +191,22 @@ function RescueCard({ lead, isPending, onReassign, onReactivate }: {
                 {lead.modelo}
               </span>
             )}
+            {enBaja && <StatusBadge status={lead.status} />}
           </div>
           {daysAgo > 0 && (
-            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200/60 rounded px-2 py-0.5 shrink-0 mt-0.5">
-              Inactivo hace {daysAgo} días
+            <span className={cn(
+              'text-xs rounded px-2 py-0.5 shrink-0 mt-0.5 border',
+              enBaja
+                ? 'text-rose-700 bg-rose-50 border-rose-200/60'
+                : 'text-amber-700 bg-amber-50 border-amber-200/60',
+            )}>
+              {enBaja ? 'Dado de baja' : 'Inactivo'} hace {daysAgo} días
             </span>
           )}
         </div>
 
         {/* Row 2 */}
-        <div className="text-xs text-muted-foreground mb-4">
+        <div className="text-xs text-muted-foreground mb-3">
           {vendorName && (
             <>
               Vendedor: <span className="font-medium text-foreground/70">{vendorName}</span>
@@ -209,6 +219,14 @@ function RescueCard({ lead, isPending, onReassign, onReactivate }: {
             </>
           )}
         </div>
+
+        {/* Motivo de baja */}
+        {enBaja && lead.baja_motivo && (
+          <div className="text-xs text-rose-700/70 bg-rose-50 border border-rose-200/40 rounded-md px-3 py-2 mb-3 italic">
+            "{lead.baja_motivo}"
+          </div>
+        )}
+
 
         {/* Row 3 — actions */}
         <div className="flex items-center justify-end gap-2">

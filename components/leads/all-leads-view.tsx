@@ -12,11 +12,12 @@ import {
 } from '@/components/ui/select'
 import { cn, formatRelative, getInitials, safeRefetch } from '@/lib/utils'
 import { Paginator } from '@/components/ui/paginator'
-import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, XCircle } from 'lucide-react'
 import { getAllLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues, leadStatusValues } from '@/lib/schemas/leads'
-import { STATUS_ORDER } from '@/lib/leads/constants'
+import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
+import { BajaDialog } from '@/components/leads/baja-dialog'
 
 type LeadRow = Awaited<ReturnType<typeof getAllLeads>>[number]
 
@@ -40,6 +41,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
   const [filterStatus, setFilterStatus] = useState(ALL)
   const [filterSource, setFilterSource] = useState(ALL)
   const [openLeadId,   setOpenLeadId]   = useState<string | null>(null)
+  const [bajaLead,     setBajaLead]     = useState<LeadRow | null>(null)
   const [showNewLead,  setShowNewLead]  = useState(false)
   const [sortKey,      setSortKey]      = useState<SortKey>('last_contact_at')
   const [sortDir,      setSortDir]      = useState<SortDir>('asc')
@@ -242,7 +244,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
                 return (
                   <tr
                     key={l.id}
-                    className="border-b border-border/50 last:border-0 hover:bg-muted/30 cursor-pointer"
+                    className="group border-b border-border/50 last:border-0 hover:bg-muted/30 cursor-pointer"
                     onClick={() => setOpenLeadId(l.id)}
                   >
                     <td className="px-4 py-3 font-medium">{l.nombre}</td>
@@ -268,7 +270,20 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
                       {lastContact}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Button size="sm" variant="ghost" className="h-7">Ver</Button>
+                      <div className="flex items-center justify-end gap-1">
+                        {!isBaja(l.status) && l.status !== 'VENTA' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100"
+                            onClick={(e) => { e.stopPropagation(); setBajaLead(l) }}
+                            title="Dar de baja"
+                          >
+                            <XCircle className="size-3.5" />
+                          </Button>
+                        )}
+                        <Button size="sm" variant="ghost" className="h-7">Ver</Button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -303,6 +318,16 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
           )
         }
       />
+
+      {bajaLead && (
+        <BajaDialog
+          open={!!bajaLead}
+          onOpenChange={(v) => { if (!v) setBajaLead(null) }}
+          leadId={bajaLead.id}
+          leadNombre={bajaLead.nombre}
+          onDone={() => { setBajaLead(null); refresh() }}
+        />
+      )}
 
       <NewLeadDialog
         open={showNewLead}
