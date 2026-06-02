@@ -9,11 +9,19 @@ export const appRoleEnum = pgEnum('app_role', [
 ])
 
 export const leadStatusEnum = pgEnum('lead_status', [
-  'Nuevo',
-  'Contactado',
-  'Citado',
-  'Cerrado',
-  'Para rescate',
+  // Activos / pipeline (en orden)
+  'GESTION',
+  'HORARIO ASIGNADO',
+  'ENTREVISTA PACTADA',
+  'CIERRE',
+  'VENTA',
+  // Baja / terminal (solo vía botón "Dar de baja" con motivo)
+  'NO CONTESTA',
+  'NO INTERESADO',
+  'INCONTACTABLE',
+  'YA COMPRO',
+  'DATO ERRONEO',
+  'DERIVAR',
 ])
 
 export const leadSourceEnum = pgEnum('lead_source', [

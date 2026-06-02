@@ -15,6 +15,7 @@ import { markContacted, markAsClosed, reactivateFromRescue } from '@/app/actions
 import { markAppointmentDone, cancelAppointment } from '@/app/actions/appointments'
 import type { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { APPOINTMENT_TIPO_LABEL } from '@/lib/schemas/appointments'
+import { isBaja, isRescatable, statusLabel } from '@/lib/leads/constants'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -50,13 +51,13 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
     })
   }
 
-  // ── Cerrado ───────────────────────────────────────────────────
-  if (lead.status === 'Cerrado') {
+  // ── VENTA ─────────────────────────────────────────────────────
+  if (lead.status === 'VENTA') {
     return (
       <div className="mx-6 mb-4 flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-200/60 px-4 py-3">
         <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
         <div>
-          <div className="text-sm font-semibold text-emerald-800">Venta cerrada</div>
+          <div className="text-sm font-semibold text-emerald-800">Venta concretada</div>
           <div className="text-xs text-emerald-700/60 mt-0.5">
             Lead cerrado exitosamente. No hay acciones pendientes.
           </div>
@@ -65,74 +66,44 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
     )
   }
 
-  // ── Para rescate ──────────────────────────────────────────────
-  if (lead.status === 'Para rescate') {
+  // ── Baja (terminal negativo) ──────────────────────────────────
+  if (isBaja(lead.status)) {
+    const rescatable = isRescatable(lead.status)
     return (
       <div className="mx-6 mb-4 rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3">
         <div className="flex items-center gap-2 mb-1.5">
           <LifeBuoy className="size-4 text-amber-600 shrink-0" />
-          <span className="text-sm font-semibold text-amber-800">Lead inactivo — en rescate</span>
+          <span className="text-sm font-semibold text-amber-800">
+            Dado de baja — {statusLabel(lead.status)}
+          </span>
         </div>
         <p className="text-xs text-amber-700/60 mb-3">
-          Retomá el contacto para reactivar este lead al flujo principal (volverá a estado Contactado).
+          {rescatable
+            ? 'Retomá el contacto para reactivar este lead al flujo principal (volverá a Gestión).'
+            : 'Este lead no se reactiva desde acá. Si fue un error, reasignalo desde Rescate.'}
         </p>
-        <Button
-          size="sm"
-          className={cn('gap-1.5', isPending && 'opacity-70')}
-          onClick={() => run(
-            () => reactivateFromRescue(lead.id),
-            'Lead reactivado — ahora en Contactado',
-          )}
-          disabled={isPending}
-        >
-          {isPending
-            ? <Loader2 className="size-3.5 animate-spin" />
-            : <RotateCcw className="size-3.5" />}
-          Reactivar contacto
-        </Button>
+        {rescatable && (
+          <Button
+            size="sm"
+            className={cn('gap-1.5', isPending && 'opacity-70')}
+            onClick={() => run(
+              () => reactivateFromRescue(lead.id),
+              'Lead reactivado — ahora en Gestión',
+            )}
+            disabled={isPending}
+          >
+            {isPending
+              ? <Loader2 className="size-3.5 animate-spin" />
+              : <RotateCcw className="size-3.5" />}
+            Reactivar contacto
+          </Button>
+        )}
       </div>
     )
   }
 
-  // ── Nuevo ─────────────────────────────────────────────────────
-  if (lead.status === 'Nuevo') {
-    return (
-      <div className="mx-6 mb-4 rounded-xl bg-primary/5 border border-primary/20 px-4 py-3">
-        <div className="flex items-center gap-2 mb-1.5">
-          <Phone className="size-4 text-primary shrink-0" />
-          <span className="text-sm font-semibold">Primer contacto pendiente</span>
-        </div>
-        <p className="text-xs text-muted-foreground mb-3">
-          Este lead aún no fue contactado. Registrá el primer contacto para avanzar en el flujo.
-        </p>
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            startTransition(async () => {
-              const res = await markContacted(lead.id)
-              if (!res.success) { toast.error(res.error); return }
-              toast.success(
-                res.data?.advanced
-                  ? 'Contacto registrado — lead avanzado a Contactado'
-                  : 'Contacto registrado',
-              )
-              onLeadUpdated()
-            })
-          }}
-          disabled={isPending}
-        >
-          {isPending
-            ? <Loader2 className="size-3.5 animate-spin" />
-            : <Phone className="size-3.5" />}
-          Registrar primer contacto
-        </Button>
-      </div>
-    )
-  }
-
-  // ── Citado — con cita programada ──────────────────────────────
-  if (lead.status === 'Citado' && nextAppointment) {
+  // ── ENTREVISTA PACTADA — con cita programada ──────────────────
+  if (lead.status === 'ENTREVISTA PACTADA' && nextAppointment) {
     const apptDate = toBADate(nextAppointment.scheduled_at)
     const isPast   = new Date(nextAppointment.scheduled_at).getTime() < Date.now()
     const dur      = nextAppointment.duration_min
@@ -251,7 +222,8 @@ function ContactadoCard({
 }) {
   const [showCallForm, setShowCallForm] = useState(false)
   const [callNote,     setCallNote]     = useState('')
-  const isCitado = lead.status === 'Citado'
+  // "sin cita activa" cuando ya estaba en ENTREVISTA PACTADA pero la cita se completó
+  const isCitado = lead.status === 'ENTREVISTA PACTADA'
 
   function handleRegisterCall() {
     run(
@@ -300,13 +272,13 @@ function ContactadoCard({
           size="sm"
           variant="outline"
           className="gap-1.5"
-          onClick={() => run(() => markAsClosed(lead.id), 'Lead cerrado — venta confirmada')}
+          onClick={() => run(() => markAsClosed(lead.id), 'Venta concretada')}
           disabled={isPending}
         >
           {isPending
             ? <Loader2 className="size-3.5 animate-spin" />
             : <CheckCircle2 className="size-3.5" />}
-          Marcar como cerrado
+          Marcar venta
         </Button>
       </div>
 

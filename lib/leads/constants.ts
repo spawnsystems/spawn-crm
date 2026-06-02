@@ -1,50 +1,97 @@
 // Constantes derivadas del enum lead_status, centralizadas para
-// reutilizar en sort, filtros y pipeline.
+// reutilizar en sort, filtros, pipeline, badges y flujo de baja.
 
-import { leadStatusValues } from '@/lib/schemas/leads'
+import { leadStatusValues, activeStatusValues, bajaStatusValues } from '@/lib/schemas/leads'
 
 export type LeadStatus = (typeof leadStatusValues)[number]
 
 /**
- * Orden canónico del pipeline de ventas. Usado para sort en tablas
- * y para definir el orden de columnas en el Kanban.
+ * Orden canónico del flujo. Los activos avanzan 0→4; los de baja
+ * van al final (90+) para que el sort por estado los agrupe abajo.
  *
- *   Nuevo (0) → Contactado (1) → Citado (2) → Cerrado (3)
- *                                ↓
- *                          Para rescate (4)
+ *   GESTIÓN (0) → HORARIO ASIGNADO (1) → ENTREVISTA PACTADA (2) → CIERRE (3) → VENTA (4)
+ *   [baja: NO CONTESTA, NO INTERESADO, INCONTACTABLE, YA COMPRO, DATO ERRONEO, DERIVAR]
  */
 export const STATUS_ORDER: Record<LeadStatus, number> = {
-  'Nuevo':        0,
-  'Contactado':   1,
-  'Citado':       2,
-  'Cerrado':      3,
-  'Para rescate': 4,
+  'GESTION':            0,
+  'HORARIO ASIGNADO':   1,
+  'ENTREVISTA PACTADA': 2,
+  'CIERRE':             3,
+  'VENTA':              4,
+  'NO CONTESTA':        90,
+  'NO INTERESADO':      91,
+  'INCONTACTABLE':      92,
+  'YA COMPRO':          93,
+  'DATO ERRONEO':       94,
+  'DERIVAR':            95,
 }
 
-/** Estados terminales: el flujo no avanza más desde acá. */
-export const TERMINAL_STATUSES: readonly LeadStatus[] = ['Cerrado'] as const
+/** Estados activos del flujo de venta (seleccionables para avanzar). */
+export const ACTIVE_STATUSES: readonly LeadStatus[] = activeStatusValues
 
-/** Estados activos del flujo de venta (excluye Cerrado y Para rescate). */
-export const ACTIVE_STATUSES: readonly LeadStatus[] = ['Nuevo', 'Contactado', 'Citado'] as const
+/** Estados de baja / terminales negativos (solo vía "Dar de baja"). */
+export const BAJA_STATUSES: readonly LeadStatus[] = bajaStatusValues
+
+/** Terminal positivo (venta concretada). */
+export const POSITIVE_TERMINAL: readonly LeadStatus[] = ['VENTA'] as const
+
+/** Estados terminales (no avanzan más): VENTA + todos los de baja. */
+export const TERMINAL_STATUSES: readonly LeadStatus[] = ['VENTA', ...bajaStatusValues] as const
+
+/**
+ * Estados de baja que SÍ se pueden rescatar (vuelven al flujo).
+ * 'YA COMPRO' (compró en otro lado) y 'DATO ERRONEO' (basura) no se rescatan.
+ */
+export const RESCATABLE_STATUSES: readonly LeadStatus[] = [
+  'NO CONTESTA', 'NO INTERESADO', 'INCONTACTABLE', 'DERIVAR',
+] as const
 
 /** Estados del pipeline visibles como columnas del Kanban (en orden). */
 export const PIPELINE_COLUMNS: readonly LeadStatus[] = [
-  'Nuevo',
-  'Contactado',
-  'Citado',
-  'Cerrado',
-  'Para rescate',
+  'GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE', 'VENTA',
 ] as const
+
+/** Label de display (el enum guarda GESTION sin tilde por ser SQL-safe). */
+export const STATUS_LABEL: Record<LeadStatus, string> = {
+  'GESTION':            'GESTIÓN',
+  'HORARIO ASIGNADO':   'HORARIO ASIGNADO',
+  'ENTREVISTA PACTADA': 'ENTREVISTA PACTADA',
+  'CIERRE':             'CIERRE',
+  'VENTA':              'VENTA',
+  'NO CONTESTA':        'NO CONTESTA',
+  'NO INTERESADO':      'NO INTERESADO',
+  'INCONTACTABLE':      'INCONTACTABLE',
+  'YA COMPRO':          'YA COMPRÓ',
+  'DATO ERRONEO':       'DATO ERRÓNEO',
+  'DERIVAR':            'DERIVAR',
+}
+
+/** Devuelve el label de display de un estado (fallback al valor crudo). */
+export function statusLabel(status: string): string {
+  return STATUS_LABEL[status as LeadStatus] ?? status
+}
+
+/** True si el estado es de baja (terminal negativo). */
+export function isBaja(status: string): boolean {
+  return (BAJA_STATUSES as readonly string[]).includes(status)
+}
+
+/** True si el estado de baja se puede rescatar. */
+export function isRescatable(status: string): boolean {
+  return (RESCATABLE_STATUSES as readonly string[]).includes(status)
+}
 
 /**
  * Texto amigable para un cambio de etapa, sin usar la palabra "estado".
  * Usado en el timeline del lead sheet.
  */
 export function statusChangeLabel(from: string, to: string): string {
-  if (to === 'Para rescate') return 'Enviado a rescate por inactividad'
-  if (to === 'Cerrado')      return '¡Venta cerrada!'
-  if (to === 'Citado')       return 'Cita agendada'
-  if (to === 'Contactado')   return 'Marcado como contactado'
-  if (to === 'Nuevo')        return 'Reiniciado a etapa inicial'
-  return `Etapa actualizada: ${from} → ${to}`
+  switch (to) {
+    case 'GESTION':            return 'En gestión'
+    case 'HORARIO ASIGNADO':   return 'Horario de contacto asignado'
+    case 'ENTREVISTA PACTADA': return 'Entrevista pactada'
+    case 'CIERRE':             return 'En proceso de cierre'
+    case 'VENTA':              return '¡Venta concretada!'
+    default:                   return `Etapa actualizada: ${statusLabel(from)} → ${statusLabel(to)}`
+  }
 }

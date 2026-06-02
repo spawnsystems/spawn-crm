@@ -35,7 +35,8 @@ import {
 } from '@/app/actions/leads'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresDelTenant } from '@/app/actions/users'
-import { leadSourceValues, leadStatusValues } from '@/lib/schemas/leads'
+import { leadSourceValues, activeStatusValues } from '@/lib/schemas/leads'
+import { isBaja } from '@/lib/leads/constants'
 import type { Lead } from '@/lib/db'
 import { cn, parseNumeric, safeRefetch, fmtDayMonthAR, toBADate } from '@/lib/utils'
 
@@ -65,6 +66,7 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
   appointment_rescheduled: { bg: 'bg-amber-400',   Icon: RotateCcw     },
   closed_won:              { bg: 'bg-emerald-600', Icon: Trophy        },
   reactivated_from_rescue: { bg: 'bg-amber-500',   Icon: LifeBuoy      },
+  lead_baja:               { bg: 'bg-rose-500',    Icon: CalendarX     },
   _default:                { bg: 'bg-muted-foreground', Icon: ArrowRight },
 }
 
@@ -267,7 +269,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                   {/* Name + badges */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <SheetTitle className="text-xl">{lead.nombre}</SheetTitle>
-                    {wasRescued && lead.status !== 'Para rescate' && (
+                    {wasRescued && !isBaja(lead.status) && (
                       <span className="inline-flex items-center gap-1 text-[11px] font-medium bg-amber-100 text-amber-700 border border-amber-200/60 rounded-full px-2 py-0.5">
                         <RotateCcw className="size-2.5" />
                         Reactivado del rescate
@@ -308,7 +310,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
-                        {leadStatusValues.map((s) => (
+                        {activeStatusValues.map((s) => (
                           <DropdownMenuItem
                             key={s}
                             onClick={() => handleStatusChange(s)}

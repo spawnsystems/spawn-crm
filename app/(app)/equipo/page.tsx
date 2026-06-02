@@ -24,7 +24,7 @@ export default async function EquipoPage() {
         user_id:  schema.leads.assigned_to,
         nombre:   schema.usuarios.nombre,
         alias:    schema.usuarios.alias,
-        closed:   sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'Cerrado' THEN 1 ELSE 0 END)::int`,
+        closed:   sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'VENTA' THEN 1 ELSE 0 END)::int`,
         total:    count(),
         atRisk:   sql<number>`SUM(CASE WHEN ${schema.leads.at_risk} = true THEN 1 ELSE 0 END)::int`,
       })

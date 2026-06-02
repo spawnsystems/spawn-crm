@@ -32,9 +32,13 @@ export const leads = pgTable('leads', {
   source: leadSourceEnum('source').default('Otro').notNull(),
 
   // Estado y pipeline
-  status: leadStatusEnum('status').default('Nuevo').notNull(),
+  status: leadStatusEnum('status').default('GESTION').notNull(),
   next_action: text('next_action'),
   est_value: numeric('est_value', { precision: 14, scale: 2 }),
+
+  // Baja (estado terminal negativo, seteado vía "Dar de baja")
+  baja_motivo: text('baja_motivo'),
+  baja_at: timestamp('baja_at', { withTimezone: true }),
 
   // Riesgo y tiempo
   days_in_stage: integer('days_in_stage').default(0).notNull(),

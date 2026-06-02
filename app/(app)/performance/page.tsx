@@ -4,6 +4,7 @@ import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, count, sql } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { PerformanceView } from '@/components/performance/performance-view'
+import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +35,7 @@ export default async function PerformancePage() {
         user_id: schema.leads.assigned_to,
         nombre:  schema.usuarios.nombre,
         alias:   schema.usuarios.alias,
-        closed:  sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'Cerrado' THEN 1 ELSE 0 END)::int`,
+        closed:  sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'VENTA' THEN 1 ELSE 0 END)::int`,
         total:   count(),
       })
       .from(schema.leads)
@@ -50,20 +51,22 @@ export default async function PerformancePage() {
   ])
 
   // My stats
-  const myActive    = myLeads.filter((l) => !['Cerrado', 'Perdido'].includes(l.status)).length
-  const myClosedM   = myLeads.filter((l) => l.status === 'Cerrado').length
+  const myActive    = myLeads.filter((l) => !isBaja(l.status) && l.status !== 'VENTA').length
+  const myClosedM   = myLeads.filter((l) => l.status === 'VENTA').length
   const myMonthTotal = myLeads.length
   const myCloseRate = myMonthTotal > 0 ? Math.round((myClosedM / myMonthTotal) * 100) : 0
   const myAtRisk    = myLeads.filter((l) => l.at_risk).length
 
-  // Funnel
+  // Funnel — leads no dados de baja que alcanzaron al menos cada etapa del pipeline
+  const activeForFunnel = myLeads.filter((l) => !isBaja(l.status))
+  const reached = (minOrder: number) =>
+    activeForFunnel.filter((l) => (STATUS_ORDER[l.status] ?? -1) >= minOrder).length
   const funnel = [
-    { stage: 'Asignados',   count: myLeads.length },
-    { stage: 'Contactados', count: myLeads.filter((l) => !['Nuevo'].includes(l.status)).length },
-    { stage: 'Cotizados',   count: myLeads.filter((l) => ['Cotizado', 'Test drive', 'Negociación', 'Cerrado'].includes(l.status)).length },
-    { stage: 'Test Drive',  count: myLeads.filter((l) => ['Test drive', 'Negociación', 'Cerrado'].includes(l.status)).length },
-    { stage: 'Negociación', count: myLeads.filter((l) => ['Negociación', 'Cerrado'].includes(l.status)).length },
-    { stage: 'Cerrados',    count: myClosedM },
+    { stage: 'En gestión',         count: reached(0) },
+    { stage: 'Horario asignado',   count: reached(1) },
+    { stage: 'Entrevista pactada', count: reached(2) },
+    { stage: 'En cierre',          count: reached(3) },
+    { stage: 'Ventas',             count: reached(4) },
   ].map((f) => ({
     ...f,
     pct: myLeads.length > 0 ? Math.round((f.count / myLeads.length) * 100) : 0,

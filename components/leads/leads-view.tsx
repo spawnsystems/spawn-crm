@@ -15,12 +15,12 @@ import {
 import type { Lead } from '@/lib/db'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { getMyLeads } from '@/app/actions/leads'
-import { STATUS_ORDER } from '@/lib/leads/constants'
+import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
 
 type Vendedor = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 
-type FilterTab = 'Todos' | 'Sin contactar' | 'En seguimiento' | 'En riesgo' | 'Cerrados'
-const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'En riesgo', 'Cerrados']
+type FilterTab = 'Todos' | 'Sin contactar' | 'En seguimiento' | 'Demorados' | 'Ventas'
+const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'Demorados', 'Ventas']
 
 type SortKey = 'last_contact_at' | 'status'
 type SortDir = 'asc' | 'desc'
@@ -59,18 +59,18 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
 
   // ── Derived ──────────────────────────────────────────────────
 
-  const activeLeads = leads.filter((l) => !['Cerrado', 'Para rescate'].includes(l.status))
+  const activeLeads = leads.filter((l) => !isBaja(l.status) && l.status !== 'VENTA')
   const atRiskCount = leads.filter((l) => l.at_risk).length
-  const closedMonth = leads.filter((l) => l.status === 'Cerrado').length
+  const closedMonth = leads.filter((l) => l.status === 'VENTA').length
   const closeRate   = leads.length > 0 ? Math.round((closedMonth / leads.length) * 100) : 0
 
   const filtered = useMemo(() => {
     const base = leads.filter((l) => {
       switch (filter) {
-        case 'Sin contactar':  return l.status === 'Nuevo'
-        case 'En seguimiento': return ['Contactado', 'Citado'].includes(l.status)
-        case 'En riesgo':      return l.at_risk
-        case 'Cerrados':       return l.status === 'Cerrado'
+        case 'Sin contactar':  return l.status === 'GESTION' && !l.last_contact_at
+        case 'En seguimiento': return ['GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE'].includes(l.status)
+        case 'Demorados':      return l.at_risk
+        case 'Ventas':         return l.status === 'VENTA'
         default:               return true
       }
     })
@@ -119,22 +119,22 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
         <KpiCard
           icon={<AlertTriangle className="size-4 text-destructive" />}
           label="Sin contactar"
-          value={leads.filter((l) => l.status === 'Nuevo').length.toString()}
+          value={leads.filter((l) => !l.last_contact_at && !isBaja(l.status) && l.status !== 'VENTA').length.toString()}
           sub="requieren atención"
-          accent={leads.filter((l) => l.status === 'Nuevo').length > 0 ? 'destructive' : undefined}
+          accent={leads.filter((l) => !l.last_contact_at && !isBaja(l.status) && l.status !== 'VENTA').length > 0 ? 'destructive' : undefined}
         />
         <KpiCard
           icon={<Clock className="size-4 text-destructive" />}
-          label="En riesgo ahora"
+          label="Demorados"
           value={atRiskCount.toString()}
-          sub="sin contacto +24h"
+          sub="superaron el SLA de contacto"
           accent={atRiskCount > 0 ? 'destructive' : undefined}
         />
         <KpiCard
           icon={<Target className="size-4 text-primary" />}
           label="% de cierre"
           value={`${closeRate}%`}
-          sub={`${closedMonth} cerrados / ${leads.length} leads`}
+          sub={`${closedMonth} ventas / ${leads.length} leads`}
         />
       </div>
 
@@ -153,7 +153,7 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
               )}
             >
               {f}
-              {f === 'En riesgo' && atRiskCount > 0 && (
+              {f === 'Demorados' && atRiskCount > 0 && (
                 <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
                   {atRiskCount}
                 </span>

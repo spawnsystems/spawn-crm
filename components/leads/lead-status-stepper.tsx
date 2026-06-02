@@ -1,15 +1,26 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { isBaja, statusLabel } from '@/lib/leads/constants'
 
-const STEPS = ['Nuevo', 'Contactado', 'Citado', 'Cerrado'] as const
+const STEPS = ['GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE', 'VENTA'] as const
 type Step = (typeof STEPS)[number]
 
 const STEP_INDEX: Record<Step, number> = {
-  Nuevo:      0,
-  Contactado: 1,
-  Citado:     2,
-  Cerrado:    3,
+  'GESTION':            0,
+  'HORARIO ASIGNADO':   1,
+  'ENTREVISTA PACTADA': 2,
+  'CIERRE':             3,
+  'VENTA':              4,
+}
+
+// Labels cortos para el stepper (el badge usa los largos)
+const STEP_LABEL: Record<Step, string> = {
+  'GESTION':            'Gestión',
+  'HORARIO ASIGNADO':   'Horario',
+  'ENTREVISTA PACTADA': 'Entrevista',
+  'CIERRE':             'Cierre',
+  'VENTA':              'Venta',
 }
 
 interface LeadStatusStepperProps {
@@ -19,16 +30,16 @@ interface LeadStatusStepperProps {
 }
 
 export function LeadStatusStepper({ status, wasRescued, className }: LeadStatusStepperProps) {
-  const isRescue     = status === 'Para rescate'
-  const currentIndex = isRescue ? -1 : (STEP_INDEX[status as Step] ?? -1)
+  const enBaja       = isBaja(status)
+  const currentIndex = enBaja ? -1 : (STEP_INDEX[status as Step] ?? -1)
 
   return (
     <div className={cn('select-none', className)}>
       {/* Stepper row */}
       <div className="flex items-start">
         {STEPS.map((step, i) => {
-          const isCompleted = !isRescue && currentIndex > i
-          const isCurrent   = !isRescue && currentIndex === i
+          const isCompleted = !enBaja && currentIndex > i
+          const isCurrent   = !enBaja && currentIndex === i
 
           return (
             <div
@@ -51,7 +62,7 @@ export function LeadStatusStepper({ status, wasRescued, className }: LeadStatusS
                   : isCompleted ? 'text-foreground/60'
                   : 'text-muted-foreground/40',
                 )}>
-                  {step}
+                  {STEP_LABEL[step]}
                 </span>
               </div>
 
@@ -67,18 +78,17 @@ export function LeadStatusStepper({ status, wasRescued, className }: LeadStatusS
         })}
       </div>
 
-      {/* Rescue branch — shown if current or historical */}
-      {(isRescue || wasRescued) && (
+      {/* Baja branch — shown if current or historical rescue */}
+      {(enBaja || wasRescued) && (
         <div className="mt-2 ml-[13px] flex items-center gap-1.5">
-          {/* Short vertical + horizontal indicator */}
           <div className="flex flex-col items-center">
-            <div className={cn('w-px h-2', isRescue ? 'bg-amber-400' : 'bg-muted-foreground/20')} />
+            <div className={cn('w-px h-2', enBaja ? 'bg-rose-400' : 'bg-muted-foreground/20')} />
           </div>
           <span className={cn(
             'text-[10px] font-medium leading-none',
-            isRescue ? 'text-amber-600' : 'text-muted-foreground/50',
+            enBaja ? 'text-rose-600' : 'text-muted-foreground/50',
           )}>
-            {isRescue ? '↳ Para rescate' : '↳ Estuvo en rescate'}
+            {enBaja ? `↳ ${statusLabel(status)}` : '↳ Estuvo en rescate'}
           </span>
         </div>
       )}

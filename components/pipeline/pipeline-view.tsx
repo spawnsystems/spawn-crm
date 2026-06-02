@@ -7,9 +7,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { LifeBuoy } from 'lucide-react'
 import type { Lead } from '@/lib/db'
 import { changeStatus } from '@/app/actions/leads'
+import { isBaja } from '@/lib/leads/constants'
 import { toast } from 'sonner'
 
 const ALL = '__all__'
@@ -18,10 +18,11 @@ const ALL = '__all__'
 type LeadLike = Lead & { vendedor_nombre?: string | null; vendedor_alias?: string | null }
 
 const STAGES = [
-  { id: 'Nuevo',      label: 'Nuevos',      color: 'bg-slate-500'   },
-  { id: 'Contactado', label: 'Contactados', color: 'bg-blue-500'    },
-  { id: 'Citado',     label: 'Citados',     color: 'bg-violet-500'  },
-  { id: 'Cerrado',    label: 'Cerrados',    color: 'bg-emerald-500' },
+  { id: 'GESTION',            label: 'Gestión',            color: 'bg-slate-500'   },
+  { id: 'HORARIO ASIGNADO',   label: 'Horario asignado',   color: 'bg-sky-500'     },
+  { id: 'ENTREVISTA PACTADA', label: 'Entrevista pactada', color: 'bg-violet-500'  },
+  { id: 'CIERRE',             label: 'Cierre',             color: 'bg-indigo-500'  },
+  { id: 'VENTA',              label: 'Venta',              color: 'bg-emerald-500' },
 ] as const
 
 interface PipelineViewProps {
@@ -49,8 +50,8 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
     [leads, filterVend],
   )
 
-  const activeLeads  = visibleLeads.filter((l) => l.status !== 'Para rescate')
-  const rescueLeads  = visibleLeads.filter((l) => l.status === 'Para rescate')
+  // El board solo muestra estados activos; los de baja viven en /rescate.
+  const activeLeads  = visibleLeads.filter((l) => !isBaja(l.status))
 
   async function handleDrop(leadId: string, newStatus: LeadLike['status']) {
     const prev = leads.find((l) => l.id === leadId)?.status
@@ -106,40 +107,6 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
           )
         })}
 
-        {/* Para rescate — columna apartada visualmente con borde ámbar */}
-        <div
-          className={cn(
-            'w-64 shrink-0 rounded-xl border-l-2 border-amber-400/60 pl-3 bg-amber-50/30',
-          )}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault()
-            const leadId = e.dataTransfer.getData('leadId')
-            if (leadId) handleDrop(leadId, 'Para rescate' as LeadLike['status'])
-          }}
-        >
-          <div className="flex items-center justify-between mb-3 px-1 pt-1">
-            <div className="flex items-center gap-2">
-              <LifeBuoy className="size-3.5 text-amber-600" />
-              <span className="text-sm font-semibold text-amber-700">Para rescate</span>
-              <span className="text-xs text-amber-700/70">{rescueLeads.length}</span>
-            </div>
-          </div>
-          <div className="space-y-2 min-h-[80px]">
-            {rescueLeads.map((lead) => (
-              <KanbanCard
-                key={lead.id}
-                lead={lead}
-                onClick={() => setOpenLeadId(lead.id)}
-              />
-            ))}
-            {rescueLeads.length === 0 && (
-              <p className="text-xs text-amber-700/50 italic px-1 py-3">
-                Sin leads inactivos.
-              </p>
-            )}
-          </div>
-        </div>
       </div>
 
       <div className="text-xs text-muted-foreground mt-4">

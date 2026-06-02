@@ -4,8 +4,19 @@ export const leadSourceValues = [
   'Meta Ads', 'Mercado Libre', 'Web', 'Referido', 'Walk-in', 'Otro',
 ] as const
 
+// Estados activos del pipeline (seleccionables para avanzar el lead)
+export const activeStatusValues = [
+  'GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE', 'VENTA',
+] as const
+
+// Estados de baja / terminales negativos (solo vía "Dar de baja" con motivo)
+export const bajaStatusValues = [
+  'NO CONTESTA', 'NO INTERESADO', 'INCONTACTABLE', 'YA COMPRO', 'DATO ERRONEO', 'DERIVAR',
+] as const
+
+// Universo completo del enum lead_status
 export const leadStatusValues = [
-  'Nuevo', 'Contactado', 'Citado', 'Cerrado', 'Para rescate',
+  ...activeStatusValues, ...bajaStatusValues,
 ] as const
 
 export const createLeadSchema = z.object({
@@ -30,11 +41,21 @@ export const updateLeadSchema = z.object({
   assigned_to: z.string().uuid().nullable().optional(),
 })
 
+// El cambio de estado "normal" solo permite avanzar entre estados activos.
+// Los estados de baja se setean exclusivamente vía darDeBaja (bajaSchema).
 export const changeStatusSchema = z.object({
   leadId: z.string().uuid(),
-  status: z.enum(leadStatusValues),
+  status: z.enum(activeStatusValues),
+})
+
+// Dar de baja: estado terminal negativo + motivo obligatorio.
+export const bajaSchema = z.object({
+  leadId: z.string().uuid(),
+  status: z.enum(bajaStatusValues),
+  motivo: z.string().min(3, 'El motivo es obligatorio'),
 })
 
 export type CreateLeadInput  = z.infer<typeof createLeadSchema>
 export type UpdateLeadInput  = z.infer<typeof updateLeadSchema>
 export type ChangeStatusInput = z.infer<typeof changeStatusSchema>
+export type BajaInput        = z.infer<typeof bajaSchema>

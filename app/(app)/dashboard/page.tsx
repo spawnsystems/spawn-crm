@@ -43,7 +43,7 @@ export default async function DashboardPage() {
       .where(
         and(
           eq(schema.leads.tenant_id, tenantId),
-          eq(schema.leads.status, 'Cerrado'),
+          eq(schema.leads.status, 'VENTA'),
           sql`${schema.leads.created_at} >= ${startOfMonth}`,
         ),
       ),
@@ -65,7 +65,7 @@ export default async function DashboardPage() {
         nombre:  schema.usuarios.nombre,
         alias:   schema.usuarios.alias,
         total:   count(),
-        closed:  sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'Cerrado' THEN 1 ELSE 0 END)::int`,
+        closed:  sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'VENTA' THEN 1 ELSE 0 END)::int`,
         atRisk:  sql<number>`SUM(CASE WHEN ${schema.leads.at_risk} = true THEN 1 ELSE 0 END)::int`,
         avgResp: sql<number>`0`,
       })

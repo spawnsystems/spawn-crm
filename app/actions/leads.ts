@@ -2,11 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { dbAdmin, schema } from '@/lib/db'
-import { eq, and, desc, inArray } from 'drizzle-orm'
-import { createLeadSchema, updateLeadSchema } from '@/lib/schemas/leads'
+import { eq, and, desc, inArray, or, isNotNull, sql } from 'drizzle-orm'
+import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/leads'
 import { logAudit } from '@/lib/audit/log'
 import { requireTenant, appendTimeline } from '@/lib/leads/server-helpers'
-import { statusChangeLabel } from '@/lib/leads/constants'
+import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES } from '@/lib/leads/constants'
 import type { ActionResult } from './auth'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -158,6 +158,11 @@ export async function changeStatus(
 
   if (!current[0]) return { success: false, error: 'Lead no encontrado' }
 
+  // Los estados de baja se setean solo vía darDeBaja (motivo obligatorio).
+  if (isBaja(newStatus)) {
+    return { success: false, error: 'Usá "Dar de baja" para este estado' }
+  }
+
   await q.update(schema.leads)
     .set({ status: newStatus, updated_by: user.id })
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
@@ -240,17 +245,16 @@ export async function assignLead(
 }
 
 // ── markAsClosed ──────────────────────────────────────────────
-// Marca el lead como cerrado positivamente (venta).
-// "Perdido" no existe: los leads inactivos quedan en 'Para rescate'.
+// Marca el lead como VENTA (terminal positivo).
 
 export async function markAsClosed(leadId: string): Promise<ActionResult<void>> {
   const { user, tenantId, q, forTenant } = await requireTenant()
 
   await q.update(schema.leads)
-    .set({ status: 'Cerrado', abandoned_at: null, updated_by: user.id })
+    .set({ status: 'VENTA', abandoned_at: null, updated_by: user.id })
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
 
-  await appendTimeline(tenantId, leadId, user.id, 'closed_won', '¡Venta cerrada! Trato confirmado')
+  await appendTimeline(tenantId, leadId, user.id, 'closed_won', '¡Venta concretada! Trato confirmado')
 
   void logAudit({
     tenantId,
@@ -268,10 +272,59 @@ export async function markAsClosed(leadId: string): Promise<ActionResult<void>> 
   return { success: true, data: undefined }
 }
 
+// ── darDeBaja ─────────────────────────────────────────────────
+// Setea un estado terminal negativo con motivo obligatorio (botón cruz-roja).
+// Para estados rescatables marca abandoned_at para que aparezca en Rescate.
+
+export async function darDeBaja(input: unknown): Promise<ActionResult<void>> {
+  const { user, tenantId, q, forTenant } = await requireTenant()
+
+  const parsed = bajaSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const { leadId, status, motivo } = parsed.data
+
+  const rescatable = (RESCATABLE_STATUSES as readonly string[]).includes(status)
+
+  await q.update(schema.leads)
+    .set({
+      status,
+      baja_motivo:  motivo,
+      baja_at:      new Date(),
+      // los rescatables entran a la bandeja de rescate vía abandoned_at
+      ...(rescatable ? { abandoned_at: new Date() } : {}),
+      updated_by:   user.id,
+    })
+    .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+
+  await appendTimeline(
+    tenantId, leadId, user.id,
+    'lead_baja',
+    `Dado de baja: ${statusLabel(status)}`,
+    motivo,
+  )
+
+  void logAudit({
+    tenantId,
+    actorId:        user.id,
+    action:         'lead.baja',
+    entity:         'lead',
+    entityId:       leadId,
+    meta:           { status, motivo },
+    visibleToDueno: true,
+  })
+
+  revalidatePath('/leads')
+  revalidatePath('/all-leads')
+  revalidatePath('/dashboard')
+  revalidatePath('/pipeline')
+  revalidatePath('/rescate')
+  return { success: true, data: undefined }
+}
+
 // ── reactivateFromRescue ──────────────────────────────────────
-// Trae un lead de 'Para rescate' de vuelta al flujo activo ('Contactado').
-// Limpia abandoned_at, registra last_contact_at = now, agrega evento al timeline
-// para que la UI muestre "Reactivado del rescate".
+// Trae un lead de la bandeja de rescate (baja rescatable o inactivo) de vuelta
+// al flujo activo ('GESTION'). Limpia abandoned_at + baja, registra
+// last_contact_at = now, agrega evento al timeline para mostrar el badge.
 
 export async function reactivateFromRescue(
   leadId: string,
@@ -286,17 +339,24 @@ export async function reactivateFromRescue(
     .limit(1)
 
   if (!current[0]) return { success: false, error: 'Lead no encontrado' }
-  if (current[0].status !== 'Para rescate') {
+
+  // Rescatable = baja recuperable o inactivo (abandoned_at seteado)
+  const enRescate = isBaja(current[0].status)
+    ? (RESCATABLE_STATUSES as readonly string[]).includes(current[0].status)
+    : current[0].abandoned_at !== null
+  if (!enRescate) {
     return { success: false, error: 'El lead no está en rescate' }
   }
 
   await q.update(schema.leads)
     .set({
-      status:                'Contactado',
+      status:                'GESTION',
       last_contact_at:       new Date(),
       last_contact_critical: false,
       at_risk:               false,
       abandoned_at:          null,
+      baja_motivo:           null,
+      baja_at:               null,
       updated_by:            user.id,
     })
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
@@ -337,7 +397,8 @@ export async function reactivateFromRescue(
 
 // ── markContacted ─────────────────────────────────────────────
 // Registra un contacto — resetea at_risk y last_contact_at.
-// Si el lead estaba en 'Nuevo', lo avanza automáticamente a 'Contactado'.
+// El lead permanece en GESTIÓN (estado de trabajo); el avance de etapa
+// se hace explícitamente. "advanced" indica si es el primer contacto.
 
 export async function markContacted(
   leadId: string,
@@ -345,20 +406,19 @@ export async function markContacted(
 ): Promise<ActionResult<{ advanced: boolean }>> {
   const { user, tenantId, q, forTenant } = await requireTenant()
 
-  // Leer el estado actual para saber si avanzamos
+  // Leer last_contact_at para distinguir el primer contacto
   const current = await dbAdmin
-    .select({ status: schema.leads.status })
+    .select({ last_contact_at: schema.leads.last_contact_at })
     .from(schema.leads)
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
     .limit(1)
 
   if (!current[0]) return { success: false, error: 'Lead no encontrado' }
 
-  const advanced = current[0].status === 'Nuevo'
+  const advanced = current[0].last_contact_at === null
 
   await q.update(schema.leads)
     .set({
-      ...(advanced ? { status: 'Contactado' } : {}),
       last_contact_at:       new Date(),
       last_contact_critical: false,
       at_risk:               false,
@@ -566,6 +626,8 @@ export async function getAllLeads() {
     stage_entered_at:      schema.leads.stage_entered_at,
     abandoned_at:          schema.leads.abandoned_at,
     rescue_category:       schema.leads.rescue_category,
+    baja_motivo:           schema.leads.baja_motivo,
+    baja_at:               schema.leads.baja_at,
     assigned_to:           schema.leads.assigned_to,
     equipo_id:             schema.leads.equipo_id,
     created_by:            schema.leads.created_by,
@@ -613,10 +675,19 @@ export async function getAllLeads() {
 }
 
 // ── getAbandonedLeads ─────────────────────────────────────────
-// Leads en 'Para rescate' visibles para el usuario (mismo scoping que getAllLeads)
+// Bandeja de rescate: leads dados de baja recuperables (RESCATABLE_STATUSES)
+// o inactivos (abandoned_at no nulo). Mismo scoping que getAllLeads.
 
 export async function getAbandonedLeads() {
   const { user, tenantId } = await requireTenant()
+
+  // Predicado derivado: baja rescatable OR inactivo
+  const rescatePredicate = or(
+    inArray(schema.leads.status, [...RESCATABLE_STATUSES]),
+    isNotNull(schema.leads.abandoned_at),
+  )
+  // Orden: por la fecha más reciente entre baja_at y abandoned_at
+  const rescateOrder = desc(sql`COALESCE(${schema.leads.baja_at}, ${schema.leads.abandoned_at})`)
 
   const base = dbAdmin
     .select({
@@ -626,6 +697,8 @@ export async function getAbandonedLeads() {
       status:          schema.leads.status,
       est_value:       schema.leads.est_value,
       abandoned_at:    schema.leads.abandoned_at,
+      baja_at:         schema.leads.baja_at,
+      baja_motivo:     schema.leads.baja_motivo,
       assigned_to:     schema.leads.assigned_to,
       equipo_id:       schema.leads.equipo_id,
       vendedor_nombre: schema.usuarios.nombre,
@@ -638,9 +711,9 @@ export async function getAbandonedLeads() {
     return base
       .where(and(
         eq(schema.leads.tenant_id, tenantId),
-        eq(schema.leads.status, 'Para rescate'),
+        rescatePredicate,
       ))
-      .orderBy(desc(schema.leads.abandoned_at))
+      .orderBy(rescateOrder)
   }
 
   const teamIds = await getMyTeamIds(user.id, tenantId, user.rol)
@@ -649,10 +722,10 @@ export async function getAbandonedLeads() {
   return base
     .where(and(
       eq(schema.leads.tenant_id, tenantId),
-      eq(schema.leads.status, 'Para rescate'),
+      rescatePredicate,
       inArray(schema.leads.equipo_id, teamIds),
     ))
-    .orderBy(desc(schema.leads.abandoned_at))
+    .orderBy(rescateOrder)
 }
 
 // ── getLeadDetail ─────────────────────────────────────────────

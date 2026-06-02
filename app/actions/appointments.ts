@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, gte, lte, ne, sql } from 'drizzle-orm'
 import { requireTenant, appendTimeline } from '@/lib/leads/server-helpers'
+import { isBaja } from '@/lib/leads/constants'
 import { getCurrentUserTeamScope, buildAppointmentScopeWhere } from '@/lib/tenant/teams'
 import { logAudit } from '@/lib/audit/log'
 import {
@@ -32,8 +33,8 @@ function fmtApptDateBA(date: Date): string {
 // ── createAppointment ────────────────────────────────────────
 // Crea una nueva cita para un lead. Side-effects:
 //  1. INSERT en lead_appointments
-//  2. Si lead.status ∈ {Nuevo, Contactado, Para rescate} → status = 'Citado'
-//  3. Si venía de 'Para rescate' → appendTimeline('reactivated_from_rescue')
+//  2. Si el lead no está en una etapa ≥ ENTREVISTA PACTADA → status = 'ENTREVISTA PACTADA'
+//  3. Si venía de baja/rescate → limpia baja + appendTimeline('reactivated_from_rescue')
 //  4. appendTimeline('appointment_scheduled')
 //  5. logAudit
 
@@ -49,10 +50,11 @@ export async function createAppointment(
   // 1) Verificar que el lead existe + es accesible + obtener su equipo
   const lead = await dbAdmin
     .select({
-      id:          schema.leads.id,
-      status:      schema.leads.status,
-      assigned_to: schema.leads.assigned_to,
-      equipo_id:   schema.leads.equipo_id,
+      id:           schema.leads.id,
+      status:       schema.leads.status,
+      assigned_to:  schema.leads.assigned_to,
+      equipo_id:    schema.leads.equipo_id,
+      abandoned_at: schema.leads.abandoned_at,
     })
     .from(schema.leads)
     .where(and(eq(schema.leads.id, data.lead_id), forTenant(schema.leads)))
@@ -118,18 +120,21 @@ export async function createAppointment(
     created_by:     user.id,
   }).returning({ id: schema.leadAppointments.id })
 
-  // 6) Side-effect sobre el lead: actualizar status si corresponde
+  // 6) Side-effect sobre el lead: avanzar a 'ENTREVISTA PACTADA' si corresponde.
+  //    No degradamos si ya está en una etapa igual o posterior.
   const previousStatus = lead[0].status
-  const cameFromRescue = previousStatus === 'Para rescate'
+  const cameFromRescue = isBaja(previousStatus) || lead[0].abandoned_at !== null
+  const yaAvanzado     = ['ENTREVISTA PACTADA', 'CIERRE', 'VENTA'].includes(previousStatus)
 
-  if (previousStatus !== 'Citado' && previousStatus !== 'Cerrado') {
+  if (!yaAvanzado) {
     await q.update(schema.leads)
       .set({
-        status:                'Citado',
+        status:                'ENTREVISTA PACTADA',
         last_contact_at:       new Date(),
         last_contact_critical: false,
         at_risk:               false,
-        abandoned_at:          cameFromRescue ? null : undefined,
+        // si venía de baja/rescate, lo reactivamos limpiando esos campos
+        ...(cameFromRescue ? { abandoned_at: null, baja_motivo: null, baja_at: null } : {}),
         updated_by:            user.id,
       })
       .where(and(eq(schema.leads.id, data.lead_id), forTenant(schema.leads)))
