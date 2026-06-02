@@ -8,7 +8,6 @@ export interface CotizadorInput {
   km:           number      // kilometraje actual del vehículo
   anio:         number      // año del vehículo
   uso:          UsoVehiculo
-  override?:    number      // "figurita": el vendedor pisa el cálculo con un valor manual
   provincia?:   string      // para mostrar condiciones comerciales relevantes
 }
 
@@ -17,7 +16,6 @@ export interface CotizadorResult {
   rechazoMotivo?:  string
   descuentoPct:    number          // porcentaje de descuento (0 si rechazado)
   valorCalculado:  number          // base * (1 - descuentoPct/100), redondeado
-  valorFinal:      number          // override ?? valorCalculado
   condiciones:     string          // texto de condiciones comerciales
 }
 
@@ -61,7 +59,7 @@ export function condicionesComerciales(provincia?: string): string {
  *   > 200.000 km           → −45%
  */
 export function calcularUsado(input: CotizadorInput): CotizadorResult {
-  const { baseInfoauto, km, anio, uso, override, provincia } = input
+  const { baseInfoauto, km, anio, uso, provincia } = input
   const condiciones = condicionesComerciales(provincia)
 
   if (baseInfoauto <= 0) {
@@ -70,7 +68,6 @@ export function calcularUsado(input: CotizadorInput): CotizadorResult {
       rechazoMotivo: 'El valor base InfoAuto debe ser mayor a 0.',
       descuentoPct: 0,
       valorCalculado: 0,
-      valorFinal: override ?? 0,
       condiciones,
     }
   }
@@ -85,7 +82,6 @@ export function calcularUsado(input: CotizadorInput): CotizadorResult {
           : `${km.toLocaleString('es-AR')} km: solo se toman vehículos con menos de 300.000 km.`,
         descuentoPct: 0,
         valorCalculado: 0,
-        valorFinal: override ?? 0,
         condiciones,
       }
     }
@@ -96,23 +92,11 @@ export function calcularUsado(input: CotizadorInput): CotizadorResult {
     else                           pct = 45
 
     const valorCalculado = Math.round(baseInfoauto * (1 - pct / 100))
-    return {
-      rechazado: false,
-      descuentoPct: pct,
-      valorCalculado,
-      valorFinal: override ?? valorCalculado,
-      condiciones,
-    }
+    return { rechazado: false, descuentoPct: pct, valorCalculado, condiciones }
   }
 
   // ── Particular ──
   const pct = km <= 50_000 ? 15 : 20
   const valorCalculado = Math.round(baseInfoauto * (1 - pct / 100))
-  return {
-    rechazado: false,
-    descuentoPct: pct,
-    valorCalculado,
-    valorFinal: override ?? valorCalculado,
-    condiciones,
-  }
+  return { rechazado: false, descuentoPct: pct, valorCalculado, condiciones }
 }

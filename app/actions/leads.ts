@@ -836,7 +836,7 @@ export async function getHistorialLeads() {
 export async function getLeadDetail(leadId: string) {
   const { tenantId, forTenant } = await requireTenant()
 
-  const [lead, notes, timeline, tasks] = await Promise.all([
+  const [lead, notes, timeline, tasks, calls] = await Promise.all([
     dbAdmin
       .select()
       .from(schema.leads)
@@ -881,6 +881,17 @@ export async function getLeadDetail(leadId: string) {
         ),
       )
       .orderBy(schema.leadTasks.done, desc(schema.leadTasks.created_at)),
+
+    dbAdmin
+      .select()
+      .from(schema.leadCalls)
+      .where(
+        and(
+          eq(schema.leadCalls.lead_id, leadId),
+          eq(schema.leadCalls.tenant_id, tenantId),
+        ),
+      )
+      .orderBy(desc(schema.leadCalls.scheduled_at)),
   ])
 
   if (!lead[0]) return null
@@ -896,5 +907,5 @@ export async function getLeadDetail(leadId: string) {
 
   const creator_nombre = creatorRow[0]?.alias || creatorRow[0]?.nombre || null
 
-  return { lead: { ...lead[0], creator_nombre }, notes, timeline, tasks }
+  return { lead: { ...lead[0], creator_nombre }, notes, timeline, tasks, calls }
 }

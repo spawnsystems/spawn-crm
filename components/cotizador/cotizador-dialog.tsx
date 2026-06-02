@@ -28,12 +28,11 @@ interface CotizadorDialogProps {
 const YEAR_NOW = new Date().getFullYear()
 
 const EMPTY = {
-  marca_modelo:   '',
-  anio:           String(YEAR_NOW - 2),
-  km:             '',
-  uso:            'particular' as UsoVehiculo,
-  base_infoauto:  '',
-  override_valor: '',
+  marca_modelo:  '',
+  anio:          String(YEAR_NOW - 2),
+  km:            '',
+  uso:           'particular' as UsoVehiculo,
+  base_infoauto: '',
 }
 
 export function CotizadorDialog({
@@ -55,21 +54,13 @@ export function CotizadorDialog({
     const anio = parseInt(form.anio, 10)
     if (!base || base <= 0 || isNaN(km) || isNaN(anio)) return null
 
-    return calcularUsado({
-      baseInfoauto: base,
-      km,
-      anio,
-      uso:      form.uso,
-      override: form.override_valor ? parseFloat(form.override_valor.replace(/\./g, '').replace(',', '.')) : undefined,
-      provincia,
-    })
+    return calcularUsado({ baseInfoauto: base, km, anio, uso: form.uso, provincia })
   }, [form, provincia])
 
   function handleSubmit() {
-    const base  = parseFloat(form.base_infoauto.replace(/\./g, '').replace(',', '.'))
-    const km    = parseInt(form.km.replace(/\./g, ''), 10)
-    const anio  = parseInt(form.anio, 10)
-    const over  = form.override_valor ? parseFloat(form.override_valor.replace(/\./g, '').replace(',', '.')) : undefined
+    const base = parseFloat(form.base_infoauto.replace(/\./g, '').replace(',', '.'))
+    const km   = parseInt(form.km.replace(/\./g, ''), 10)
+    const anio = parseInt(form.anio, 10)
 
     if (!base || isNaN(km) || isNaN(anio)) {
       toast.error('Completá al menos: valor InfoAuto, km y año')
@@ -84,7 +75,6 @@ export function CotizadorDialog({
         km,
         uso:           form.uso,
         base_infoauto: base,
-        override_valor: over,
         provincia,
       })
 
@@ -160,34 +150,16 @@ export function CotizadorDialog({
             </div>
           </div>
 
-          {/* Valores */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Valor InfoAuto *</Label>
-              <Input
-                type="number"
-                placeholder="Ej: 8500000"
-                value={form.base_infoauto}
-                onChange={(e) => set('base_infoauto', e.target.value)}
-              />
-              <p className="text-[11px] text-muted-foreground">Ingresá el valor base de InfoAuto</p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5">
-                Figurita
-                <span title="Valor manual que pisa el cálculo automático">
-                  <Info className="size-3.5 text-muted-foreground" />
-                </span>
-              </Label>
-              <Input
-                type="number"
-                placeholder="Opcional"
-                value={form.override_valor}
-                onChange={(e) => set('override_valor', e.target.value)}
-              />
-              <p className="text-[11px] text-muted-foreground">Pisa el valor calculado</p>
-            </div>
+          {/* Valor InfoAuto */}
+          <div className="space-y-1.5">
+            <Label>Valor InfoAuto *</Label>
+            <Input
+              type="number"
+              placeholder="Ej: 8500000"
+              value={form.base_infoauto}
+              onChange={(e) => set('base_infoauto', e.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground">Ingresá el valor base de InfoAuto</p>
           </div>
 
           {/* Preview en vivo */}
@@ -218,21 +190,9 @@ export function CotizadorDialog({
                       <p className="font-medium">−{preview.descuentoPct}%</p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Valor calculado</p>
-                      <p className="font-medium">{formatCurrencyARS(preview.valorCalculado.toString())}</p>
+                      <p className="text-xs text-muted-foreground">Valor de toma</p>
+                      <p className="font-semibold text-primary text-base">{formatCurrencyARS(preview.valorCalculado.toString())}</p>
                     </div>
-                    {form.override_valor && (
-                      <div className="col-span-2">
-                        <p className="text-xs text-muted-foreground">Figurita (valor final)</p>
-                        <p className="font-semibold text-primary text-base">{formatCurrencyARS(preview.valorFinal.toString())}</p>
-                      </div>
-                    )}
-                    {!form.override_valor && (
-                      <div className="col-span-2">
-                        <p className="text-xs text-muted-foreground">Valor final</p>
-                        <p className="font-semibold text-primary text-base">{formatCurrencyARS(preview.valorFinal.toString())}</p>
-                      </div>
-                    )}
                   </div>
                 </>
               )}

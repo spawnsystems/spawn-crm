@@ -17,7 +17,6 @@ const createCotizacionSchema = z.object({
   km:           z.number().int().min(0),
   uso:          z.enum(['particular', 'taxi_uber_transporte']),
   base_infoauto: z.number().positive('El valor InfoAuto debe ser mayor a 0'),
-  override_valor: z.number().positive().optional(),
   provincia:    z.string().optional(),
 })
 
@@ -42,7 +41,6 @@ export async function createCotizacion(input: unknown): Promise<ActionResult<{ i
     km:           data.km,
     anio:         data.anio,
     uso:          data.uso,
-    override:     data.override_valor,
     provincia:    data.provincia,
   })
 
@@ -56,8 +54,8 @@ export async function createCotizacion(input: unknown): Promise<ActionResult<{ i
     base_infoauto:   data.base_infoauto.toString(),
     descuento_pct:   result.descuentoPct.toString(),
     valor_calculado: result.valorCalculado.toString(),
-    override_valor:  data.override_valor?.toString() ?? null,
-    valor_final:     result.valorFinal.toString(),
+    override_valor:  null,
+    valor_final:     result.valorCalculado.toString(),
     rechazado:       result.rechazado,
     rechazo_motivo:  result.rechazoMotivo ?? null,
     condiciones:     result.condiciones,

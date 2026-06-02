@@ -30,6 +30,7 @@ export const leadSourceEnum = pgEnum('lead_source', [
   'Web',
   'Referido',
   'Walk-in',
+  'Dato viejo',
   'Otro',
 ])
 

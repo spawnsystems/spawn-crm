@@ -31,13 +31,14 @@ import {
   MessageCircle, Send, ChevronDown, Loader2, Pencil, X, Check,
   UserCircle, Plus, RotateCcw, UserPlus, UserCheck, ArrowRight,
   CalendarCheck, Trophy, LifeBuoy, AlertTriangle, CalendarX,
-  ArrowRightLeft,
+  ArrowRightLeft, PhoneCall, PhoneIncoming, Clock3,
 } from 'lucide-react'
 import {
   changeStatus, addNote, toggleTask, getLeadDetail,
   updateLead, addTask, assignLead,
 } from '@/app/actions/leads'
 import { requestTransfer } from '@/app/actions/transfers'
+import { scheduleCall, registerCall } from '@/app/actions/calls'
 import { BajaDialog } from '@/components/leads/baja-dialog'
 import { CotizadorDialog } from '@/components/cotizador/cotizador-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
@@ -78,6 +79,8 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
   transfer_accepted:       { bg: 'bg-emerald-500',   Icon: ArrowRightLeft   },
   transfer_rejected:       { bg: 'bg-rose-400',      Icon: ArrowRightLeft   },
   transfer_cancelled:      { bg: 'bg-slate-400',     Icon: ArrowRightLeft   },
+  call_scheduled:          { bg: 'bg-sky-500',       Icon: PhoneCall        },
+  call_registered:         { bg: 'bg-teal-500',      Icon: PhoneIncoming    },
   _default:                { bg: 'bg-muted-foreground', Icon: ArrowRight    },
 }
 
@@ -103,6 +106,8 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const [showBaja,        setShowBaja]        = useState(false)
   const [showCotizador,   setShowCotizador]   = useState(false)
   const [showTransfer,    setShowTransfer]    = useState(false)
+  const [showScheduleCall, setShowScheduleCall] = useState(false)
+  const [registerCallId,   setRegisterCallId]   = useState<string | null>(null)
   const [isPending,       startTransition]    = useTransition()
 
   // Fetch all data when sheet opens.
@@ -141,6 +146,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const notes    = detail?.notes    ?? []
   const timeline = detail?.timeline ?? []
   const tasks    = detail?.tasks    ?? []
+  const calls    = detail?.calls    ?? []
 
   /** Re-fetch everything (called after mutations in NextActionCard) */
   async function refreshAll() {
@@ -637,6 +643,33 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                   </div>
                 </Section>
 
+                {/* Llamadas */}
+                <Section icon={<PhoneCall className="size-4" />} title="Llamadas">
+                  {calls.length > 0 && (
+                    <div className="space-y-2 mb-3">
+                      {calls.map((call) => (
+                        <CallCard
+                          key={call.id}
+                          call={call}
+                          onRegister={() => setRegisterCallId(call.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {calls.length === 0 && (
+                    <p className="text-sm text-muted-foreground mb-3">Sin llamadas coordinadas.</p>
+                  )}
+                  {!isBaja(lead.status) && lead.status !== 'VENTA' && (
+                    <Button
+                      size="sm" variant="outline"
+                      className="w-full gap-1.5 text-sky-600 hover:text-sky-700 hover:bg-sky-50 border-sky-200"
+                      onClick={() => setShowScheduleCall(true)}
+                    >
+                      <PhoneCall className="size-3.5" />Agendar llamada
+                    </Button>
+                  )}
+                </Section>
+
                 {/* Notes */}
                 <Section icon={<FileText className="size-4" />} title="Notas internas">
                   <div className="space-y-2 mb-3">
@@ -723,6 +756,26 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                 wasRescued={wasRescued}
               />
             </div>
+
+            {/* ── Schedule call dialog ── */}
+            <ScheduleCallDialog
+              open={showScheduleCall}
+              onOpenChange={setShowScheduleCall}
+              leadId={lead.id}
+              onDone={() => { setShowScheduleCall(false); refreshAll() }}
+            />
+
+            {/* ── Register call dialog ── */}
+            <RegisterCallDialog
+              open={!!registerCallId}
+              callId={registerCallId ?? ''}
+              onOpenChange={(v) => { if (!v) setRegisterCallId(null) }}
+              onDone={(outcome) => {
+                setRegisterCallId(null)
+                refreshAll()
+                if (outcome === 'descartado') setShowBaja(true)
+              }}
+            />
 
             {/* ── Baja dialog ── */}
             <BajaDialog
@@ -888,6 +941,340 @@ function TransferDialog({
               ? <Loader2 className="size-4 animate-spin" />
               : <ArrowRightLeft className="size-4" />}
             Solicitar traspaso
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── CallCard ──────────────────────────────────────────────────────────────────
+
+type LeadCall = {
+  id:              string
+  scheduled_at:    string | Date
+  notas_previas:   string | null
+  realizada_at:    string | Date | null
+  outcome:         string | null
+  notas_resultado: string | null
+}
+
+const OUTCOME_LABEL: Record<string, { label: string; color: string }> = {
+  proxima_llamada: { label: 'Próxima llamada agendada', color: 'text-sky-600'     },
+  cita:            { label: 'Cita acordada',            color: 'text-violet-600'  },
+  descartado:      { label: 'Lead dado de baja',        color: 'text-rose-600'    },
+}
+
+function CallCard({ call, onRegister }: { call: LeadCall; onRegister: () => void }) {
+  const isPending = !call.realizada_at
+  const fecha = format(new Date(call.scheduled_at), 'dd/MM HH:mm')
+
+  return (
+    <div className={cn(
+      'rounded-lg border p-3 space-y-1',
+      isPending ? 'border-sky-200 bg-sky-50/50' : 'border-border bg-muted/20',
+    )}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          {isPending
+            ? <Clock3 className="size-3.5 text-sky-600 shrink-0" />
+            : <PhoneIncoming className="size-3.5 text-teal-600 shrink-0" />}
+          <span className={cn('text-xs font-medium', isPending ? 'text-sky-700' : 'text-muted-foreground')}>
+            {isPending ? `Pendiente · ${fecha}` : `Realizada · ${fecha}`}
+          </span>
+        </div>
+        {isPending && (
+          <Button
+            size="sm" variant="outline"
+            className="h-6 px-2 text-[11px] gap-1 text-sky-700 border-sky-300 hover:bg-sky-100"
+            onClick={onRegister}
+          >
+            <PhoneCall className="size-3" />Registrar llamada
+          </Button>
+        )}
+      </div>
+
+      {call.notas_previas && (
+        <p className="text-xs text-muted-foreground pl-5">{call.notas_previas}</p>
+      )}
+
+      {!isPending && call.outcome && (
+        <div className="pl-5 space-y-0.5">
+          <span className={cn('text-xs font-medium', OUTCOME_LABEL[call.outcome]?.color)}>
+            {OUTCOME_LABEL[call.outcome]?.label ?? call.outcome}
+          </span>
+          {call.notas_resultado && (
+            <p className="text-xs text-muted-foreground">{call.notas_resultado}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── ScheduleCallDialog ────────────────────────────────────────────────────────
+
+function ScheduleCallDialog({
+  open, onOpenChange, leadId, onDone,
+}: {
+  open:         boolean
+  onOpenChange: (v: boolean) => void
+  leadId:       string
+  onDone:       () => void
+}) {
+  const [scheduledAt,  setScheduledAt]  = useState('')
+  const [notas,        setNotas]        = useState('')
+  const [isPending,    startTransition] = useTransition()
+
+  function reset() { setScheduledAt(''); setNotas('') }
+
+  // Default: mañana a las 10:00 (formato datetime-local)
+  useEffect(() => {
+    if (open && !scheduledAt) {
+      const tomorrow = new Date()
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      tomorrow.setHours(10, 0, 0, 0)
+      setScheduledAt(tomorrow.toISOString().slice(0, 16))
+    }
+  }, [open])
+
+  function handleSubmit() {
+    if (!scheduledAt) { toast.error('Indicá la fecha y hora de la llamada'); return }
+    startTransition(async () => {
+      const res = await scheduleCall({
+        leadId,
+        scheduledAt: new Date(scheduledAt).toISOString(),
+        notasPrevias: notas.trim() || undefined,
+      })
+      if (!res.success) { toast.error(res.error); return }
+      toast.success('Llamada agendada')
+      reset()
+      onDone()
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <PhoneCall className="size-4 text-sky-600" />
+            Agendar llamada
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          <div className="space-y-1.5">
+            <Label>Fecha y hora *</Label>
+            <input
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={(e) => setScheduledAt(e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Contexto / notas previas <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+            <Textarea
+              placeholder="Ej: Interesado en Tracker, consultar por financiamiento"
+              value={notas}
+              onChange={(e) => setNotas(e.target.value)}
+              rows={3}
+              className="text-sm resize-none"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={isPending}>
+            Cancelar
+          </Button>
+          <Button onClick={handleSubmit} disabled={!scheduledAt || isPending} className="gap-1.5">
+            {isPending ? <Loader2 className="size-4 animate-spin" /> : <PhoneCall className="size-4" />}
+            Agendar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── RegisterCallDialog ────────────────────────────────────────────────────────
+
+type CallOutcome = 'proxima_llamada' | 'cita' | 'descartado'
+
+const OUTCOMES: { value: CallOutcome; label: string; desc: string; icon: React.ReactNode; color: string }[] = [
+  {
+    value:  'proxima_llamada',
+    label:  'Próxima llamada',
+    desc:   'Se coordina otra llamada',
+    icon:   <PhoneCall className="size-4" />,
+    color:  'border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100',
+  },
+  {
+    value:  'cita',
+    label:  'Agendar cita',
+    desc:   'Se pactó una cita presencial o virtual',
+    icon:   <CalendarCheck className="size-4" />,
+    color:  'border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100',
+  },
+  {
+    value:  'descartado',
+    label:  'Dar de baja',
+    desc:   'El lead no sigue adelante',
+    icon:   <X className="size-4" />,
+    color:  'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100',
+  },
+]
+
+function RegisterCallDialog({
+  open, callId, onOpenChange, onDone,
+}: {
+  open:         boolean
+  callId:       string
+  onOpenChange: (v: boolean) => void
+  onDone:       (outcome: CallOutcome) => void
+}) {
+  const [outcome,    setOutcome]    = useState<CallOutcome | null>(null)
+  const [notas,      setNotas]      = useState('')
+  const [nextCallAt, setNextCallAt] = useState('')
+  const [isPending,  startTransition] = useTransition()
+
+  // Default próxima llamada: en 3 días a las 10:00
+  useEffect(() => {
+    if (open && !nextCallAt) {
+      const d = new Date()
+      d.setDate(d.getDate() + 3)
+      d.setHours(10, 0, 0, 0)
+      setNextCallAt(d.toISOString().slice(0, 16))
+    }
+  }, [open])
+
+  function reset() { setOutcome(null); setNotas(''); setNextCallAt('') }
+
+  function handleSubmit() {
+    if (!outcome) { toast.error('Seleccioná qué pasó en la llamada'); return }
+    if (outcome === 'proxima_llamada' && !nextCallAt) {
+      toast.error('Indicá la fecha de la próxima llamada')
+      return
+    }
+
+    startTransition(async () => {
+      const res = await registerCall({
+        callId,
+        outcome,
+        notasResultado:   notas.trim() || undefined,
+        proximaLlamadaAt: outcome === 'proxima_llamada' ? new Date(nextCallAt).toISOString() : undefined,
+      })
+      if (!res.success) { toast.error(res.error); return }
+
+      const labels: Record<CallOutcome, string> = {
+        proxima_llamada: 'Llamada registrada — próxima llamada agendada',
+        cita:            'Llamada registrada — recordá agendar la cita',
+        descartado:      'Llamada registrada',
+      }
+      toast.success(labels[outcome])
+      reset()
+      onDone(outcome)
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <PhoneIncoming className="size-4 text-teal-600" />
+            Registrar llamada
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          {/* Outcome selector */}
+          <div className="space-y-2">
+            <Label>¿En qué quedamos? *</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {OUTCOMES.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setOutcome(o.value)}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 rounded-lg border-2 px-3 py-3 text-center transition-all',
+                    outcome === o.value
+                      ? o.color + ' ring-2 ring-offset-1 ring-current'
+                      : 'border-border hover:border-muted-foreground/40',
+                  )}
+                >
+                  <span className={outcome === o.value ? '' : 'text-muted-foreground'}>{o.icon}</span>
+                  <span className={cn('text-xs font-semibold leading-tight', outcome !== o.value && 'text-foreground')}>
+                    {o.label}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground leading-tight hidden sm:block">
+                    {o.desc}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Fecha próxima llamada (solo si se elige proxima_llamada) */}
+          {outcome === 'proxima_llamada' && (
+            <div className="space-y-1.5">
+              <Label>Fecha y hora de la próxima llamada *</Label>
+              <input
+                type="datetime-local"
+                value={nextCallAt}
+                onChange={(e) => setNextCallAt(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+          )}
+
+          {/* Notas del resultado */}
+          <div className="space-y-1.5">
+            <Label>
+              Notas de la llamada
+              <span className="text-muted-foreground font-normal ml-1">(opcional)</span>
+            </Label>
+            <Textarea
+              placeholder="Ej: Está comparando con Toyota, vuelve a llamar el jueves..."
+              value={notas}
+              onChange={(e) => setNotas(e.target.value)}
+              rows={3}
+              className="text-sm resize-none"
+            />
+          </div>
+
+          {/* Aviso si el outcome desencadena otra acción */}
+          {outcome === 'cita' && (
+            <p className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+              Al confirmar, podrás agendar la cita desde la sección de próxima acción del lead.
+            </p>
+          )}
+          {outcome === 'descartado' && (
+            <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+              Al confirmar, se abrirá el formulario para dar de baja el lead con motivo.
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={isPending}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={
+              !outcome ||
+              (outcome === 'proxima_llamada' && !nextCallAt) ||
+              isPending
+            }
+            className="gap-1.5"
+          >
+            {isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+            Confirmar
           </Button>
         </DialogFooter>
       </DialogContent>
