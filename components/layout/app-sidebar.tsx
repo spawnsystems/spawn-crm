@@ -20,6 +20,7 @@ import {
   Menu,
   CalendarDays,
   Inbox,
+  Archive,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -81,6 +82,13 @@ const NAV_ITEMS: NavItem[] = [
     label:   'Rescate',
     icon:    <LifeBuoy className="size-4" />,
     roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor'],
+    section: 'leads',
+  },
+  {
+    href:    '/historial',
+    label:   'Historial',
+    icon:    <Archive className="size-4" />,
+    roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
     section: 'leads',
   },
   {

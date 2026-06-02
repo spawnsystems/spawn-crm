@@ -10,7 +10,7 @@ import { Paginator } from '@/components/ui/paginator'
 import { cn, formatRelative, safeRefetch } from '@/lib/utils'
 import {
   AlertTriangle, MessageCircle, Phone, ChevronRight, Clock, Target, Plus,
-  ArrowUp, ArrowDown, Archive,
+  ArrowUp, ArrowDown,
 } from 'lucide-react'
 import type { Lead } from '@/lib/db'
 import { getVendedoresDelTenant } from '@/app/actions/users'
@@ -19,8 +19,8 @@ import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
 
 type Vendedor = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 
-type FilterTab = 'Todos' | 'Sin contactar' | 'En seguimiento' | 'Demorados' | 'Historial'
-const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'Demorados', 'Historial']
+type FilterTab = 'Todos' | 'Sin contactar' | 'En seguimiento' | 'Demorados'
+const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'Demorados']
 
 type SortKey = 'last_contact_at' | 'status'
 type SortDir = 'asc' | 'desc'
@@ -64,17 +64,16 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
   const closedMonth = leads.filter((l) => l.status === 'VENTA').length
   const closeRate   = leads.length > 0 ? Math.round((closedMonth / leads.length) * 100) : 0
 
-  const historialLeads = leads.filter((l) => isBaja(l.status) || l.status === 'VENTA')
-
   const filtered = useMemo(() => {
     const base = leads.filter((l) => {
+      // Mis Leads siempre muestra solo activos — bajas y ventas van a /historial
+      const esActivo = !isBaja(l.status) && l.status !== 'VENTA'
+      if (!esActivo) return false
       switch (filter) {
-        case 'Sin contactar':  return l.status === 'GESTION' && !l.last_contact_at && !isBaja(l.status)
+        case 'Sin contactar':  return l.status === 'GESTION' && !l.last_contact_at
         case 'En seguimiento': return ['GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE'].includes(l.status)
         case 'Demorados':      return l.at_risk
-        case 'Historial':      return isBaja(l.status) || l.status === 'VENTA'
-        // 'Todos' → solo activos (bajas y ventas van al Historial)
-        default:               return !isBaja(l.status) && l.status !== 'VENTA'
+        default:               return true
       }
     })
 
@@ -155,17 +154,10 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
                   : 'border-transparent text-muted-foreground hover:text-foreground',
               )}
             >
-              {f === 'Historial'
-                ? <span className="inline-flex items-center gap-1"><Archive className="size-3" />{f}</span>
-                : f}
+              {f}
               {f === 'Demorados' && atRiskCount > 0 && (
                 <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
                   {atRiskCount}
-                </span>
-              )}
-              {f === 'Historial' && historialLeads.length > 0 && (
-                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted-foreground/30 px-1 text-[10px] font-semibold text-muted-foreground">
-                  {historialLeads.length}
                 </span>
               )}
             </button>
@@ -292,24 +284,22 @@ function LeadCard({ lead, onOpen }: { lead: Lead; onOpen: () => void }) {
   const lastContact = lead.last_contact_at
     ? formatRelative(new Date(lead.last_contact_at))
     : 'Sin contactar'
-  const enHistorial = isBaja(lead.status) || lead.status === 'VENTA'
 
   return (
     <Card
       onClick={onOpen}
       className={cn(
         'group relative overflow-hidden p-0 cursor-pointer transition-all hover:shadow-elevated',
-        lead.at_risk && !enHistorial && 'border-l-0',
-        enHistorial && isBaja(lead.status) && 'opacity-80',
+        lead.at_risk && 'border-l-0',
       )}
     >
-      {lead.at_risk && !enHistorial && <div className="absolute left-0 top-0 bottom-0 w-1 bg-destructive" />}
+      {lead.at_risk && <div className="absolute left-0 top-0 bottom-0 w-1 bg-destructive" />}
       <div className="p-5 pl-6 flex items-center gap-6">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <h3 className={cn('font-semibold text-base', enHistorial && 'text-muted-foreground')}>{lead.nombre}</h3>
+            <h3 className="font-semibold text-base">{lead.nombre}</h3>
             <StatusBadge status={lead.status} />
-            {lead.at_risk && !enHistorial && (
+            {lead.at_risk && (
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-destructive bg-destructive-soft px-2 py-0.5 rounded-full border border-destructive/20">
                 <AlertTriangle className="size-3" /> Demorado
               </span>
@@ -320,25 +310,17 @@ function LeadCard({ lead, onOpen }: { lead: Lead; onOpen: () => void }) {
             <span className="mx-2">·</span>
             <span>{lead.source}</span>
           </div>
-          {/* Motivo de baja en historial */}
-          {'baja_motivo' in lead && lead.baja_motivo && (
-            <div className="mt-1.5 text-xs text-rose-600/80 italic">
-              "{lead.baja_motivo}"
-            </div>
-          )}
-          {!enHistorial && (
-            <div className="mt-2 flex items-center gap-4 text-xs">
-              <span className={cn('inline-flex items-center gap-1', lead.last_contact_critical ? 'text-destructive font-medium' : 'text-muted-foreground')}>
-                <Clock className="size-3" />
-                {lastContact}
+          <div className="mt-2 flex items-center gap-4 text-xs">
+            <span className={cn('inline-flex items-center gap-1', lead.last_contact_critical ? 'text-destructive font-medium' : 'text-muted-foreground')}>
+              <Clock className="size-3" />
+              {lastContact}
+            </span>
+            {lead.next_action && (
+              <span className="text-muted-foreground">
+                Próxima acción: <span className="text-foreground font-medium">{lead.next_action}</span>
               </span>
-              {lead.next_action && (
-                <span className="text-muted-foreground">
-                  Próxima acción: <span className="text-foreground font-medium">{lead.next_action}</span>
-                </span>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>

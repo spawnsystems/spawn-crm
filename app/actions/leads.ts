@@ -6,7 +6,7 @@ import { eq, and, desc, inArray, or, isNotNull, sql } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/leads'
 import { logAudit } from '@/lib/audit/log'
 import { requireTenant, appendTimeline, getTenantSlaConfig } from '@/lib/leads/server-helpers'
-import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES } from '@/lib/leads/constants'
+import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
 import { computeSla, type SlaConfig } from '@/lib/leads/sla'
 import type { ActionResult } from './auth'
 
@@ -760,6 +760,75 @@ export async function getAbandonedLeads() {
       inArray(schema.leads.equipo_id, teamIds),
     ))
     .orderBy(rescateOrder)
+}
+
+// ── getHistorialLeads ─────────────────────────────────────────
+// Leads cerrados (VENTA) y dados de baja. Scoping idéntico a getAllLeads.
+// Accesible a todos los roles; vendedor solo ve los suyos.
+
+export async function getHistorialLeads() {
+  const { user, tenantId } = await requireTenant()
+
+  const historialPredicate = or(
+    eq(schema.leads.status, 'VENTA'),
+    inArray(schema.leads.status, [...BAJA_STATUSES]),
+  )
+
+  const FIELDS = {
+    id:              schema.leads.id,
+    nombre:          schema.leads.nombre,
+    telefono:        schema.leads.telefono,
+    modelo:          schema.leads.modelo,
+    source:          schema.leads.source,
+    status:          schema.leads.status,
+    baja_motivo:     schema.leads.baja_motivo,
+    baja_at:         schema.leads.baja_at,
+    est_value:       schema.leads.est_value,
+    assigned_to:     schema.leads.assigned_to,
+    equipo_id:       schema.leads.equipo_id,
+    created_by:      schema.leads.created_by,
+    created_at:      schema.leads.created_at,
+    updated_at:      schema.leads.updated_at,
+    vendedor_nombre: schema.usuarios.nombre,
+    vendedor_alias:  schema.usuarios.alias,
+  }
+
+  const base = dbAdmin
+    .select(FIELDS)
+    .from(schema.leads)
+    .leftJoin(schema.usuarios, eq(schema.leads.assigned_to, schema.usuarios.id))
+
+  const orderBy = desc(sql`COALESCE(${schema.leads.baja_at}, ${schema.leads.updated_at})`)
+
+  // Dueño / admin → todo el tenant
+  if (['platform_admin', 'dueno'].includes(user.rol)) {
+    return base
+      .where(and(eq(schema.leads.tenant_id, tenantId), historialPredicate))
+      .orderBy(orderBy)
+  }
+
+  // Vendedor → solo sus leads
+  if (user.rol === 'vendedor') {
+    return base
+      .where(and(
+        eq(schema.leads.tenant_id, tenantId),
+        eq(schema.leads.assigned_to, user.id),
+        historialPredicate,
+      ))
+      .orderBy(orderBy)
+  }
+
+  // Gerente / Supervisor → por equipos a cargo
+  const teamIds = await getMyTeamIds(user.id, tenantId, user.rol)
+  if (!teamIds || teamIds.length === 0) return []
+
+  return base
+    .where(and(
+      eq(schema.leads.tenant_id, tenantId),
+      inArray(schema.leads.equipo_id, teamIds),
+      historialPredicate,
+    ))
+    .orderBy(orderBy)
 }
 
 // ── getLeadDetail ─────────────────────────────────────────────

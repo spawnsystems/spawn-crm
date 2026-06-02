@@ -18,6 +18,7 @@ import type { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { APPOINTMENT_TIPO_LABEL } from '@/lib/schemas/appointments'
 import { isBaja, isRescatable, statusLabel } from '@/lib/leads/constants'
 import { BajaDialog } from '@/components/leads/baja-dialog'
+import { useCurrentUser } from '@/lib/tenant/context'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -37,6 +38,9 @@ interface NextActionCardProps {
 // ── Component ─────────────────────────────────────────────────────
 
 export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextActionCardProps) {
+  const currentUser = useCurrentUser()
+  const canReactivate = currentUser.rol !== 'vendedor'
+
   const [showDialog,          setShowDialog]          = useState(false)
   const [showBajaNoInteresado, setShowBajaNoInteresado] = useState(false)
   const [isPending,            startTransition]        = useTransition()
@@ -81,11 +85,13 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
           </span>
         </div>
         <p className="text-xs text-amber-700/60 mb-3">
-          {rescatable
+          {rescatable && canReactivate
             ? 'Retomá el contacto para reactivar este lead al flujo principal (volverá a Gestión).'
-            : 'Este lead no se reactiva desde acá. Si fue un error, reasignalo desde Rescate.'}
+            : rescatable && !canReactivate
+            ? 'Este lead está en rescate. Un supervisor puede reactivarlo desde la sección Rescate.'
+            : 'Este lead no se reactiva. Si fue un error, un supervisor puede gestionarlo desde Rescate.'}
         </p>
-        {rescatable && (
+        {rescatable && canReactivate && (
           <Button
             size="sm"
             className={cn('gap-1.5', isPending && 'opacity-70')}
