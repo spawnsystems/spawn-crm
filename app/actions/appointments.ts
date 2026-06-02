@@ -470,7 +470,7 @@ export async function getAppointmentsInRange(
     where.push(eq(schema.leadAppointments.vendedor_id, filters.vendedorId))
   }
   if (filters?.tipo) {
-    where.push(eq(schema.leadAppointments.tipo, filters.tipo as 'test_drive'))
+    where.push(eq(schema.leadAppointments.tipo, filters.tipo as 'videollamada'))
   }
   if (filters?.status) {
     where.push(eq(schema.leadAppointments.status, filters.status as 'programada'))

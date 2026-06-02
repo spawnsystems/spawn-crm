@@ -1,10 +1,9 @@
 import { z } from 'zod'
 
 export const appointmentTipoValues = [
-  'test_drive',
-  'visita_showroom',
   'videollamada',
-  'entrega',
+  'visita_showroom',
+  'cierre',
 ] as const
 
 export const appointmentStatusValues = [
@@ -20,10 +19,9 @@ export type AppointmentStatus = (typeof appointmentStatusValues)[number]
 
 // Labels para UI
 export const APPOINTMENT_TIPO_LABEL: Record<AppointmentTipo, string> = {
-  test_drive:      'Test drive',
-  visita_showroom: 'Visita al showroom',
   videollamada:    'Videollamada',
-  entrega:         'Entrega',
+  visita_showroom: 'Visita al showroom',
+  cierre:          'Cierre',
 }
 
 export const APPOINTMENT_STATUS_LABEL: Record<AppointmentStatus, string> = {

@@ -10,12 +10,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { AppointmentDialog } from '@/components/leads/appointment-dialog'
 import {
   Phone, CalendarCheck, CheckCircle2, LifeBuoy, Plus, RotateCcw, Loader2, Send,
+  Trophy, ThumbsDown, UserX,
 } from 'lucide-react'
-import { markContacted, markAsClosed, reactivateFromRescue } from '@/app/actions/leads'
-import { markAppointmentDone, cancelAppointment } from '@/app/actions/appointments'
+import { markContacted, markAsClosed, reactivateFromRescue, changeStatus } from '@/app/actions/leads'
+import { markAppointmentDone, markAppointmentNoShow, cancelAppointment } from '@/app/actions/appointments'
 import type { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { APPOINTMENT_TIPO_LABEL } from '@/lib/schemas/appointments'
 import { isBaja, isRescatable, statusLabel } from '@/lib/leads/constants'
+import { BajaDialog } from '@/components/leads/baja-dialog'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -35,8 +37,9 @@ interface NextActionCardProps {
 // ── Component ─────────────────────────────────────────────────────
 
 export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextActionCardProps) {
-  const [showDialog,  setShowDialog]  = useState(false)
-  const [isPending,   startTransition] = useTransition()
+  const [showDialog,          setShowDialog]          = useState(false)
+  const [showBajaNoInteresado, setShowBajaNoInteresado] = useState(false)
+  const [isPending,            startTransition]        = useTransition()
 
   /** Fire an action, show a toast, then refresh the parent */
   function run(
@@ -109,82 +112,168 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
     const dur      = nextAppointment.duration_min
 
     return (
-      <div className="mx-6 mb-4 rounded-xl bg-violet-50 border border-violet-200/60 px-4 py-3">
-        <div className="flex items-center gap-2 mb-2">
-          <CalendarCheck className="size-4 text-violet-600 shrink-0" />
-          <span className="text-sm font-semibold text-violet-900">Cita programada</span>
-          {isPast && (
-            <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200/60 rounded-full px-2 py-0.5 font-medium">
-              Fecha pasada
-            </span>
-          )}
-        </div>
+      <>
+        <div className="mx-6 mb-4 rounded-xl bg-violet-50 border border-violet-200/60 px-4 py-3">
+          {/* Header */}
+          <div className="flex items-center gap-2 mb-2">
+            <CalendarCheck className="size-4 text-violet-600 shrink-0" />
+            <span className="text-sm font-semibold text-violet-900">Cita programada</span>
+            {isPast && (
+              <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200/60 rounded-full px-2 py-0.5 font-medium">
+                Ya pasó — ¿cómo resultó?
+              </span>
+            )}
+          </div>
 
-        {/* Appointment details */}
-        <div className="mb-3 space-y-0.5">
-          <div className="text-sm font-medium text-violet-900">
-            {format(apptDate, "EEEE d 'de' MMMM 'a las' HH:mm 'hs'", { locale: es })}
+          {/* Appointment details */}
+          <div className="mb-3 space-y-0.5">
+            <div className="text-sm font-medium text-violet-900">
+              {format(apptDate, "EEEE d 'de' MMMM 'a las' HH:mm 'hs'", { locale: es })}
+            </div>
+            <div className="text-xs text-violet-700/70">
+              {APPOINTMENT_TIPO_LABEL[nextAppointment.tipo]}
+              {nextAppointment.lugar && ` · ${nextAppointment.lugar}`}
+              {' · '}{dur < 60 ? `${dur} min` : `${dur / 60} h`}
+            </div>
+            {nextAppointment.notas && (
+              <div className="text-xs text-violet-600/60 italic mt-1">
+                {nextAppointment.notas}
+              </div>
+            )}
           </div>
-          <div className="text-xs text-violet-700/70">
-            {APPOINTMENT_TIPO_LABEL[nextAppointment.tipo]}
-            {nextAppointment.lugar && ` · ${nextAppointment.lugar}`}
-            {' · '}{dur < 60 ? `${dur} min` : `${dur / 60} h`}
-          </div>
-          {nextAppointment.notas && (
-            <div className="text-xs text-violet-600/60 italic mt-1">
-              {nextAppointment.notas}
+
+          {/* ── Panel de resolución (cita ya pasada) ── */}
+          {isPast ? (
+            <div className="space-y-3">
+              {/* Éxito */}
+              <div>
+                <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wide mb-1.5">
+                  Éxito
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    onClick={() => run(async () => {
+                      const r1 = await markAppointmentDone(nextAppointment.id)
+                      if (!r1.success) return r1
+                      return changeStatus(lead.id, 'CIERRE')
+                    }, 'Cita realizada — avanzado a Cierre')}
+                    disabled={isPending}
+                  >
+                    {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                    En proceso de cierre
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                    onClick={() => run(async () => {
+                      const r1 = await markAppointmentDone(nextAppointment.id)
+                      if (!r1.success) return r1
+                      return markAsClosed(lead.id)
+                    }, '¡Venta concretada!')}
+                    disabled={isPending}
+                  >
+                    {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Trophy className="size-3.5" />}
+                    Marcar venta
+                  </Button>
+                </div>
+              </div>
+
+              {/* Fallo */}
+              <div>
+                <p className="text-[11px] font-semibold text-rose-600 uppercase tracking-wide mb-1.5">
+                  No fue
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 border-rose-300 text-rose-600 hover:bg-rose-50"
+                    onClick={() => run(
+                      () => markAppointmentNoShow(nextAppointment.id),
+                      'No-show registrado',
+                    )}
+                    disabled={isPending}
+                  >
+                    {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <UserX className="size-3.5" />}
+                    No vino
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 border-rose-300 text-rose-600 hover:bg-rose-50"
+                    onClick={() => setShowBajaNoInteresado(true)}
+                    disabled={isPending}
+                  >
+                    <ThumbsDown className="size-3.5" />
+                    No interesado
+                  </Button>
+                </div>
+              </div>
+
+              {/* Reagendar / cancelar siempre disponibles */}
+              <div className="flex flex-wrap gap-2 pt-1 border-t border-violet-200/60">
+                <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" onClick={() => setShowDialog(true)}>
+                  <Plus className="size-3.5" />Reagendar
+                </Button>
+                <Button
+                  size="sm" variant="ghost"
+                  className="gap-1.5 text-muted-foreground"
+                  onClick={() => run(() => cancelAppointment(nextAppointment.id), 'Cita cancelada')}
+                  disabled={isPending}
+                >
+                  Cancelar cita
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* Cita futura — acciones simples */
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => run(() => markAppointmentDone(nextAppointment.id), 'Cita marcada como realizada')}
+                disabled={isPending}
+              >
+                {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+                Marcar realizada
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowDialog(true)}>
+                <Plus className="size-3.5" />Reagendar
+              </Button>
+              <Button
+                size="sm" variant="ghost"
+                className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => run(() => cancelAppointment(nextAppointment.id), 'Cita cancelada')}
+                disabled={isPending}
+              >
+                Cancelar cita
+              </Button>
             </div>
           )}
+
+          <AppointmentDialog
+            open={showDialog}
+            onOpenChange={setShowDialog}
+            leadId={lead.id}
+            leadNombre={lead.nombre}
+            defaultModelo={lead.modelo}
+            onCreated={() => { setShowDialog(false); onLeadUpdated() }}
+          />
         </div>
 
-        {/* Actions */}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            className="gap-1.5"
-            onClick={() => run(
-              () => markAppointmentDone(nextAppointment.id),
-              'Cita marcada como realizada',
-            )}
-            disabled={isPending}
-          >
-            {isPending
-              ? <Loader2 className="size-3.5 animate-spin" />
-              : <CheckCircle2 className="size-3.5" />}
-            Marcar realizada
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => setShowDialog(true)}
-          >
-            <Plus className="size-3.5" />
-            Reagendar
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => run(
-              () => cancelAppointment(nextAppointment.id),
-              'Cita cancelada',
-            )}
-            disabled={isPending}
-          >
-            Cancelar cita
-          </Button>
-        </div>
-
-        <AppointmentDialog
-          open={showDialog}
-          onOpenChange={setShowDialog}
+        {/* Dialog baja "No interesado" prefijado */}
+        <BajaDialog
+          open={showBajaNoInteresado}
+          onOpenChange={setShowBajaNoInteresado}
           leadId={lead.id}
           leadNombre={lead.nombre}
-          defaultModelo={lead.modelo}
-          onCreated={() => { setShowDialog(false); onLeadUpdated() }}
+          prefilledStatus="NO INTERESADO"
+          onDone={() => { setShowBajaNoInteresado(false); onLeadUpdated() }}
         />
-      </div>
+      </>
     )
   }
 

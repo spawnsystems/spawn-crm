@@ -61,10 +61,9 @@ export const moduleKeyEnum = pgEnum('module_key', [
 ])
 
 export const appointmentTipoEnum = pgEnum('appointment_tipo', [
-  'test_drive',
-  'visita_showroom',
   'videollamada',
-  'entrega',
+  'visita_showroom',
+  'cierre',
 ])
 
 export const appointmentStatusEnum = pgEnum('appointment_status', [
