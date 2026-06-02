@@ -40,7 +40,7 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
     startTransition(async () => {
       const res = await reactivateFromRescue(leadId)
       if (res.success) {
-        toast.success('Lead reactivado', { description: 'Volvió a estado Contactado.' })
+        toast.success('Lead reactivado', { description: 'Volvió a GESTIÓN — asignalo a un vendedor.' })
         setLeads((ls) => ls.filter((l) => l.id !== leadId))
       } else {
         toast.error(res.error)
@@ -72,8 +72,8 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
           <h1 className="text-2xl font-semibold tracking-tight">Rescate de leads</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Leads inactivos por +15 días — campaña de reactivación.
-          Reactivá un lead para devolverlo al flujo, o reasignalo a otro vendedor.
+          Leads dados de baja (rescatables) y leads inactivos sin contacto.
+          Reactivá un lead para devolverlo al flujo de GESTIÓN, o reasignalo a otro vendedor.
         </p>
       </div>
 

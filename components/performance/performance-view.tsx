@@ -80,7 +80,7 @@ export function PerformanceView({
                   <div
                     className={cn(
                       'h-full rounded-full transition-all',
-                      f.stage === 'Cerrados' ? 'bg-success' : 'bg-primary',
+                      f.stage === 'Ventas' ? 'bg-success' : 'bg-primary',
                     )}
                     style={{ width: `${f.pct}%` }}
                   />
