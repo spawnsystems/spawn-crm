@@ -25,6 +25,7 @@ export const tenants = pgTable('tenants', {
   activo: boolean('activo').default(true).notNull(),
   plan_key: text('plan_key').default('starter').notNull(),
   cotizacion_config: jsonb('cotizacion_config'), // config extra en JSON
+  sla_config: jsonb('sla_config'), // { primerContactoHoras, sinContactoDias }
   ...timestamps,
 })
 

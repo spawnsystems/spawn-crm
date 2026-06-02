@@ -94,9 +94,9 @@ export function DashboardView({
         />
         <KpiCard
           icon={<AlertOctagon className="size-4" />}
-          label="Leads en riesgo"
+          label="Leads demorados"
           value={atRiskNow.toString()}
-          sub="sin contacto +24h"
+          sub="superaron el SLA de contacto"
           accent={atRiskNow > 0 ? 'destructive' : undefined}
         />
       </div>
@@ -204,7 +204,7 @@ export function DashboardView({
             <AlertTriangle className="size-4 mt-0.5 shrink-0 text-destructive" />
             <div>
               <div className="text-sm font-medium">
-                {atRiskNow} {atRiskNow === 1 ? 'lead en riesgo' : 'leads en riesgo'}
+                {atRiskNow} {atRiskNow === 1 ? 'lead demorado' : 'leads demorados'}
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">
                 Sin contacto en más de 24 horas

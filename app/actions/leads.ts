@@ -5,8 +5,9 @@ import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, desc, inArray, or, isNotNull, sql } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/leads'
 import { logAudit } from '@/lib/audit/log'
-import { requireTenant, appendTimeline } from '@/lib/leads/server-helpers'
+import { requireTenant, appendTimeline, getTenantSlaConfig } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES } from '@/lib/leads/constants'
+import { computeSla, type SlaConfig } from '@/lib/leads/sla'
 import type { ActionResult } from './auth'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -555,16 +556,29 @@ export async function toggleTask(
 export async function getMyLeads() {
   const { user, tenantId } = await requireTenant()
 
-  return dbAdmin
-    .select()
-    .from(schema.leads)
-    .where(
-      and(
-        eq(schema.leads.tenant_id, tenantId),
-        eq(schema.leads.assigned_to, user.id),
-      ),
-    )
-    .orderBy(desc(schema.leads.created_at))
+  const [rows, sla] = await Promise.all([
+    dbAdmin
+      .select()
+      .from(schema.leads)
+      .where(
+        and(
+          eq(schema.leads.tenant_id, tenantId),
+          eq(schema.leads.assigned_to, user.id),
+        ),
+      )
+      .orderBy(desc(schema.leads.created_at)),
+    getTenantSlaConfig(tenantId),
+  ])
+
+  return rows.map((l) => deriveRisk(l, sla))
+}
+
+// Sobreescribe at_risk con el cálculo de SLA derivado (sin trigger).
+function deriveRisk<T extends { at_risk: boolean; created_at: Date; last_contact_at: Date | null; status: string }>(
+  lead: T,
+  sla:  SlaConfig,
+): T {
+  return { ...lead, at_risk: computeSla(lead, sla).demorado }
 }
 
 // ── getMyTeamIds ──────────────────────────────────────────────
@@ -643,21 +657,25 @@ export async function getAllLeads() {
     .from(schema.leads)
     .leftJoin(schema.usuarios, eq(schema.leads.assigned_to, schema.usuarios.id))
 
+  const sla = await getTenantSlaConfig(tenantId)
+
   // Dueño / platform_admin → sin filtro adicional
   if (['platform_admin', 'dueno'].includes(user.rol)) {
-    return base
+    const rows = await base
       .where(eq(schema.leads.tenant_id, tenantId))
       .orderBy(desc(schema.leads.created_at))
+    return rows.map((l) => deriveRisk(l, sla))
   }
 
   // Vendedor → solo sus leads
   if (user.rol === 'vendedor') {
-    return base
+    const rows = await base
       .where(and(
         eq(schema.leads.tenant_id, tenantId),
         eq(schema.leads.assigned_to, user.id),
       ))
       .orderBy(desc(schema.leads.created_at))
+    return rows.map((l) => deriveRisk(l, sla))
   }
 
   // Gerente / Supervisor → filtrar por equipos a cargo
@@ -666,12 +684,13 @@ export async function getAllLeads() {
   // Sin equipos asignados → no ve nada
   if (!teamIds || teamIds.length === 0) return []
 
-  return base
+  const rows = await base
     .where(and(
       eq(schema.leads.tenant_id, tenantId),
       inArray(schema.leads.equipo_id, teamIds),
     ))
     .orderBy(desc(schema.leads.created_at))
+  return rows.map((l) => deriveRisk(l, sla))
 }
 
 // ── getAbandonedLeads ─────────────────────────────────────────

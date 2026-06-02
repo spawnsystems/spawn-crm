@@ -5,6 +5,7 @@ import { eq, and, count, sql } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { TeamView } from '@/components/team/team-view'
 import { getEquiposConMiembros, getMiembrosDelTenant } from '@/app/actions/equipos'
+import { demoradoCondition, getTenantSlaConfig } from '@/lib/leads/server-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +18,8 @@ export default async function EquipoPage() {
 
   const canManage = ['dueno', 'gerente'].includes(user.rol)
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+  const sla = await getTenantSlaConfig(tenantId)
+  const demorado = demoradoCondition(sla.primerContactoHoras)
 
   const [rawRanking, equipos, miembros] = await Promise.all([
     dbAdmin
@@ -26,7 +29,7 @@ export default async function EquipoPage() {
         alias:    schema.usuarios.alias,
         closed:   sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'VENTA' THEN 1 ELSE 0 END)::int`,
         total:    count(),
-        atRisk:   sql<number>`SUM(CASE WHEN ${schema.leads.at_risk} = true THEN 1 ELSE 0 END)::int`,
+        atRisk:   sql<number>`SUM(CASE WHEN ${demorado} THEN 1 ELSE 0 END)::int`,
       })
       .from(schema.leads)
       .leftJoin(schema.usuarios, eq(schema.leads.assigned_to, schema.usuarios.id))

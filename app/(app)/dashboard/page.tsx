@@ -4,6 +4,7 @@ import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, count, sql } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { DashboardView } from '@/components/dashboard/dashboard-view'
+import { demoradoCondition, getTenantSlaConfig } from '@/lib/leads/server-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,8 @@ export default async function DashboardPage() {
   if (!tenantId) redirect('/login')
 
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+  const sla = await getTenantSlaConfig(tenantId)
+  const demorado = demoradoCondition(sla.primerContactoHoras)
 
   // ── Aggregate queries ────────────────────────────────────────
 
@@ -55,7 +58,7 @@ export default async function DashboardPage() {
       .where(
         and(
           eq(schema.leads.tenant_id, tenantId),
-          eq(schema.leads.at_risk, true),
+          demorado,
         ),
       ),
 
@@ -66,7 +69,7 @@ export default async function DashboardPage() {
         alias:   schema.usuarios.alias,
         total:   count(),
         closed:  sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'VENTA' THEN 1 ELSE 0 END)::int`,
-        atRisk:  sql<number>`SUM(CASE WHEN ${schema.leads.at_risk} = true THEN 1 ELSE 0 END)::int`,
+        atRisk:  sql<number>`SUM(CASE WHEN ${demorado} THEN 1 ELSE 0 END)::int`,
         avgResp: sql<number>`0`,
       })
       .from(schema.leads)

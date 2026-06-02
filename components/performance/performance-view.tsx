@@ -61,8 +61,8 @@ export function PerformanceView({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard icon={<TrendingUp className="size-4" />} label="Ventas del mes"    value={myClosedMonth.toString()} sub="leads cerrados" />
         <KpiCard icon={<Target className="size-4" />}    label="Tasa de cierre"     value={`${myCloseRate}%`}          sub="del total de tus leads" />
-        <KpiCard icon={<Flame className="size-4" />}     label="Leads activos"       value={myActive.toString()}        sub={`${myAtRisk} en riesgo`} accent={myAtRisk > 0 ? 'warning' : undefined} />
-        <KpiCard icon={<Target className="size-4" />}    label="Leads en riesgo"    value={myAtRisk.toString()}        sub="sin contacto +24h" accent={myAtRisk > 0 ? 'destructive' : undefined} />
+        <KpiCard icon={<Flame className="size-4" />}     label="Leads activos"       value={myActive.toString()}        sub={`${myAtRisk} demorados`} accent={myAtRisk > 0 ? 'warning' : undefined} />
+        <KpiCard icon={<Target className="size-4" />}    label="Leads demorados"    value={myAtRisk.toString()}        sub="superaron el SLA de contacto" accent={myAtRisk > 0 ? 'destructive' : undefined} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">

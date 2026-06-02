@@ -123,5 +123,6 @@ export const leadTasks = pgTable('lead_tasks', {
   texto: text('texto').notNull(),
   due_at: timestamp('due_at', { withTimezone: true }),
   done: boolean('done').default(false).notNull(),
+  kind: text('kind').default('task').notNull(), // 'task' | 'callback'
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })

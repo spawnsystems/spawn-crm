@@ -151,7 +151,7 @@ function RankingTab({ ranking }: { ranking: RankingEntry[] }) {
                   <div className="font-medium text-sm">{name}</div>
                   <div className="text-[11px] text-muted-foreground mt-0.5">
                     {s.atRisk > 0
-                      ? <span className="text-destructive">{s.atRisk} en riesgo</span>
+                      ? <span className="text-destructive">{s.atRisk} demorados</span>
                       : 'Al día'}
                   </div>
                 </div>
@@ -551,7 +551,7 @@ function PodiumCard({ seller: s, position, featured }: {
       </div>
       <div className={cn('font-semibold leading-tight', featured ? 'text-base' : 'text-sm')}>{name}</div>
       <div className="text-[11px] text-muted-foreground mt-0.5 mb-3">
-        {s.atRisk > 0 ? <span className="text-destructive">{s.atRisk} en riesgo</span> : 'Al día'}
+        {s.atRisk > 0 ? <span className="text-destructive">{s.atRisk} demorados</span> : 'Al día'}
       </div>
       <div className={cn('font-bold text-primary', featured ? 'text-4xl' : 'text-3xl')}>{s.closed}</div>
       <div className="text-xs text-muted-foreground mb-3">ventas del mes</div>

@@ -8,9 +8,12 @@
 
 import 'server-only'
 
+import { eq, sql } from 'drizzle-orm'
 import { getCurrentUser } from '@/lib/auth/get-current-user'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { db, dbAdmin, schema } from '@/lib/db'
+import { parseSlaConfig, type SlaConfig } from '@/lib/leads/sla'
+import { TERMINAL_STATUSES } from '@/lib/leads/constants'
 
 /**
  * Carga el usuario actual + tenant y arma el helper de queries.
@@ -21,6 +24,31 @@ export async function requireTenant() {
   if (!user || !tenantId) throw new Error('No autenticado')
   const { q, forTenant } = db(tenantId)
   return { user, tenantId, q, forTenant }
+}
+
+/**
+ * Expresión SQL que identifica leads "Demorados": activos (no terminales)
+ * cuyo último contacto (o ingreso si nunca se contactó) supera el umbral de
+ * horas del tenant. Reutilizable en agregaciones de dashboards.
+ */
+export function demoradoCondition(hours: number) {
+  const terminales = sql.join(
+    TERMINAL_STATUSES.map((s) => sql`${s}`),
+    sql`, `,
+  )
+  return sql`${schema.leads.status} NOT IN (${terminales})
+    AND COALESCE(${schema.leads.last_contact_at}, ${schema.leads.created_at})
+        < NOW() - make_interval(hours => ${hours}::int)`
+}
+
+/** Lee el SlaConfig del tenant (con defaults si no está seteado). */
+export async function getTenantSlaConfig(tenantId: string): Promise<SlaConfig> {
+  const row = await dbAdmin
+    .select({ sla_config: schema.tenants.sla_config })
+    .from(schema.tenants)
+    .where(eq(schema.tenants.id, tenantId))
+    .limit(1)
+  return parseSlaConfig(row[0]?.sla_config)
 }
 
 /**

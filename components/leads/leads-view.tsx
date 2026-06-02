@@ -299,7 +299,7 @@ function LeadCard({ lead, onOpen }: { lead: Lead; onOpen: () => void }) {
             <StatusBadge status={lead.status} />
             {lead.at_risk && (
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-destructive bg-destructive-soft px-2 py-0.5 rounded-full border border-destructive/20">
-                <AlertTriangle className="size-3" /> En riesgo
+                <AlertTriangle className="size-3" /> Demorado
               </span>
             )}
           </div>
