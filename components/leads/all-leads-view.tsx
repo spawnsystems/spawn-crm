@@ -37,12 +37,14 @@ type SortDir = 'asc' | 'desc'
 export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: AllLeadsViewProps) {
   const [leads,        setLeads]        = useState<LeadRow[]>(initialLeads)
   const [search,       setSearch]       = useState('')
-  const [filterVend,   setFilterVend]   = useState(ALL)
-  const [filterStatus, setFilterStatus] = useState(ALL)
-  const [filterSource, setFilterSource] = useState(ALL)
-  const [openLeadId,   setOpenLeadId]   = useState<string | null>(null)
-  const [bajaLead,     setBajaLead]     = useState<LeadRow | null>(null)
-  const [showNewLead,  setShowNewLead]  = useState(false)
+  const [filterVend,     setFilterVend]     = useState(ALL)
+  const [filterStatus,   setFilterStatus]   = useState(ALL)
+  const [filterSource,   setFilterSource]   = useState(ALL)
+  const [filterProvincia, setFilterProvincia] = useState(ALL)
+  const [filterUsado,    setFilterUsado]    = useState<'all' | 'yes' | 'no'>('all')
+  const [openLeadId,     setOpenLeadId]     = useState<string | null>(null)
+  const [bajaLead,       setBajaLead]       = useState<LeadRow | null>(null)
+  const [showNewLead,    setShowNewLead]    = useState(false)
   const [sortKey,      setSortKey]      = useState<SortKey>('last_contact_at')
   const [sortDir,      setSortDir]      = useState<SortDir>('asc')
   const [page,         setPage]         = useState(1)
@@ -52,13 +54,16 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
       .then((next) => { if (next) setLeads(next) })
   }
 
-  const hasFilters = filterVend !== ALL || filterStatus !== ALL || filterSource !== ALL || search.trim() !== ''
+  const hasFilters = filterVend !== ALL || filterStatus !== ALL || filterSource !== ALL
+    || filterProvincia !== ALL || filterUsado !== 'all' || search.trim() !== ''
 
   function clearFilters() {
     setSearch('')
     setFilterVend(ALL)
     setFilterStatus(ALL)
     setFilterSource(ALL)
+    setFilterProvincia(ALL)
+    setFilterUsado('all')
   }
 
   function toggleSort(key: SortKey) {
@@ -71,7 +76,14 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
   }
 
   // Reset a página 1 cuando cambia cualquier filtro o sort
-  useEffect(() => { setPage(1) }, [search, filterVend, filterStatus, filterSource, sortKey, sortDir])
+  useEffect(() => { setPage(1) }, [search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, sortKey, sortDir])
+
+  // Provincias únicas con al menos un lead
+  const provincias = useMemo(() => {
+    const set = new Set<string>()
+    leads.forEach((l) => { if (l.provincia?.trim()) set.add(l.provincia.trim()) })
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))
+  }, [leads])
 
   const filtered = useMemo(() => {
     const result = leads.filter((l) => {
@@ -84,6 +96,9 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
       }
       if (filterStatus !== ALL && l.status !== filterStatus) return false
       if (filterSource !== ALL && l.source !== filterSource) return false
+      if (filterProvincia !== ALL && (l.provincia ?? '').toLowerCase() !== filterProvincia.toLowerCase()) return false
+      if (filterUsado === 'yes' && !l.tiene_usado) return false
+      if (filterUsado === 'no'  &&  l.tiene_usado) return false
       if (search.trim()) {
         const q = search.toLowerCase()
         const matches =
@@ -91,7 +106,10 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
           (l.modelo ?? '').toLowerCase().includes(q) ||
           (l.vendedor_nombre ?? '').toLowerCase().includes(q) ||
           (l.email ?? '').toLowerCase().includes(q) ||
-          (l.telefono ?? '').includes(q)
+          (l.telefono ?? '').includes(q) ||
+          (l.localidad ?? '').toLowerCase().includes(q) ||
+          (l.provincia ?? '').toLowerCase().includes(q) ||
+          (l.source_custom ?? '').toLowerCase().includes(q)
         if (!matches) return false
       }
       return true
@@ -121,7 +139,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
       const cmp = aTime - bTime
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [leads, search, filterVend, filterStatus, filterSource, sortKey, sortDir])
+  }, [leads, search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, sortKey, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -202,6 +220,33 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
           </SelectContent>
         </Select>
 
+        {/* Provincia */}
+        {provincias.length > 0 && (
+          <Select value={filterProvincia} onValueChange={setFilterProvincia}>
+            <SelectTrigger className={cn('h-9 w-40 text-sm', filterProvincia !== ALL && 'border-primary text-primary')}>
+              <SelectValue placeholder="Provincia" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Todas las provincias</SelectItem>
+              {provincias.map((p) => (
+                <SelectItem key={p} value={p}>{p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* Tiene usado */}
+        <Select value={filterUsado} onValueChange={(v) => setFilterUsado(v as 'all' | 'yes' | 'no')}>
+          <SelectTrigger className={cn('h-9 w-36 text-sm', filterUsado !== 'all' && 'border-primary text-primary')}>
+            <SelectValue placeholder="Tiene usado" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="yes">Con usado</SelectItem>
+            <SelectItem value="no">Sin usado</SelectItem>
+          </SelectContent>
+        </Select>
+
         {/* Clear */}
         {hasFilters && (
           <Button size="sm" variant="ghost" onClick={clearFilters} className="h-9 gap-1.5 text-muted-foreground">
@@ -247,9 +292,23 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
                     className="group border-b border-border/50 last:border-0 hover:bg-muted/30 cursor-pointer"
                     onClick={() => setOpenLeadId(l.id)}
                   >
-                    <td className="px-4 py-3 font-medium">{l.nombre}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{l.nombre}</div>
+                      {(l.localidad || l.provincia) && (
+                        <div className="text-[11px] text-muted-foreground/70 mt-0.5">
+                          {[l.localidad, l.provincia].filter(Boolean).join(', ')}
+                        </div>
+                      )}
+                      {l.tiene_usado && (
+                        <span className="inline-flex items-center text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200/60 rounded px-1.5 py-0.5 mt-0.5">
+                          Tiene usado
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-muted-foreground">{l.modelo ?? '—'}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{l.source}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {l.source_custom || l.source}
+                    </td>
                     <td className="px-4 py-3">
                       {vendorName ? (
                         <div className="flex items-center gap-1.5 text-muted-foreground">

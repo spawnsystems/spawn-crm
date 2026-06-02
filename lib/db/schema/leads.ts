@@ -25,11 +25,17 @@ export const leads = pgTable('leads', {
     .references(() => tenants.id, { onDelete: 'cascade' }),
 
   // Datos del prospecto
-  nombre: text('nombre').notNull(),
-  telefono: text('telefono'),
-  email: text('email'),
-  modelo: text('modelo'),
-  source: leadSourceEnum('source').default('Otro').notNull(),
+  nombre:               text('nombre').notNull(),
+  telefono:             text('telefono'),
+  email:                text('email'),
+  modelo:               text('modelo'),
+  source:               leadSourceEnum('source').default('Otro').notNull(),
+  source_custom:        text('source_custom'),         // detalle cuando source='Otro'
+  localidad:            text('localidad'),
+  provincia:            text('provincia'),
+  horario_preferencia:  text('horario_preferencia'),
+  tiene_usado:          boolean('tiene_usado').default(false).notNull(),
+  observaciones:        text('observaciones'),
 
   // Estado y pipeline
   status: leadStatusEnum('status').default('GESTION').notNull(),
