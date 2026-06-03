@@ -8,12 +8,13 @@
 
 import 'server-only'
 
-import { eq, sql } from 'drizzle-orm'
-import { getCurrentUser } from '@/lib/auth/get-current-user'
+import { eq, and, sql } from 'drizzle-orm'
+import { getCurrentUser, type AppRole } from '@/lib/auth/get-current-user'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { db, dbAdmin, schema } from '@/lib/db'
 import { parseSlaConfig, type SlaConfig } from '@/lib/leads/sla'
 import { TERMINAL_STATUSES } from '@/lib/leads/constants'
+import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
 
 /**
  * Carga el usuario actual + tenant y arma el helper de queries.
@@ -49,6 +50,53 @@ export async function getTenantSlaConfig(tenantId: string): Promise<SlaConfig> {
     .where(eq(schema.tenants.id, tenantId))
     .limit(1)
   return parseSlaConfig(row[0]?.sla_config)
+}
+
+/**
+ * Verifica que el usuario tenga acceso a un lead según su rol/equipo (no solo
+ * por tenant). Reusa la jerarquía de equipos de lib/tenant/teams.ts.
+ *
+ * Devuelve el lead si tiene acceso, o `null` si:
+ *   - el lead no existe / no es del tenant, o
+ *   - el scope del usuario no lo alcanza.
+ *
+ * Reglas de scope (espejo de buildScopeWhere):
+ *   - all (dueño/admin)     → cualquier lead del tenant
+ *   - teams (gerente)       → lead.equipo_id ∈ sus equipos
+ *   - team (supervisor)     → lead.equipo_id === su equipo
+ *   - self (vendedor)       → assigned_to === user.id  OR  assigned_to === null (bandeja)
+ *   - none                  → ninguno
+ */
+export async function assertLeadAccess(
+  leadId:   string,
+  userId:   string,
+  rol:      AppRole,
+  tenantId: string,
+) {
+  const rows = await dbAdmin
+    .select()
+    .from(schema.leads)
+    .where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
+    .limit(1)
+
+  const lead = rows[0]
+  if (!lead) return null
+
+  const scope = await getCurrentUserTeamScope(userId, tenantId, rol)
+
+  switch (scope.type) {
+    case 'all':
+      return lead
+    case 'teams':
+      return lead.equipo_id && scope.equipoIds.includes(lead.equipo_id) ? lead : null
+    case 'team':
+      return lead.equipo_id === scope.equipoId ? lead : null
+    case 'self':
+      return lead.assigned_to === userId || lead.assigned_to === null ? lead : null
+    case 'none':
+    default:
+      return null
+  }
 }
 
 /**

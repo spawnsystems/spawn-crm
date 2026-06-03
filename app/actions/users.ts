@@ -21,7 +21,10 @@ async function requireTenant() {
 // ── listTenantMembers ─────────────────────────────────────────
 
 export async function listTenantMembers() {
-  const { tenantId } = await requireTenant()
+  const { user, tenantId } = await requireTenant()
+
+  // Solo supervisor+ puede listar miembros del tenant.
+  if (user.rol === 'vendedor') return []
 
   return dbAdmin
     .select({

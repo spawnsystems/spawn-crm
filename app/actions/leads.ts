@@ -5,7 +5,7 @@ import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, desc, inArray, or, isNotNull, sql } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/leads'
 import { logAudit } from '@/lib/audit/log'
-import { requireTenant, appendTimeline, getTenantSlaConfig } from '@/lib/leads/server-helpers'
+import { requireTenant, appendTimeline, getTenantSlaConfig, assertLeadAccess } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
 import { computeSla, type SlaConfig } from '@/lib/leads/sla'
 import type { ActionResult } from './auth'
@@ -834,7 +834,11 @@ export async function getHistorialLeads() {
 // ── getLeadDetail ─────────────────────────────────────────────
 
 export async function getLeadDetail(leadId: string) {
-  const { tenantId, forTenant } = await requireTenant()
+  const { user, tenantId, forTenant } = await requireTenant()
+
+  // Scope: el usuario debe poder ver este lead según su rol/equipo (no solo tenant)
+  const accessible = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
+  if (!accessible) return null
 
   const [lead, notes, timeline, tasks, calls] = await Promise.all([
     dbAdmin

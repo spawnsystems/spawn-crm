@@ -5,7 +5,7 @@ import { eq, and, desc } from 'drizzle-orm'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { dbAdmin, schema } from '@/lib/db'
-import { requireTenant, appendTimeline } from '@/lib/leads/server-helpers'
+import { requireTenant, appendTimeline, assertLeadAccess } from '@/lib/leads/server-helpers'
 import type { ActionResult } from './auth'
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
@@ -33,6 +33,9 @@ export async function scheduleCall(
   const parsed = scheduleCallSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const { leadId, scheduledAt, notasPrevias } = parsed.data
+
+  const lead = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
+  if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
 
   const [row] = await dbAdmin
     .insert(schema.leadCalls)
@@ -78,6 +81,10 @@ export async function registerCall(
   if (call[0].realizada_at) return { success: false, error: 'Esta llamada ya fue registrada' }
 
   const leadId = call[0].lead_id
+
+  // Scope: el usuario debe tener acceso al lead de la llamada (no solo al tenant)
+  const lead = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
+  if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
 
   // Marcar como realizada
   await dbAdmin

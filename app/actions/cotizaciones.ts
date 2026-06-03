@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, desc } from 'drizzle-orm'
-import { requireTenant } from '@/lib/leads/server-helpers'
+import { requireTenant, assertLeadAccess } from '@/lib/leads/server-helpers'
 import { calcularUsado, condicionesComerciales } from '@/lib/cotizador/calc'
 import type { ActionResult } from './auth'
 import { z } from 'zod'
@@ -35,6 +35,12 @@ export async function createCotizacion(input: unknown): Promise<ActionResult<{ i
   const parsed = createCotizacionSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const data = parsed.data
+
+  // Si la cotización se vincula a un lead, verificar acceso al lead
+  if (data.lead_id) {
+    const lead = await assertLeadAccess(data.lead_id, user.id, user.rol, tenantId)
+    if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
+  }
 
   const result = calcularUsado({
     baseInfoauto: data.base_infoauto,
@@ -69,7 +75,11 @@ export async function createCotizacion(input: unknown): Promise<ActionResult<{ i
 // ── getCotizacionesForLead ────────────────────────────────────────────────────
 
 export async function getCotizacionesForLead(leadId: string) {
-  const { tenantId } = await requireTenant()
+  const { user, tenantId } = await requireTenant()
+
+  // Scope: solo si el usuario tiene acceso al lead (no solo al tenant)
+  const lead = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
+  if (!lead) return []
 
   return dbAdmin
     .select()

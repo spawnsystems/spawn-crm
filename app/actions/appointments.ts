@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, gte, lte, ne, sql } from 'drizzle-orm'
-import { requireTenant, appendTimeline } from '@/lib/leads/server-helpers'
+import { requireTenant, appendTimeline, assertLeadAccess } from '@/lib/leads/server-helpers'
 import { isBaja } from '@/lib/leads/constants'
 import { getCurrentUserTeamScope, buildAppointmentScopeWhere } from '@/lib/tenant/teams'
 import { logAudit } from '@/lib/audit/log'
@@ -61,6 +61,10 @@ export async function createAppointment(
     .limit(1)
 
   if (!lead[0]) return { success: false, error: 'Lead no encontrado' }
+
+  // Scope: el usuario debe tener acceso al lead (no solo al tenant)
+  const accessible = await assertLeadAccess(data.lead_id, user.id, user.rol, tenantId)
+  if (!accessible) return { success: false, error: 'No tenés acceso a este lead' }
 
   const vendedorId = data.vendedor_id ?? lead[0].assigned_to ?? user.id
 
@@ -194,6 +198,19 @@ export async function updateAppointment(
 
   if (Object.keys(data).length === 0) return { success: true, data: undefined }
 
+  // Scope: cargar la cita y verificar acceso al lead
+  const appt = await dbAdmin
+    .select({ lead_id: schema.leadAppointments.lead_id })
+    .from(schema.leadAppointments)
+    .where(and(
+      eq(schema.leadAppointments.id, appointmentId),
+      eq(schema.leadAppointments.tenant_id, tenantId),
+    ))
+    .limit(1)
+  if (!appt[0]) return { success: false, error: 'Cita no encontrada' }
+  const accessible = await assertLeadAccess(appt[0].lead_id, user.id, user.rol, tenantId)
+  if (!accessible) return { success: false, error: 'No tenés acceso a esta cita' }
+
   await dbAdmin.update(schema.leadAppointments)
     .set({
       ...(data.scheduled_at   !== undefined ? { scheduled_at:   data.scheduled_at }   : {}),
@@ -239,6 +256,8 @@ export async function cancelAppointment(
     ))
     .limit(1)
   if (!appt[0]) return { success: false, error: 'Cita no encontrada' }
+  if (!await assertLeadAccess(appt[0].lead_id, user.id, user.rol, tenantId))
+    return { success: false, error: 'No tenés acceso a esta cita' }
 
   await dbAdmin.update(schema.leadAppointments)
     .set({
@@ -287,6 +306,8 @@ export async function markAppointmentDone(
     ))
     .limit(1)
   if (!appt[0]) return { success: false, error: 'Cita no encontrada' }
+  if (!await assertLeadAccess(appt[0].lead_id, user.id, user.rol, tenantId))
+    return { success: false, error: 'No tenés acceso a esta cita' }
 
   await dbAdmin.update(schema.leadAppointments)
     .set({
@@ -344,6 +365,8 @@ export async function markAppointmentNoShow(
     ))
     .limit(1)
   if (!appt[0]) return { success: false, error: 'Cita no encontrada' }
+  if (!await assertLeadAccess(appt[0].lead_id, user.id, user.rol, tenantId))
+    return { success: false, error: 'No tenés acceso a esta cita' }
 
   await dbAdmin.update(schema.leadAppointments)
     .set({
@@ -397,6 +420,8 @@ export async function rescheduleAppointment(
     ))
     .limit(1)
   if (!original[0]) return { success: false, error: 'Cita no encontrada' }
+  if (!await assertLeadAccess(original[0].lead_id, user.id, user.rol, tenantId))
+    return { success: false, error: 'No tenés acceso a esta cita' }
 
   // Marcar la vieja como reagendada (libera el constraint único)
   await dbAdmin.update(schema.leadAppointments)

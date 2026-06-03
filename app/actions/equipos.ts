@@ -265,6 +265,10 @@ export async function getMiembrosDelTenant() {
   const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
   if (!user || !tenantId) return []
 
+  // Solo supervisor+ puede listar todos los miembros del tenant.
+  // El vendedor no gestiona equipos ni necesita el directorio completo.
+  if (user.rol === 'vendedor') return []
+
   return dbAdmin
     .select({
       user_id:           schema.tenantMembers.user_id,
