@@ -40,3 +40,15 @@ export const tenantInfoSchema = z.object({
 })
 
 export type TenantInfoInput = z.infer<typeof tenantInfoSchema>
+
+// ── SLA / Alertas de atención ─────────────────────────────────
+
+export const slaConfigSchema = z.object({
+  primerContactoHoras:    z.number().int().min(1).max(168),     // 1h – 7d
+  sinContactoDias:        z.number().int().min(1).max(120),     // hasta 4 meses
+  sinProximaAccionHoras:  z.number().int().min(1).max(336),     // 1h – 14d
+  cierreEstancadoDias:    z.number().int().min(1).max(60),
+  citaVencidaGraciaHoras: z.number().int().min(0).max(72),
+})
+
+export type SlaConfigInput = z.infer<typeof slaConfigSchema>

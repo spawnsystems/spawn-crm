@@ -5,8 +5,7 @@ import { eq, and, count, sql } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { PerformanceView } from '@/components/performance/performance-view'
 import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
-import { computeSla } from '@/lib/leads/sla'
-import { getTenantSlaConfig } from '@/lib/leads/server-helpers'
+import { getMyLeads } from '@/app/actions/leads'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,16 +19,8 @@ export default async function PerformancePage() {
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
 
   const [myLeads, teamRankRaw] = await Promise.all([
-    // My own leads
-    dbAdmin
-      .select()
-      .from(schema.leads)
-      .where(
-        and(
-          eq(schema.leads.tenant_id, tenantId),
-          eq(schema.leads.assigned_to, user.id),
-        ),
-      ),
+    // Mis leads (enriquecidos con el estado de atención del engine)
+    getMyLeads(),
 
     // Team ranking (all sellers in tenant)
     dbAdmin
@@ -57,8 +48,7 @@ export default async function PerformancePage() {
   const myClosedM   = myLeads.filter((l) => l.status === 'VENTA').length
   const myMonthTotal = myLeads.length
   const myCloseRate = myMonthTotal > 0 ? Math.round((myClosedM / myMonthTotal) * 100) : 0
-  const sla         = await getTenantSlaConfig(tenantId)
-  const myAtRisk    = myLeads.filter((l) => computeSla(l, sla).demorado).length
+  const myAtRisk    = myLeads.filter((l) => l.at_risk).length
 
   // Funnel — leads no dados de baja que alcanzaron al menos cada etapa del pipeline
   const activeForFunnel = myLeads.filter((l) => !isBaja(l.status))

@@ -967,25 +967,34 @@ const OUTCOME_LABEL: Record<string, { label: string; color: string }> = {
 function CallCard({ call, onRegister }: { call: LeadCall; onRegister: () => void }) {
   const isPending = !call.realizada_at
   const fecha = format(new Date(call.scheduled_at), 'dd/MM HH:mm')
+  // Pendiente y su hora ya pasó → vencida, hay que registrarla.
+  const isOverdue = isPending && new Date(call.scheduled_at).getTime() < Date.now()
 
   return (
     <div className={cn(
       'rounded-lg border p-3 space-y-1',
-      isPending ? 'border-sky-200 bg-sky-50/50' : 'border-border bg-muted/20',
+      isOverdue ? 'border-destructive/40 bg-destructive-soft'
+        : isPending ? 'border-sky-200 bg-sky-50/50'
+        : 'border-border bg-muted/20',
     )}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          {isPending
+          {isOverdue
+            ? <AlertTriangle className="size-3.5 text-destructive shrink-0" />
+            : isPending
             ? <Clock3 className="size-3.5 text-sky-600 shrink-0" />
             : <PhoneIncoming className="size-3.5 text-teal-600 shrink-0" />}
-          <span className={cn('text-xs font-medium', isPending ? 'text-sky-700' : 'text-muted-foreground')}>
-            {isPending ? `Pendiente · ${fecha}` : `Realizada · ${fecha}`}
+          <span className={cn('text-xs font-medium',
+            isOverdue ? 'text-destructive' : isPending ? 'text-sky-700' : 'text-muted-foreground')}>
+            {isOverdue ? `Vencida · ${fecha}` : isPending ? `Pendiente · ${fecha}` : `Realizada · ${fecha}`}
           </span>
         </div>
         {isPending && (
           <Button
             size="sm" variant="outline"
-            className="h-6 px-2 text-[11px] gap-1 text-sky-700 border-sky-300 hover:bg-sky-100"
+            className={cn('h-6 px-2 text-[11px] gap-1',
+              isOverdue ? 'text-destructive border-destructive/40 hover:bg-destructive/10'
+                : 'text-sky-700 border-sky-300 hover:bg-sky-100')}
             onClick={onRegister}
           >
             <PhoneCall className="size-3" />Registrar llamada

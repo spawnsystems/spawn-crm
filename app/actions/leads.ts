@@ -2,14 +2,37 @@
 
 import { revalidatePath } from 'next/cache'
 import { dbAdmin, schema } from '@/lib/db'
-import { eq, and, desc, inArray, or, isNotNull, sql } from 'drizzle-orm'
+import { eq, and, desc, inArray, or, isNotNull, sql, getTableColumns } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/leads'
 import { logAudit } from '@/lib/audit/log'
 import { requireTenant, appendTimeline, getTenantSlaConfig, assertLeadAccess } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
 import { activeIndex, terminalBlockReason } from '@/lib/leads/state-machine'
-import { computeSla, type SlaConfig } from '@/lib/leads/sla'
+import { type SlaConfig } from '@/lib/leads/sla'
+import {
+  attachAttention, ATTENTION_LABEL, ATTENTION_SEVERITY, ATTENTION_ORDER,
+  type AttentionType, type AttentionSeverity,
+} from '@/lib/leads/attention'
 import type { ActionResult } from './auth'
+
+// ── Subqueries de atención ────────────────────────────────────────
+// Correlacionadas con leads.id. Permiten que el engine de atención sepa,
+// por lead, si hay una llamada pendiente vencida o una cita programada.
+
+/** Hora de la llamada pendiente (sin registrar) más próxima del lead. */
+const pendingCallAtSql = sql<string | null>`(
+  SELECT MIN(lc.scheduled_at)
+  FROM ${schema.leadCalls} lc
+  WHERE lc.lead_id = ${schema.leads.id} AND lc.realizada_at IS NULL
+)`
+
+/** Hora de la cita 'programada' del lead (única por constraint). */
+const openApptAtSql = sql<string | null>`(
+  SELECT la.scheduled_at
+  FROM ${schema.leadAppointments} la
+  WHERE la.lead_id = ${schema.leads.id} AND la.status = 'programada'
+  LIMIT 1
+)`
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -612,7 +635,11 @@ export async function getMyLeads() {
 
   const [rows, sla] = await Promise.all([
     dbAdmin
-      .select()
+      .select({
+        ...getTableColumns(schema.leads),
+        pending_call_at: pendingCallAtSql,
+        open_appt_at:    openApptAtSql,
+      })
       .from(schema.leads)
       .where(
         and(
@@ -624,15 +651,22 @@ export async function getMyLeads() {
     getTenantSlaConfig(tenantId),
   ])
 
-  return rows.map((l) => deriveRisk(l, sla))
+  return rows.map((l) => deriveAttention(l, sla))
 }
 
-// Sobreescribe at_risk con el cálculo de SLA derivado (sin trigger).
-function deriveRisk<T extends { at_risk: boolean; created_at: Date; last_contact_at: Date | null; status: string }>(
-  lead: T,
-  sla:  SlaConfig,
-): T {
-  return { ...lead, at_risk: computeSla(lead, sla).demorado }
+// Adjunta el estado de atención derivado (sin trigger). Reemplaza al viejo
+// at_risk binario: ahora at_risk = "requiere atención" + el motivo concreto.
+type AttentionRow = {
+  status: string
+  created_at: Date | string
+  last_contact_at: Date | string | null
+  stage_entered_at: Date | string | null
+  pending_call_at: Date | string | null
+  open_appt_at: Date | string | null
+}
+
+function deriveAttention<T extends AttentionRow>(lead: T, sla: SlaConfig) {
+  return attachAttention(lead, sla)
 }
 
 // ── getMyTeamIds ──────────────────────────────────────────────
@@ -710,6 +744,8 @@ export async function getAllLeads() {
     updated_at:            schema.leads.updated_at,
     vendedor_nombre:       schema.usuarios.nombre,
     vendedor_alias:        schema.usuarios.alias,
+    pending_call_at:       pendingCallAtSql,
+    open_appt_at:          openApptAtSql,
   }
 
   const base = dbAdmin
@@ -724,7 +760,7 @@ export async function getAllLeads() {
     const rows = await base
       .where(eq(schema.leads.tenant_id, tenantId))
       .orderBy(desc(schema.leads.created_at))
-    return rows.map((l) => deriveRisk(l, sla))
+    return rows.map((l) => deriveAttention(l, sla))
   }
 
   // Vendedor → solo sus leads
@@ -735,7 +771,7 @@ export async function getAllLeads() {
         eq(schema.leads.assigned_to, user.id),
       ))
       .orderBy(desc(schema.leads.created_at))
-    return rows.map((l) => deriveRisk(l, sla))
+    return rows.map((l) => deriveAttention(l, sla))
   }
 
   // Gerente / Supervisor → filtrar por equipos a cargo
@@ -750,7 +786,50 @@ export async function getAllLeads() {
       inArray(schema.leads.equipo_id, teamIds),
     ))
     .orderBy(desc(schema.leads.created_at))
-  return rows.map((l) => deriveRisk(l, sla))
+  return rows.map((l) => deriveAttention(l, sla))
+}
+
+// ── getAttentionSummary ───────────────────────────────────────
+// Resumen de leads que requieren atención, scopeado por rol (reusa getAllLeads).
+// Para el panel del dashboard de supervisores/gerentes/dueño.
+
+export interface AttentionSummary {
+  total:    number
+  byType:   { type: AttentionType; label: string; severity: AttentionSeverity; count: number }[]
+  bySeller: { name: string; count: number; alta: number }[]
+}
+
+export async function getAttentionSummary(): Promise<AttentionSummary> {
+  const leads = await getAllLeads()
+  const flagged = leads.filter((l) => l.at_risk && l.attention_type)
+
+  // Conteo por tipo
+  const typeCount = new Map<AttentionType, number>()
+  for (const l of flagged) {
+    const t = l.attention_type as AttentionType
+    typeCount.set(t, (typeCount.get(t) ?? 0) + 1)
+  }
+  const byType = ATTENTION_ORDER
+    .filter((t) => (typeCount.get(t) ?? 0) > 0)
+    .map((t) => ({
+      type: t, label: ATTENTION_LABEL[t], severity: ATTENTION_SEVERITY[t],
+      count: typeCount.get(t) ?? 0,
+    }))
+
+  // Conteo por vendedor (incluye cuántos son de severidad alta)
+  const sellerMap = new Map<string, { count: number; alta: number }>()
+  for (const l of flagged) {
+    const name = l.vendedor_alias || l.vendedor_nombre || 'Sin asignar'
+    const cur = sellerMap.get(name) ?? { count: 0, alta: 0 }
+    cur.count += 1
+    if (l.attention_severity === 'alta') cur.alta += 1
+    sellerMap.set(name, cur)
+  }
+  const bySeller = Array.from(sellerMap.entries())
+    .map(([name, v]) => ({ name, count: v.count, alta: v.alta }))
+    .sort((a, b) => b.count - a.count)
+
+  return { total: flagged.length, byType, bySeller }
 }
 
 // ── getAbandonedLeads ─────────────────────────────────────────

@@ -19,8 +19,11 @@ import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
 
 type Vendedor = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 
-type FilterTab = 'Todos' | 'Sin contactar' | 'En seguimiento' | 'Demorados'
-const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'Demorados']
+type FilterTab = 'Todos' | 'Sin contactar' | 'En seguimiento' | 'Requieren atención'
+const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'Requieren atención']
+
+// Lead enriquecido con los campos de atención que devuelve getMyLeads.
+type MyLead = Awaited<ReturnType<typeof getMyLeads>>[number]
 
 type SortKey = 'last_contact_at' | 'status'
 type SortDir = 'asc' | 'desc'
@@ -28,7 +31,7 @@ type SortDir = 'asc' | 'desc'
 const PAGE_SIZE = 20
 
 interface LeadsViewProps {
-  initialLeads: Lead[]
+  initialLeads: MyLead[]
   vendedores: Vendedor[]
   modelos: string[]
   customSources?: string[]
@@ -36,7 +39,7 @@ interface LeadsViewProps {
 }
 
 export function LeadsView({ initialLeads, vendedores, modelos, customSources = [], canCreate }: LeadsViewProps) {
-  const [leads,       setLeads]       = useState<Lead[]>(initialLeads)
+  const [leads,       setLeads]       = useState<MyLead[]>(initialLeads)
   const [filter,      setFilter]      = useState<FilterTab>('Todos')
   const [openLeadId,  setOpenLeadId]  = useState<string | null>(null)
   const [showNewLead, setShowNewLead] = useState(false)
@@ -71,9 +74,9 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
       const esActivo = !isBaja(l.status) && l.status !== 'VENTA'
       if (!esActivo) return false
       switch (filter) {
-        case 'Sin contactar':  return l.status === 'GESTION' && !l.last_contact_at
-        case 'En seguimiento': return ['GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE'].includes(l.status)
-        case 'Demorados':      return l.at_risk
+        case 'Sin contactar':     return l.status === 'GESTION' && !l.last_contact_at
+        case 'En seguimiento':    return ['GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE'].includes(l.status)
+        case 'Requieren atención': return l.at_risk
         default:               return true
       }
     })
@@ -128,9 +131,9 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
         />
         <KpiCard
           icon={<Clock className="size-4 text-destructive" />}
-          label="Demorados"
+          label="Requieren atención"
           value={atRiskCount.toString()}
-          sub="superaron el SLA de contacto"
+          sub="colgados o con acción vencida"
           accent={atRiskCount > 0 ? 'destructive' : undefined}
         />
         <KpiCard
@@ -156,7 +159,7 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
               )}
             >
               {f}
-              {f === 'Demorados' && atRiskCount > 0 && (
+              {f === 'Requieren atención' && atRiskCount > 0 && (
                 <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
                   {atRiskCount}
                 </span>
@@ -282,10 +285,12 @@ function SortButton({
 
 // ── Lead card ─────────────────────────────────────────────────
 
-function LeadCard({ lead, onOpen }: { lead: Lead; onOpen: () => void }) {
+function LeadCard({ lead, onOpen }: { lead: MyLead; onOpen: () => void }) {
   const lastContact = lead.last_contact_at
     ? formatRelative(new Date(lead.last_contact_at))
     : 'Sin contactar'
+
+  const alta = lead.attention_severity === 'alta'
 
   return (
     <Card
@@ -295,15 +300,29 @@ function LeadCard({ lead, onOpen }: { lead: Lead; onOpen: () => void }) {
         lead.at_risk && 'border-l-0',
       )}
     >
-      {lead.at_risk && <div className="absolute left-0 top-0 bottom-0 w-1 bg-destructive" />}
+      {lead.at_risk && (
+        <div className={cn('absolute left-0 top-0 bottom-0 w-1', alta ? 'bg-destructive' : 'bg-amber-500')} />
+      )}
       <div className="p-5 pl-6 flex items-center gap-6">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5 flex-wrap">
             <h3 className="font-semibold text-base">{lead.nombre}</h3>
             <StatusBadge status={lead.status} />
-            {lead.at_risk && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-destructive bg-destructive-soft px-2 py-0.5 rounded-full border border-destructive/20">
-                <AlertTriangle className="size-3" /> Demorado
+            {lead.at_risk && lead.attention_reason && (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border',
+                  alta
+                    ? 'text-destructive bg-destructive-soft border-destructive/20'
+                    : 'text-amber-700 bg-amber-50 border-amber-200/70',
+                )}
+                title={lead.attention_detail ?? undefined}
+              >
+                <AlertTriangle className="size-3" />
+                {lead.attention_reason}
+                {lead.attention_detail && (
+                  <span className="font-normal opacity-70">· {lead.attention_detail}</span>
+                )}
               </span>
             )}
           </div>

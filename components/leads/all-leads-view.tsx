@@ -12,11 +12,12 @@ import {
 } from '@/components/ui/select'
 import { cn, formatRelative, getInitials, safeRefetch } from '@/lib/utils'
 import { Paginator } from '@/components/ui/paginator'
-import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, XCircle } from 'lucide-react'
+import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, XCircle, AlertTriangle } from 'lucide-react'
 import { getAllLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues, leadStatusValues } from '@/lib/schemas/leads'
 import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
+import { ATTENTION_LABEL, type AttentionType } from '@/lib/leads/attention'
 import { BajaDialog } from '@/components/leads/baja-dialog'
 
 type LeadRow = Awaited<ReturnType<typeof getAllLeads>>[number]
@@ -43,6 +44,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
   const [filterSource,   setFilterSource]   = useState(ALL)
   const [filterProvincia, setFilterProvincia] = useState(ALL)
   const [filterUsado,    setFilterUsado]    = useState<'all' | 'yes' | 'no'>('all')
+  const [filterAtencion, setFilterAtencion] = useState<'all' | 'any' | AttentionType>('all')
   const [openLeadId,     setOpenLeadId]     = useState<string | null>(null)
   const [bajaLead,       setBajaLead]       = useState<LeadRow | null>(null)
   const [showNewLead,    setShowNewLead]    = useState(false)
@@ -56,7 +58,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
   }
 
   const hasFilters = filterVend !== ALL || filterStatus !== ALL || filterSource !== ALL
-    || filterProvincia !== ALL || filterUsado !== 'all' || search.trim() !== ''
+    || filterProvincia !== ALL || filterUsado !== 'all' || filterAtencion !== 'all' || search.trim() !== ''
 
   function clearFilters() {
     setSearch('')
@@ -65,6 +67,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
     setFilterSource(ALL)
     setFilterProvincia(ALL)
     setFilterUsado('all')
+    setFilterAtencion('all')
   }
 
   function toggleSort(key: SortKey) {
@@ -77,7 +80,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
   }
 
   // Reset a página 1 cuando cambia cualquier filtro o sort
-  useEffect(() => { setPage(1) }, [search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, sortKey, sortDir])
+  useEffect(() => { setPage(1) }, [search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, filterAtencion, sortKey, sortDir])
 
   // Provincias únicas con al menos un lead
   const provincias = useMemo(() => {
@@ -100,6 +103,8 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
       if (filterProvincia !== ALL && (l.provincia ?? '').toLowerCase() !== filterProvincia.toLowerCase()) return false
       if (filterUsado === 'yes' && !l.tiene_usado) return false
       if (filterUsado === 'no'  &&  l.tiene_usado) return false
+      if (filterAtencion === 'any' && !l.at_risk) return false
+      if (filterAtencion !== 'all' && filterAtencion !== 'any' && l.attention_type !== filterAtencion) return false
       if (search.trim()) {
         const q = search.toLowerCase()
         const matches =
@@ -140,7 +145,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
       const cmp = aTime - bTime
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [leads, search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, sortKey, sortDir])
+  }, [leads, search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, filterAtencion, sortKey, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -217,6 +222,20 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
             <SelectItem value={ALL}>Todos los orígenes</SelectItem>
             {leadSourceValues.map((s) => (
               <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Atención */}
+        <Select value={filterAtencion} onValueChange={(v) => setFilterAtencion(v as typeof filterAtencion)}>
+          <SelectTrigger className={cn('h-9 w-44 text-sm', filterAtencion !== 'all' && 'border-amber-500 text-amber-700')}>
+            <SelectValue placeholder="Atención" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Toda la atención</SelectItem>
+            <SelectItem value="any">⚠ Requieren atención</SelectItem>
+            {(Object.keys(ATTENTION_LABEL) as AttentionType[]).map((t) => (
+              <SelectItem key={t} value={t}>{ATTENTION_LABEL[t]}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -322,7 +341,25 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                         <span className="text-xs text-muted-foreground/50 italic">Sin asignar</span>
                       )}
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={l.status} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col items-start gap-1">
+                        <StatusBadge status={l.status} />
+                        {l.at_risk && l.attention_reason && (
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border',
+                              l.attention_severity === 'alta'
+                                ? 'text-destructive bg-destructive-soft border-destructive/20'
+                                : 'text-amber-700 bg-amber-50 border-amber-200/70',
+                            )}
+                            title={l.attention_detail ?? undefined}
+                          >
+                            <AlertTriangle className="size-2.5" />
+                            {l.attention_reason}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className={cn(
                       'px-4 py-3 text-xs',
                       l.last_contact_critical ? 'text-destructive font-medium' : 'text-muted-foreground',

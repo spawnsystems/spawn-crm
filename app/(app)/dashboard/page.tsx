@@ -4,7 +4,7 @@ import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, count, sql } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { DashboardView } from '@/components/dashboard/dashboard-view'
-import { demoradoCondition, getTenantSlaConfig } from '@/lib/leads/server-helpers'
+import { getAttentionSummary } from '@/app/actions/leads'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,15 +16,13 @@ export default async function DashboardPage() {
   if (!tenantId) redirect('/login')
 
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
-  const sla = await getTenantSlaConfig(tenantId)
-  const demorado = demoradoCondition(sla.primerContactoHoras)
 
   // ── Aggregate queries ────────────────────────────────────────
 
   const [
     totalResult,
     closedResult,
-    atRiskResult,
+    attention,
     sellersRaw,
     sourceRaw,
   ] = await Promise.all([
@@ -51,16 +49,8 @@ export default async function DashboardPage() {
         ),
       ),
 
-    // At risk now
-    dbAdmin
-      .select({ count: count() })
-      .from(schema.leads)
-      .where(
-        and(
-          eq(schema.leads.tenant_id, tenantId),
-          demorado,
-        ),
-      ),
+    // Resumen de atención (scopeado por rol, derivado por el engine)
+    getAttentionSummary(),
 
     // Sellers performance
     dbAdmin
@@ -69,7 +59,6 @@ export default async function DashboardPage() {
         alias:   schema.usuarios.alias,
         total:   count(),
         closed:  sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'VENTA' THEN 1 ELSE 0 END)::int`,
-        atRisk:  sql<number>`SUM(CASE WHEN ${demorado} THEN 1 ELSE 0 END)::int`,
         avgResp: sql<number>`0`,
       })
       .from(schema.leads)
@@ -95,22 +84,28 @@ export default async function DashboardPage() {
 
   const monthLeads     = totalResult[0]?.count  ?? 0
   const monthClosed    = closedResult[0]?.count  ?? 0
-  const atRiskNow      = atRiskResult[0]?.count  ?? 0
+  const atRiskNow      = attention.total
   const conversionRate = monthLeads > 0
     ? Math.round((monthClosed / monthLeads) * 100)
     : 0
 
+  // Atención por vendedor → lookup por nombre visible (alias || nombre)
+  const attBySeller = new Map(attention.bySeller.map((s) => [s.name, s.count]))
+
   // Sellers sorted by closed desc
   const sellers = sellersRaw
     .filter((s) => s.nombre)
-    .map((s) => ({
-      nombre:     s.nombre ?? '—',
-      alias:      s.alias,
-      total:      Number(s.total),
-      closed:     Number(s.closed),
-      atRisk:     Number(s.atRisk),
-      conversion: s.total > 0 ? Math.round((Number(s.closed) / Number(s.total)) * 100) : 0,
-    }))
+    .map((s) => {
+      const displayName = s.alias || s.nombre || '—'
+      return {
+        nombre:     s.nombre ?? '—',
+        alias:      s.alias,
+        total:      Number(s.total),
+        closed:     Number(s.closed),
+        atRisk:     attBySeller.get(displayName) ?? 0,
+        conversion: s.total > 0 ? Math.round((Number(s.closed) / Number(s.total)) * 100) : 0,
+      }
+    })
     .sort((a, b) => b.closed - a.closed || b.conversion - a.conversion)
 
   // Source data (total count per source)
@@ -127,6 +122,7 @@ export default async function DashboardPage() {
       monthClosed={monthClosed}
       conversionRate={conversionRate}
       atRiskNow={atRiskNow}
+      attention={attention}
       sellers={sellers}
       sources={sources}
       totalLeads={totalAll}

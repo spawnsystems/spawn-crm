@@ -6,6 +6,8 @@ import { getModelosVehiculo } from '@/app/actions/modelos'
 import { getSourcesCustom } from '@/app/actions/sources'
 import { getMetasMensuales } from '@/app/actions/metas'
 import { getAuditLogs } from '@/app/actions/audit'
+import { getTenantSlaConfig } from '@/lib/leads/server-helpers'
+import { DEFAULT_SLA } from '@/lib/leads/sla'
 import { ConfiguracionView } from '@/components/config/configuracion-view'
 
 export const dynamic = 'force-dynamic'
@@ -40,6 +42,8 @@ export default async function ConfiguracionPage({
   // vendedor y supervisor solo ven "Mi cuenta"
   const canSeeConfig      = ['dueno', 'gerente'].includes(user.rol)
 
+  const sla = tenant ? await getTenantSlaConfig(tenant.id) : DEFAULT_SLA
+
   return (
     <ConfiguracionView
       user={user}
@@ -51,6 +55,7 @@ export default async function ConfiguracionPage({
       metas={metas}
       auditLogs={auditLogs}
       vendedores={vendedores}
+      sla={sla}
       canManage={canManage}
       canManageModelos={canManageModelos}
       canSeeConfig={canSeeConfig}

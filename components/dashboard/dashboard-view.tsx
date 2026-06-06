@@ -9,6 +9,7 @@ import {
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts'
+import type { AttentionSummary } from '@/app/actions/leads'
 
 interface Seller {
   nombre: string
@@ -30,6 +31,7 @@ interface DashboardViewProps {
   monthClosed: number
   conversionRate: number
   atRiskNow: number
+  attention: AttentionSummary
   sellers: Seller[]
   sources: Source[]
   totalLeads: number
@@ -50,6 +52,7 @@ export function DashboardView({
   monthClosed,
   conversionRate,
   atRiskNow,
+  attention,
   sellers,
   sources,
   totalLeads,
@@ -95,9 +98,9 @@ export function DashboardView({
         />
         <KpiCard
           icon={<AlertOctagon className="size-4" />}
-          label="Leads demorados"
+          label="Requieren atención"
           value={atRiskNow.toString()}
-          sub="superaron el SLA de contacto"
+          sub="colgados o con acción vencida"
           accent={atRiskNow > 0 ? 'destructive' : undefined}
         />
       </div>
@@ -191,27 +194,64 @@ export function DashboardView({
         </Card>
       </div>
 
-      {/* At-risk alert */}
-      {atRiskNow > 0 && (
+      {/* Panel de atención — leads colgados o con acción vencida */}
+      {attention.total > 0 && (
         <Card className="p-6">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-4">
             <Bell className="size-4 text-warning-foreground" />
-            <h3 className="font-semibold">Alertas activas</h3>
+            <h3 className="font-semibold">Requieren atención</h3>
+            <span className="text-xs text-muted-foreground">
+              · {attention.total} {attention.total === 1 ? 'lead' : 'leads'} del equipo
+            </span>
           </div>
-          <div className={cn(
-            'rounded-lg border p-3 flex items-start gap-3',
-            'border-destructive/20 bg-destructive-soft/40',
-          )}>
-            <AlertTriangle className="size-4 mt-0.5 shrink-0 text-destructive" />
-            <div>
-              <div className="text-sm font-medium">
-                {atRiskNow} {atRiskNow === 1 ? 'lead demorado' : 'leads demorados'}
+
+          {/* Desglose por tipo de alerta */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+            {attention.byType.map((t) => (
+              <div
+                key={t.type}
+                className={cn(
+                  'rounded-lg border p-3',
+                  t.severity === 'alta'
+                    ? 'border-destructive/20 bg-destructive-soft/40'
+                    : 'border-amber-200/70 bg-amber-50',
+                )}
+              >
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle className={cn('size-3.5 shrink-0',
+                    t.severity === 'alta' ? 'text-destructive' : 'text-amber-600')} />
+                  <span className={cn('text-lg font-semibold',
+                    t.severity === 'alta' ? 'text-destructive' : 'text-amber-700')}>
+                    {t.count}
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">{t.label}</div>
               </div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                Sin contacto en más de 24 horas
+            ))}
+          </div>
+
+          {/* Por vendedor */}
+          {attention.bySeller.length > 0 && (
+            <div className="border-t border-border pt-4">
+              <div className="text-xs font-medium text-muted-foreground mb-2">Por vendedor</div>
+              <div className="flex flex-wrap gap-2">
+                {attention.bySeller.map((s) => (
+                  <span
+                    key={s.name}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs"
+                  >
+                    <span className="font-medium">{s.name}</span>
+                    <span className={cn('font-semibold', s.alta > 0 ? 'text-destructive' : 'text-amber-700')}>
+                      {s.count}
+                    </span>
+                    {s.alta > 0 && (
+                      <span className="text-[10px] text-destructive/70">({s.alta} urgente{s.alta === 1 ? '' : 's'})</span>
+                    )}
+                  </span>
+                ))}
               </div>
             </div>
-          </div>
+          )}
         </Card>
       )}
     </div>

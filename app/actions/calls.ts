@@ -115,6 +115,12 @@ export async function registerCall(
     })
     .where(eq(schema.leadCalls.id, callId))
 
+  // Registrar la llamada cuenta como contacto: refresca el reloj de atención.
+  await dbAdmin
+    .update(schema.leads)
+    .set({ last_contact_at: new Date(), updated_by: user.id })
+    .where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
+
   const outcomeLabel: Record<string, string> = {
     proxima_llamada: 'Se agendó próxima llamada',
     cita:            'Se pactó una cita',
@@ -145,6 +151,9 @@ export async function registerCall(
     )
   }
 
+  revalidatePath('/leads')
+  revalidatePath('/pipeline')
+  revalidatePath('/all-leads')
   return { success: true, data: { outcome } }
 }
 

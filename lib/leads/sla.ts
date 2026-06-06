@@ -4,15 +4,29 @@
 import { isBaja } from '@/lib/leads/constants'
 
 export interface SlaConfig {
-  /** Horas sin contacto antes de marcar el lead como "Demorado". */
+  /** Horas sin contacto antes de marcar un lead nuevo como "Sin contactar". */
   primerContactoHoras: number
   /** Días sin contacto antes de considerarlo inactivo (rescate). */
   sinContactoDias: number
+  /** Horas que un lead activo puede estar sin próxima acción pactada antes de alertar. */
+  sinProximaAccionHoras: number
+  /** Días que un lead puede estar en CIERRE sin avances antes de alertar. */
+  cierreEstancadoDias: number
+  /** Horas de gracia tras la hora de una cita para marcarla "sin resolver". */
+  citaVencidaGraciaHoras: number
 }
 
 export const DEFAULT_SLA: SlaConfig = {
-  primerContactoHoras: 24,
-  sinContactoDias:     15,
+  primerContactoHoras:    24,
+  sinContactoDias:        15,
+  sinProximaAccionHoras:  48,
+  cierreEstancadoDias:    7,
+  citaVencidaGraciaHoras: 2,
+}
+
+function num(o: Record<string, unknown>, key: keyof SlaConfig, fallback: number): number {
+  const v = o[key]
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback
 }
 
 /** Normaliza el jsonb del tenant (puede venir null o parcial) a un SlaConfig. */
@@ -20,8 +34,11 @@ export function parseSlaConfig(raw: unknown): SlaConfig {
   if (raw && typeof raw === 'object') {
     const o = raw as Record<string, unknown>
     return {
-      primerContactoHoras: typeof o.primerContactoHoras === 'number' ? o.primerContactoHoras : DEFAULT_SLA.primerContactoHoras,
-      sinContactoDias:     typeof o.sinContactoDias === 'number'     ? o.sinContactoDias     : DEFAULT_SLA.sinContactoDias,
+      primerContactoHoras:    num(o, 'primerContactoHoras',    DEFAULT_SLA.primerContactoHoras),
+      sinContactoDias:        num(o, 'sinContactoDias',        DEFAULT_SLA.sinContactoDias),
+      sinProximaAccionHoras:  num(o, 'sinProximaAccionHoras',  DEFAULT_SLA.sinProximaAccionHoras),
+      cierreEstancadoDias:    num(o, 'cierreEstancadoDias',    DEFAULT_SLA.cierreEstancadoDias),
+      citaVencidaGraciaHoras: num(o, 'citaVencidaGraciaHoras', DEFAULT_SLA.citaVencidaGraciaHoras),
     }
   }
   return DEFAULT_SLA

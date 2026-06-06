@@ -21,7 +21,8 @@ import {
   Settings, UserPlus, Loader2, Check, Pencil, X,
 } from 'lucide-react'
 import { inviteUserToTenant, updateMyProfile } from '@/app/actions/users'
-import { updateTenantInfo } from '@/app/actions/tenant'
+import { updateTenantInfo, updateSlaConfig } from '@/app/actions/tenant'
+import type { SlaConfig } from '@/lib/leads/sla'
 import { ModelosTab }  from '@/components/config/modelos-tab'
 import { FuentesTab }  from '@/components/config/fuentes-tab'
 import { MetasTab }    from '@/components/config/metas-tab'
@@ -63,6 +64,7 @@ interface Props {
   metas:         MetaRow[]
   auditLogs:     AuditRow[]
   vendedores:    { user_id: string; nombre: string | null; alias: string | null }[]
+  sla:           SlaConfig
   canManage:         boolean
   canManageModelos:  boolean
   canSeeConfig:      boolean
@@ -75,7 +77,7 @@ interface Props {
 
 export function ConfiguracionView({
   user, tenant, miembros: initialMiembros, equipos, modelos, sourcesCustom,
-  metas, auditLogs, vendedores, canManage, canManageModelos, canSeeConfig, currentYear, currentMonth, defaultTab,
+  metas, auditLogs, vendedores, sla, canManage, canManageModelos, canSeeConfig, currentYear, currentMonth, defaultTab,
 }: Props) {
   const router       = useRouter()
   const searchParams = useSearchParams()
@@ -106,6 +108,7 @@ export function ConfiguracionView({
         <TabsList className="mb-6 flex-wrap h-auto gap-1">
           <TabsTrigger value="cuenta">Mi cuenta</TabsTrigger>
           {canSeeConfig && <TabsTrigger value="concesionaria">Concesionaria</TabsTrigger>}
+          {canSeeConfig && <TabsTrigger value="alertas">Alertas</TabsTrigger>}
           {canManageModelos && <TabsTrigger value="modelos">Modelos</TabsTrigger>}
           {canManage && <TabsTrigger value="fuentes">Fuentes</TabsTrigger>}
           {canManage && <TabsTrigger value="equipos">Equipos</TabsTrigger>}
@@ -149,6 +152,13 @@ export function ConfiguracionView({
             {tenant
               ? <ConcesionariaForm tenant={tenant} canManage={canManage} onSaved={refresh} />
               : <p className="text-sm text-muted-foreground">No hay datos de la concesionaria.</p>}
+          </TabsContent>
+        )}
+
+        {/* ── Alertas / SLA ─────────────────────────── */}
+        {canSeeConfig && (
+          <TabsContent value="alertas">
+            <AlertasForm sla={sla} canManage={canManage} onSaved={refresh} />
           </TabsContent>
         )}
 
@@ -306,6 +316,96 @@ function ConcesionariaForm({
           <InfoRow label="Nombre"  value={tenant.nombre} />
           <InfoRow label="Marca"   value={tenant.concesionaria} last />
         </div>
+      )}
+    </Card>
+  )
+}
+
+// ── AlertasForm (SLA / umbrales de atención) ──────────────────
+
+const SLA_FIELDS: {
+  key: keyof SlaConfig
+  label: string
+  unidad: 'horas' | 'días'
+  help: string
+}[] = [
+  { key: 'primerContactoHoras',    label: 'Primer contacto',     unidad: 'horas', help: 'Horas que un lead nuevo puede estar sin contactar antes de alertar.' },
+  { key: 'sinProximaAccionHoras',  label: 'Sin próxima acción',  unidad: 'horas', help: 'Horas que un lead activo puede quedar sin llamada ni cita pactada.' },
+  { key: 'cierreEstancadoDias',    label: 'Cierre estancado',    unidad: 'días',  help: 'Días que un lead puede estar en CIERRE sin avances.' },
+  { key: 'citaVencidaGraciaHoras', label: 'Gracia post-cita',    unidad: 'horas', help: 'Horas de tolerancia tras una cita antes de marcarla "sin resolver".' },
+  { key: 'sinContactoDias',        label: 'Inactivo (rescate)',  unidad: 'días',  help: 'Días sin contacto antes de considerar el lead inactivo (va a Rescate).' },
+]
+
+function AlertasForm({ sla, canManage, onSaved }: { sla: SlaConfig; canManage: boolean; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [values,  setValues]  = useState<SlaConfig>(sla)
+  const [isPending, startTransition] = useTransition()
+
+  function set(key: keyof SlaConfig, raw: string) {
+    const n = parseInt(raw, 10)
+    setValues((v) => ({ ...v, [key]: Number.isNaN(n) ? 0 : n }))
+  }
+
+  function handleSave() {
+    startTransition(async () => {
+      const res = await updateSlaConfig(values)
+      if (res.success) { toast.success('Umbrales actualizados'); setEditing(false); onSaved() }
+      else toast.error(res.error)
+    })
+  }
+
+  return (
+    <Card className="p-5 max-w-xl">
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+          Umbrales de atención
+        </div>
+        {canManage && (
+          <Button
+            size="sm" variant="ghost"
+            className="h-7 gap-1.5 text-muted-foreground"
+            onClick={() => { setValues(sla); setEditing(!editing) }}
+          >
+            {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
+            {editing ? 'Cancelar' : 'Editar'}
+          </Button>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground mb-4">
+        Definen cuándo un lead se marca como “requiere atención” para el vendedor y sus jefes.
+        {!canManage && ' Solo el dueño puede modificarlos.'}
+      </p>
+
+      <div className="space-y-3">
+        {SLA_FIELDS.map((f) => (
+          <div key={f.key} className="flex items-start justify-between gap-4 py-2 border-b border-border/50 last:border-0">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">{f.label}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{f.help}</div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {editing ? (
+                <Input
+                  type="number"
+                  min={0}
+                  value={values[f.key]}
+                  onChange={(e) => set(f.key, e.target.value)}
+                  className="h-8 w-20 text-sm text-right"
+                />
+              ) : (
+                <span className="text-sm font-semibold tabular-nums">{sla[f.key]}</span>
+              )}
+              <span className="text-xs text-muted-foreground w-10">{f.unidad}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {editing && (
+        <Button size="sm" onClick={handleSave} disabled={isPending} className="gap-1.5 mt-4">
+          {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+          Guardar umbrales
+        </Button>
       )}
     </Card>
   )
