@@ -8,7 +8,24 @@ import { es } from 'date-fns/locale'
 import { dbAdmin, schema } from '@/lib/db'
 import { requireTenant, appendTimeline, assertLeadAccess } from '@/lib/leads/server-helpers'
 import { advanceStatus, isTerminal, terminalBlockReason } from '@/lib/leads/state-machine'
+import { isBaja } from '@/lib/leads/constants'
+import { appointmentTipoValues, APPOINTMENT_TIPO_LABEL } from '@/lib/schemas/appointments'
+import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
+
+const BA_TZ = 'America/Argentina/Buenos_Aires'
+
+function fmtApptDateBA(date: Date): string {
+  return date.toLocaleString('es-AR', {
+    timeZone:  BA_TZ,
+    weekday:   'long',
+    day:       'numeric',
+    month:     'long',
+    hour:      '2-digit',
+    minute:    '2-digit',
+    hour12:    false,
+  }).replace(',', '')
+}
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +40,32 @@ const registerCallSchema = z.object({
   outcome:          z.enum(['proxima_llamada', 'cita', 'descartado']),
   notasResultado:   z.string().max(1000).optional(),
   proximaLlamadaAt: z.string().datetime({ offset: true }).optional(),
+
+  // Si outcome=cita, estos campos son OBLIGATORIOS (validado abajo).
+  // Crea la cita atómicamente en el mismo flujo para que el lead no quede
+  // "en limbo" con outcome=cita pero sin cita real agendada.
+  appointment: z.object({
+    scheduled_at: z.string().datetime({ offset: true }),
+    tipo:         z.enum(appointmentTipoValues),
+    duration_min: z.number().int().min(15).max(240).default(60),
+    lugar:        z.string().max(200).optional(),
+    notas:        z.string().max(2000).optional(),
+  }).optional(),
+}).superRefine((val, ctx) => {
+  if (val.outcome === 'cita' && !val.appointment) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['appointment'],
+      message: 'Si la llamada terminó en cita, hay que agendarla ahora.',
+    })
+  }
+  if (val.outcome === 'proxima_llamada' && !val.proximaLlamadaAt) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['proximaLlamadaAt'],
+      message: 'Indicá la fecha de la próxima llamada.',
+    })
+  }
 })
 
 // ── scheduleCall ──────────────────────────────────────────────────────────────
@@ -87,9 +130,9 @@ export async function registerCall(
 
   const parsed = registerCallSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
-  const { callId, outcome, notasResultado, proximaLlamadaAt } = parsed.data
+  const { callId, outcome, notasResultado, proximaLlamadaAt, appointment } = parsed.data
 
-  // Verificar que la llamada existe y pertenece al tenant
+  // 1) Verificar que la llamada existe y pertenece al tenant
   const call = await dbAdmin
     .select()
     .from(schema.leadCalls)
@@ -101,11 +144,50 @@ export async function registerCall(
 
   const leadId = call[0].lead_id
 
-  // Scope: el usuario debe tener acceso al lead de la llamada (no solo al tenant)
+  // 2) Scope: el usuario debe tener acceso al lead de la llamada (no solo al tenant)
   const lead = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
   if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
 
-  // Marcar como realizada
+  // 3) Pre-check para outcome=cita: validar la fecha y que no haya otra cita programada
+  //    ANTES de tocar la llamada (para no dejarla "registrada sin cita" si esto falla).
+  let apptScheduledAt: Date | null = null
+  if (outcome === 'cita' && appointment) {
+    apptScheduledAt = new Date(appointment.scheduled_at)
+    if (apptScheduledAt.getTime() <= Date.now()) {
+      return { success: false, error: 'La cita debe ser en el futuro' }
+    }
+    const existing = await dbAdmin
+      .select({ id: schema.leadAppointments.id })
+      .from(schema.leadAppointments)
+      .where(and(
+        eq(schema.leadAppointments.lead_id, leadId),
+        eq(schema.leadAppointments.status, 'programada'),
+      ))
+      .limit(1)
+    if (existing[0]) {
+      return {
+        success: false,
+        error:   'Ya hay una cita programada para este lead. Cancelala o reagendala primero.',
+      }
+    }
+  }
+
+  // 4) Resolver equipo del vendedor para denormalizar en la cita (si aplica)
+  const vendedorId = lead.assigned_to ?? user.id
+  let equipoId: string | null = null
+  if (outcome === 'cita') {
+    const member = await dbAdmin
+      .select({ equipo_id: schema.tenantMembers.equipo_id })
+      .from(schema.tenantMembers)
+      .where(and(
+        eq(schema.tenantMembers.tenant_id, tenantId),
+        eq(schema.tenantMembers.user_id, vendedorId),
+      ))
+      .limit(1)
+    equipoId = member[0]?.equipo_id ?? lead.equipo_id ?? null
+  }
+
+  // 5) Marcar la llamada como realizada
   await dbAdmin
     .update(schema.leadCalls)
     .set({
@@ -114,12 +196,6 @@ export async function registerCall(
       notas_resultado: notasResultado ?? null,
     })
     .where(eq(schema.leadCalls.id, callId))
-
-  // Registrar la llamada cuenta como contacto: refresca el reloj de atención.
-  await dbAdmin
-    .update(schema.leads)
-    .set({ last_contact_at: new Date(), updated_by: user.id })
-    .where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
 
   const outcomeLabel: Record<string, string> = {
     proxima_llamada: 'Se agendó próxima llamada',
@@ -134,8 +210,9 @@ export async function registerCall(
     notasResultado ?? undefined,
   )
 
-  // Si el outcome es próxima llamada y se indicó la fecha, la creamos acá
+  // 6) Side-effect según outcome
   if (outcome === 'proxima_llamada' && proximaLlamadaAt) {
+    // 6a) Crear próxima llamada agendada
     await dbAdmin.insert(schema.leadCalls).values({
       tenant_id:    tenantId,
       lead_id:      leadId,
@@ -151,9 +228,77 @@ export async function registerCall(
     )
   }
 
+  if (outcome === 'cita' && appointment && apptScheduledAt) {
+    // 6b) Crear la cita atómicamente — mismo flujo que createAppointment.
+    const [apptRow] = await dbAdmin.insert(schema.leadAppointments).values({
+      tenant_id:      tenantId,
+      lead_id:        leadId,
+      vendedor_id:    vendedorId,
+      equipo_id:      equipoId,
+      scheduled_at:   apptScheduledAt,
+      duration_min:   appointment.duration_min,
+      tipo:           appointment.tipo,
+      lugar:          appointment.lugar ?? null,
+      modelo_interes: null,
+      notas:          appointment.notas ?? null,
+      created_by:     user.id,
+    }).returning({ id: schema.leadAppointments.id })
+
+    // Avanzar a ENTREVISTA PACTADA si todavía no llegó.
+    // Si venía de baja/rescate, reactivarlo.
+    const cameFromRescue = isBaja(lead.status) || lead.abandoned_at !== null
+    const yaAvanzado     = ['ENTREVISTA PACTADA', 'CIERRE', 'VENTA'].includes(lead.status)
+
+    await dbAdmin.update(schema.leads).set({
+      status:                yaAvanzado ? lead.status : 'ENTREVISTA PACTADA',
+      last_contact_at:       new Date(),
+      last_contact_critical: false,
+      at_risk:               false,
+      ...(cameFromRescue ? { abandoned_at: null, baja_motivo: null, baja_at: null } : {}),
+      updated_by:            user.id,
+    }).where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
+
+    if (cameFromRescue) {
+      await appendTimeline(
+        tenantId, leadId, user.id,
+        'reactivated_from_rescue',
+        'Reactivado — volvió al seguimiento activo',
+      )
+    }
+
+    await appendTimeline(
+      tenantId, leadId, user.id,
+      'appointment_scheduled',
+      'Cita pautada con el cliente',
+      `${APPOINTMENT_TIPO_LABEL[appointment.tipo]} · ${fmtApptDateBA(apptScheduledAt)}`,
+    )
+
+    void logAudit({
+      tenantId,
+      actorId:        user.id,
+      action:         'appointment.create',
+      entity:         'appointment',
+      entityId:       apptRow.id,
+      meta: {
+        lead_id:      leadId,
+        scheduled_at: apptScheduledAt,
+        tipo:         appointment.tipo,
+        via:          'register_call',
+      },
+      visibleToDueno: true,
+    })
+  } else {
+    // 6c) Sin cita: solo refrescar el reloj de atención
+    await dbAdmin
+      .update(schema.leads)
+      .set({ last_contact_at: new Date(), updated_by: user.id })
+      .where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
+  }
+
   revalidatePath('/leads')
   revalidatePath('/pipeline')
   revalidatePath('/all-leads')
+  revalidatePath('/citas')
   return { success: true, data: { outcome } }
 }
 

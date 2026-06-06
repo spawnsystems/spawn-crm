@@ -546,6 +546,78 @@ export async function addNote(
   return { success: true, data: { id: row.id } }
 }
 
+// ── deleteNote ────────────────────────────────────────────────
+// Hard delete + evento en timeline (queda el rastro del borrado).
+// Permiso: el dueño puede borrar cualquier nota del tenant; cualquier
+// otro rol solo puede borrar las notas que él mismo escribió.
+// Auditado en lead_timeline ('note_deleted') y en audit_logs.
+export async function deleteNote(
+  noteId: string,
+): Promise<ActionResult<void>> {
+  const { user, tenantId } = await requireTenant()
+
+  // 1) Cargar la nota y validar tenant
+  const note = await dbAdmin
+    .select({
+      id:        schema.leadNotes.id,
+      lead_id:   schema.leadNotes.lead_id,
+      author_id: schema.leadNotes.author_id,
+      texto:     schema.leadNotes.texto,
+      created_at: schema.leadNotes.created_at,
+    })
+    .from(schema.leadNotes)
+    .where(and(eq(schema.leadNotes.id, noteId), eq(schema.leadNotes.tenant_id, tenantId)))
+    .limit(1)
+
+  if (!note[0]) return { success: false, error: 'Nota no encontrada' }
+
+  // 2) Verificar permiso: dueño OR autor
+  const isOwner  = user.rol === 'dueno'
+  const isAuthor = note[0].author_id === user.id
+  if (!isOwner && !isAuthor) {
+    return { success: false, error: 'No tenés permiso para borrar esta nota' }
+  }
+
+  // 3) Verificar acceso al lead (defensa en profundidad: que el lead sea visible al usuario)
+  const accessible = await assertLeadAccess(note[0].lead_id, user.id, user.rol, tenantId)
+  if (!accessible) return { success: false, error: 'No tenés acceso a este lead' }
+
+  // 4) Hard delete
+  await dbAdmin
+    .delete(schema.leadNotes)
+    .where(eq(schema.leadNotes.id, noteId))
+
+  // 5) Auditoría: queda el texto original en el timeline para no perder trazabilidad
+  const previewText = note[0].texto.length > 200
+    ? note[0].texto.slice(0, 200) + '…'
+    : note[0].texto
+  await appendTimeline(
+    tenantId, note[0].lead_id, user.id,
+    'note_deleted',
+    'Nota borrada',
+    previewText,
+  )
+
+  void logAudit({
+    tenantId,
+    actorId:        user.id,
+    action:         'lead.note_deleted',
+    entity:         'lead_note',
+    entityId:       noteId,
+    meta:           {
+      lead_id:    note[0].lead_id,
+      author_id:  note[0].author_id,
+      texto:      note[0].texto,
+      created_at: note[0].created_at,
+    },
+    visibleToDueno: true,
+  })
+
+  revalidatePath('/leads')
+  revalidatePath('/all-leads')
+  return { success: true, data: undefined }
+}
+
 // ── addTask ───────────────────────────────────────────────────
 
 export async function addTask(
@@ -961,6 +1033,7 @@ export async function getLeadDetail(leadId: string) {
         texto:     schema.leadNotes.texto,
         created_at: schema.leadNotes.created_at,
         autor:     schema.usuarios.nombre,
+        author_id: schema.leadNotes.author_id,
       })
       .from(schema.leadNotes)
       .leftJoin(schema.usuarios, eq(schema.leadNotes.author_id, schema.usuarios.id))

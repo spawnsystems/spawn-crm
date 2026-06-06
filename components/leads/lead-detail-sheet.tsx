@@ -28,10 +28,10 @@ import {
   MessageCircle, Send, Loader2, Pencil, X, Check,
   UserCircle, Plus, RotateCcw, UserPlus, UserCheck, ArrowRight,
   CalendarCheck, Trophy, LifeBuoy, AlertTriangle, CalendarX,
-  ArrowRightLeft, PhoneCall, PhoneIncoming, Clock3, ChevronDown,
+  ArrowRightLeft, PhoneCall, PhoneIncoming, Clock3, ChevronDown, Trash2,
 } from 'lucide-react'
 import {
-  addNote, toggleTask, getLeadDetail,
+  addNote, deleteNote, toggleTask, getLeadDetail,
   updateLead, addTask, assignLead,
 } from '@/app/actions/leads'
 import { requestTransfer } from '@/app/actions/transfers'
@@ -64,6 +64,7 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
   status_changed:          { bg: 'bg-primary',     Icon: ArrowRight    },
   reassigned:              { bg: 'bg-indigo-500',  Icon: UserCheck     },
   note_added:              { bg: 'bg-slate-400',   Icon: FileText      },
+  note_deleted:            { bg: 'bg-rose-400',    Icon: X             },
   task_done:               { bg: 'bg-teal-500',    Icon: CheckCircle2  },
   appointment_scheduled:   { bg: 'bg-violet-500',  Icon: CalendarCheck },
   appointment_done:        { bg: 'bg-emerald-500', Icon: CheckCircle2  },
@@ -85,9 +86,10 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
 // ── Preview limits ────────────────────────────────────────────────
 // Cuántos ítems mostrar en cada sección antes de colapsar.
 // "Ver más" expande el resto inline; el sheet no scrollea por defecto.
-const PREVIEW_TASKS    = 2
-const PREVIEW_CALLS    = 2
-const PREVIEW_NOTES    = 2
+const PREVIEW_TASKS    = 1
+const PREVIEW_CALLS    = 1
+const PREVIEW_NOTES    = 1
+const PREVIEW_TIMELINE = 6
 
 // ── Main component ────────────────────────────────────────────────
 
@@ -194,6 +196,22 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
       } else {
         toast.error(res.error)
       }
+    })
+  }
+
+  function handleDeleteNote(noteId: string) {
+    if (!lead) return
+    if (!confirm('¿Borrar esta nota? Esta acción queda registrada en el historial.')) return
+    const id = lead.id
+    startTransition(async () => {
+      const res = await deleteNote(noteId)
+      if (!res.success) { toast.error(res.error); return }
+      const updated = await safeRefetch(
+        () => getLeadDetail(id),
+        'Nota borrada, pero no se pudo refrescar la ficha',
+      )
+      if (updated) setDetail(updated)
+      toast.success('Nota borrada')
     })
   }
 
@@ -699,22 +717,39 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                       <p className="text-sm text-muted-foreground mb-2">Sin notas aún.</p>
                     )}
                     {notes.length > 0 && (() => {
-                      // Más recientes primero
-                      const sorted = [...notes].reverse()
+                      // El server ya las devuelve en orden DESC (recientes primero)
+                      const sorted = notes
                       const visible = showAllNotes ? sorted : sorted.slice(0, PREVIEW_NOTES)
                       const hiddenCount = sorted.length - PREVIEW_NOTES
                       return (
                         <>
                           <div className="space-y-2">
-                            {visible.map((n) => (
-                              <div key={n.id} className="rounded-lg border border-border p-3 bg-muted/30">
-                                <div className="text-xs text-muted-foreground mb-1">
-                                  {n.autor ?? 'Usuario'} ·{' '}
-                                  {fmtDayMonthAR(n.created_at)}
+                            {visible.map((n) => {
+                              // Borrado permitido: dueño SIEMPRE, o el autor de la nota.
+                              const canDelete =
+                                currentUser.rol === 'dueno' ||
+                                ('author_id' in n && n.author_id === currentUser.id)
+                              return (
+                                <div key={n.id} className="group relative rounded-lg border border-border p-3 bg-muted/30">
+                                  <div className="text-xs text-muted-foreground mb-1">
+                                    {n.autor ?? 'Usuario'} ·{' '}
+                                    {fmtDayMonthAR(n.created_at)}
+                                  </div>
+                                  <div className="text-sm">{n.texto}</div>
+                                  {canDelete && (
+                                    <button
+                                      onClick={() => handleDeleteNote(n.id)}
+                                      disabled={isPending}
+                                      className="absolute top-2 right-2 p-1 rounded text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                      title="Borrar nota"
+                                      aria-label="Borrar nota"
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                    </button>
+                                  )}
                                 </div>
-                                <div className="text-sm">{n.texto}</div>
-                              </div>
-                            ))}
+                              )
+                            })}
                           </div>
                           {sorted.length > PREVIEW_NOTES && (
                             <button
@@ -757,13 +792,13 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                   <p className="text-sm text-muted-foreground">Sin actividad.</p>
                 ) : (
                   <>
-                    <TimelineList events={timeline.slice(0, 5)} />
-                    {timeline.length > 5 && (
+                    <TimelineList events={timeline.slice(0, PREVIEW_TIMELINE)} />
+                    {timeline.length > PREVIEW_TIMELINE && (
                       <button
                         onClick={() => setShowTimelineDialog(true)}
                         className="mt-1 text-xs text-primary hover:underline"
                       >
-                        Ver todos ({timeline.length - 5} más)
+                        Ver todos ({timeline.length - PREVIEW_TIMELINE} más)
                       </button>
                     )}
                   </>
@@ -1207,6 +1242,16 @@ const OUTCOMES: { value: CallOutcome; label: string; desc: string; icon: React.R
   },
 ]
 
+type ApptTipo = 'videollamada' | 'visita_showroom' | 'cierre'
+
+const APPT_TIPO_OPTIONS: { value: ApptTipo; label: string }[] = [
+  { value: 'videollamada',    label: 'Videollamada'        },
+  { value: 'visita_showroom', label: 'Visita al showroom'  },
+  { value: 'cierre',          label: 'Cierre'              },
+]
+
+const APPT_DURATIONS = [30, 60, 90, 120] as const
+
 function RegisterCallDialog({
   open, callId, onOpenChange, onDone,
 }: {
@@ -1218,24 +1263,50 @@ function RegisterCallDialog({
   const [outcome,    setOutcome]    = useState<CallOutcome | null>(null)
   const [notas,      setNotas]      = useState('')
   const [nextCallAt, setNextCallAt] = useState('')
+  // Campos de cita (solo se usan si outcome === 'cita')
+  const [apptAt,     setApptAt]     = useState('')
+  const [apptTipo,   setApptTipo]   = useState<ApptTipo>('videollamada')
+  const [apptDur,    setApptDur]    = useState<number>(60)
+  const [apptLugar,  setApptLugar]  = useState('')
   const [isPending,  startTransition] = useTransition()
 
-  // Default próxima llamada: en 3 días a las 10:00
+  // Defaults al abrir el dialog: próxima llamada en 3 días, cita en 2 días
   useEffect(() => {
-    if (open && !nextCallAt) {
+    if (!open) return
+    if (!nextCallAt) {
       const d = new Date()
       d.setDate(d.getDate() + 3)
       d.setHours(10, 0, 0, 0)
       setNextCallAt(d.toISOString().slice(0, 16))
     }
+    if (!apptAt) {
+      const d = new Date()
+      d.setDate(d.getDate() + 2)
+      d.setHours(11, 0, 0, 0)
+      setApptAt(d.toISOString().slice(0, 16))
+    }
   }, [open])
 
-  function reset() { setOutcome(null); setNotas(''); setNextCallAt('') }
+  function reset() {
+    setOutcome(null); setNotas(''); setNextCallAt('')
+    setApptAt(''); setApptTipo('videollamada'); setApptDur(60); setApptLugar('')
+  }
+
+  // Validez del submit según outcome
+  const submitDisabled =
+    !outcome ||
+    (outcome === 'proxima_llamada' && !nextCallAt) ||
+    (outcome === 'cita' && (!apptAt || (apptTipo === 'visita_showroom' && !apptLugar.trim()))) ||
+    isPending
 
   function handleSubmit() {
     if (!outcome) { toast.error('Seleccioná qué pasó en la llamada'); return }
     if (outcome === 'proxima_llamada' && !nextCallAt) {
       toast.error('Indicá la fecha de la próxima llamada')
+      return
+    }
+    if (outcome === 'cita' && !apptAt) {
+      toast.error('Indicá la fecha de la cita')
       return
     }
 
@@ -1245,12 +1316,20 @@ function RegisterCallDialog({
         outcome,
         notasResultado:   notas.trim() || undefined,
         proximaLlamadaAt: outcome === 'proxima_llamada' ? new Date(nextCallAt).toISOString() : undefined,
+        appointment: outcome === 'cita'
+          ? {
+              scheduled_at: new Date(apptAt).toISOString(),
+              tipo:         apptTipo,
+              duration_min: apptDur,
+              lugar:        apptLugar.trim() || undefined,
+            }
+          : undefined,
       })
       if (!res.success) { toast.error(res.error); return }
 
       const labels: Record<CallOutcome, string> = {
         proxima_llamada: 'Llamada registrada — próxima llamada agendada',
-        cita:            'Llamada registrada — recordá agendar la cita',
+        cita:            'Llamada registrada — cita agendada',
         descartado:      'Llamada registrada',
       }
       toast.success(labels[outcome])
@@ -1261,7 +1340,7 @@ function RegisterCallDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PhoneIncoming className="size-4 text-teal-600" />
@@ -1298,7 +1377,7 @@ function RegisterCallDialog({
             </div>
           </div>
 
-          {/* Fecha próxima llamada (solo si se elige proxima_llamada) */}
+          {/* Próxima llamada */}
           {outcome === 'proxima_llamada' && (
             <div className="space-y-1.5">
               <Label>Fecha y hora de la próxima llamada *</Label>
@@ -1308,6 +1387,75 @@ function RegisterCallDialog({
                 onChange={(e) => setNextCallAt(e.target.value)}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
+            </div>
+          )}
+
+          {/* Agendar cita inline — datos obligatorios */}
+          {outcome === 'cita' && (
+            <div className="space-y-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-violet-700">
+                <CalendarCheck className="size-3.5" />
+                Datos de la cita
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5 col-span-2">
+                  <Label className="text-xs">Fecha y hora *</Label>
+                  <input
+                    type="datetime-local"
+                    value={apptAt}
+                    onChange={(e) => setApptAt(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Tipo *</Label>
+                  <Select value={apptTipo} onValueChange={(v) => setApptTipo(v as ApptTipo)}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {APPT_TIPO_OPTIONS.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Duración</Label>
+                  <Select value={String(apptDur)} onValueChange={(v) => setApptDur(Number(v))}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {APPT_DURATIONS.map((d) => (
+                        <SelectItem key={d} value={String(d)}>{d} min</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {(apptTipo === 'visita_showroom' || apptTipo === 'cierre') && (
+                  <div className="space-y-1.5 col-span-2">
+                    <Label className="text-xs">
+                      Lugar {apptTipo === 'visita_showroom' && '*'}
+                    </Label>
+                    <Input
+                      value={apptLugar}
+                      onChange={(e) => setApptLugar(e.target.value)}
+                      placeholder="Ej: Showroom Av. Cabildo"
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] text-violet-700/80 leading-snug">
+                Al confirmar se registra la llamada <b>y se agenda la cita</b> en un solo paso.
+                El lead pasa a <b>Entrevista Pactada</b>.
+              </p>
             </div>
           )}
 
@@ -1321,17 +1469,11 @@ function RegisterCallDialog({
               placeholder="Ej: Está comparando con Toyota, vuelve a llamar el jueves..."
               value={notas}
               onChange={(e) => setNotas(e.target.value)}
-              rows={3}
+              rows={2}
               className="text-sm resize-none"
             />
           </div>
 
-          {/* Aviso si el outcome desencadena otra acción */}
-          {outcome === 'cita' && (
-            <p className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
-              Al confirmar, podrás agendar la cita desde la sección de próxima acción del lead.
-            </p>
-          )}
           {outcome === 'descartado' && (
             <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
               Al confirmar, se abrirá el formulario para dar de baja el lead con motivo.
@@ -1345,11 +1487,7 @@ function RegisterCallDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={
-              !outcome ||
-              (outcome === 'proxima_llamada' && !nextCallAt) ||
-              isPending
-            }
+            disabled={submitDisabled}
             className="gap-1.5"
           >
             {isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
