@@ -5,7 +5,10 @@ import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, desc, inArray, or, isNotNull, sql, getTableColumns } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/leads'
 import { logAudit } from '@/lib/audit/log'
-import { requireTenant, appendTimeline, getTenantSlaConfig, assertLeadAccess } from '@/lib/leads/server-helpers'
+import {
+  requireTenant, appendTimeline, getTenantSlaConfig, assertLeadAccess,
+  pendingCallAtSql, openApptAtSql,
+} from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
 import { activeIndex, terminalBlockReason } from '@/lib/leads/state-machine'
 import { type SlaConfig } from '@/lib/leads/sla'
@@ -14,25 +17,6 @@ import {
   type AttentionType, type AttentionSeverity,
 } from '@/lib/leads/attention'
 import type { ActionResult } from './auth'
-
-// ── Subqueries de atención ────────────────────────────────────────
-// Correlacionadas con leads.id. Permiten que el engine de atención sepa,
-// por lead, si hay una llamada pendiente vencida o una cita programada.
-
-/** Hora de la llamada pendiente (sin registrar) más próxima del lead. */
-const pendingCallAtSql = sql<string | null>`(
-  SELECT MIN(lc.scheduled_at)
-  FROM ${schema.leadCalls} lc
-  WHERE lc.lead_id = ${schema.leads.id} AND lc.realizada_at IS NULL
-)`
-
-/** Hora de la cita 'programada' del lead (única por constraint). */
-const openApptAtSql = sql<string | null>`(
-  SELECT la.scheduled_at
-  FROM ${schema.leadAppointments} la
-  WHERE la.lead_id = ${schema.leads.id} AND la.status = 'programada'
-  LIMIT 1
-)`
 
 // ── Helpers ───────────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@ import { eq, and, count, sql, inArray } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { TeamView } from '@/components/team/team-view'
 import { getEquiposConMiembros, getMiembrosDelTenant } from '@/app/actions/equipos'
-import { demoradoCondition, getTenantSlaConfig } from '@/lib/leads/server-helpers'
+import { getTeamAttentionCountByUser } from '@/lib/leads/server-helpers'
 import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
 
 export const dynamic = 'force-dynamic'
@@ -19,8 +19,6 @@ export default async function EquipoPage() {
 
   const canManage = ['dueno', 'gerente'].includes(user.rol)
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
-  const sla    = await getTenantSlaConfig(tenantId)
-  const demorado = demoradoCondition(sla.primerContactoHoras)
 
   // Scope del usuario actual
   const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
@@ -68,7 +66,14 @@ export default async function EquipoPage() {
 
   const skipRanking = supervisorSinEquipo || vendedorSinEquipo
 
-  const [rawRanking, equipos, miembros] = await Promise.all([
+  // Equipos a incluir en el conteo de atención (scope ya verificado por rol).
+  // null = todo el tenant (dueño/admin); [] vía skipRanking se evita más abajo.
+  let attentionEquipoIds: string[] | null = null
+  if (scope.type === 'team') attentionEquipoIds = [scope.equipoId]
+  else if (scope.type === 'teams') attentionEquipoIds = scope.equipoIds
+  else if (user.rol === 'vendedor' && vendedorEquipoId) attentionEquipoIds = [vendedorEquipoId]
+
+  const [rawRanking, attentionByUser, equipos, miembros] = await Promise.all([
     skipRanking
       ? Promise.resolve([])
       : dbAdmin
@@ -78,7 +83,6 @@ export default async function EquipoPage() {
             alias:    schema.usuarios.alias,
             closed:   sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'VENTA' THEN 1 ELSE 0 END)::int`,
             total:    count(),
-            atRisk:   sql<number>`SUM(CASE WHEN ${demorado} THEN 1 ELSE 0 END)::int`,
           })
           .from(schema.leads)
           .leftJoin(schema.usuarios, eq(schema.leads.assigned_to, schema.usuarios.id))
@@ -92,6 +96,10 @@ export default async function EquipoPage() {
           )
           .groupBy(schema.leads.assigned_to, schema.usuarios.nombre, schema.usuarios.alias),
 
+    skipRanking
+      ? Promise.resolve({} as Record<string, number>)
+      : getTeamAttentionCountByUser(tenantId, attentionEquipoIds),
+
     canManage ? getEquiposConMiembros() : Promise.resolve([]),
     canManage ? getMiembrosDelTenant()  : Promise.resolve([]),
   ])
@@ -104,7 +112,7 @@ export default async function EquipoPage() {
       alias:      r.alias,
       closed:     Number(r.closed),
       total:      Number(r.total),
-      atRisk:     Number(r.atRisk),
+      atRisk:     r.user_id ? (attentionByUser[r.user_id] ?? 0) : 0,
       conversion: r.total > 0 ? Math.round((Number(r.closed) / Number(r.total)) * 100) : 0,
     }))
     .sort((a, b) => b.closed - a.closed || b.conversion - a.conversion)

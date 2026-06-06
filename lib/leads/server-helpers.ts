@@ -8,13 +8,34 @@
 
 import 'server-only'
 
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, sql, inArray, isNotNull } from 'drizzle-orm'
 import { getCurrentUser, type AppRole } from '@/lib/auth/get-current-user'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { db, dbAdmin, schema } from '@/lib/db'
 import { parseSlaConfig, type SlaConfig } from '@/lib/leads/sla'
+import { attachAttention } from '@/lib/leads/attention'
 import { TERMINAL_STATUSES } from '@/lib/leads/constants'
 import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
+
+// ── Subqueries de atención ────────────────────────────────────────
+// Correlacionadas con leads.id. Reutilizadas por los queries de leads y
+// por los conteos de atención por equipo. (No son server actions: este
+// archivo es server-only, no 'use server'.)
+
+/** Hora de la llamada pendiente (sin registrar) más próxima del lead. */
+export const pendingCallAtSql = sql<string | null>`(
+  SELECT MIN(lc.scheduled_at)
+  FROM ${schema.leadCalls} lc
+  WHERE lc.lead_id = ${schema.leads.id} AND lc.realizada_at IS NULL
+)`
+
+/** Hora de la cita 'programada' del lead (única por constraint). */
+export const openApptAtSql = sql<string | null>`(
+  SELECT la.scheduled_at
+  FROM ${schema.leadAppointments} la
+  WHERE la.lead_id = ${schema.leads.id} AND la.status = 'programada'
+  LIMIT 1
+)`
 
 /**
  * Carga el usuario actual + tenant y arma el helper de queries.
@@ -40,6 +61,55 @@ export function demoradoCondition(hours: number) {
   return sql`${schema.leads.status} NOT IN (${terminales})
     AND COALESCE(${schema.leads.last_contact_at}, ${schema.leads.created_at})
         < NOW() - make_interval(hours => ${hours}::int)`
+}
+
+/**
+ * Cuenta, por vendedor, cuántos de sus leads requieren atención (según el
+ * engine derivado). Para el leaderboard de "Mi equipo".
+ *
+ * IMPORTANTE: recibe el scope (equipoIds) YA resuelto y verificado por el
+ * caller (la page lo deriva del rol/equipos del usuario real). Es server-only,
+ * no una action invocable desde el cliente, así que no hay riesgo de que se
+ * pasen equipos ajenos.
+ *
+ * @param equipoIds  Equipos a incluir. `null` = todo el tenant (dueño/admin).
+ *                   `[]` = ninguno → devuelve {}.
+ */
+export async function getTeamAttentionCountByUser(
+  tenantId:  string,
+  equipoIds: string[] | null,
+): Promise<Record<string, number>> {
+  if (equipoIds && equipoIds.length === 0) return {}
+
+  const sla = await getTenantSlaConfig(tenantId)
+
+  const conds = [
+    eq(schema.leads.tenant_id, tenantId),
+    isNotNull(schema.leads.assigned_to),
+  ]
+  if (equipoIds) conds.push(inArray(schema.leads.equipo_id, equipoIds))
+
+  const rows = await dbAdmin
+    .select({
+      assigned_to:      schema.leads.assigned_to,
+      status:           schema.leads.status,
+      created_at:       schema.leads.created_at,
+      last_contact_at:  schema.leads.last_contact_at,
+      stage_entered_at: schema.leads.stage_entered_at,
+      pending_call_at:  pendingCallAtSql,
+      open_appt_at:     openApptAtSql,
+    })
+    .from(schema.leads)
+    .where(and(...conds))
+
+  const out: Record<string, number> = {}
+  for (const r of rows) {
+    if (!r.assigned_to) continue
+    if (attachAttention(r, sla).at_risk) {
+      out[r.assigned_to] = (out[r.assigned_to] ?? 0) + 1
+    }
+  }
+  return out
 }
 
 /** Lee el SlaConfig del tenant (con defaults si no está seteado). */
