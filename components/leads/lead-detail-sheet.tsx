@@ -178,7 +178,8 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const [showCotizador,   setShowCotizador]   = useState(false)
   const [showTransfer,    setShowTransfer]    = useState(false)
   const [showScheduleCall, setShowScheduleCall] = useState(false)
-  const [registerCallId,   setRegisterCallId]   = useState<string | null>(null)
+  // Registro de llamada: { callId } para una agendada, { leadId } para ad-hoc.
+  const [registerTarget,   setRegisterTarget]   = useState<{ callId?: string; leadId?: string } | null>(null)
   const [showTimelineDialog, setShowTimelineDialog] = useState(false)
   const [showAllAgenda,   setShowAllAgenda]   = useState(false)
   const [showAllCalls,    setShowAllCalls]    = useState(false)
@@ -501,6 +502,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                 lead={lead}
                 nextAppointment={nextAppointment}
                 onLeadUpdated={refreshAll}
+                onRegisterCall={() => setRegisterTarget({ leadId: lead.id })}
               />
             </div>
 
@@ -631,7 +633,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                               key={`${item.kind}-${item.id}`}
                               item={item}
                               isPending={isPending}
-                              onRegisterCall={() => setRegisterCallId(item.id)}
+                              onRegisterCall={() => setRegisterTarget({ callId: item.id })}
                               onCompleteTask={() => handleToggleTask(item.id, true)}
                             />
                           ))}
@@ -724,7 +726,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                             <CallCard
                               key={call.id}
                               call={call}
-                              onRegister={() => setRegisterCallId(call.id)}
+                              onRegister={() => setRegisterTarget({ callId: call.id })}
                             />
                           ))}
                         </div>
@@ -883,11 +885,12 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
 
             {/* ── Register call dialog ── */}
             <RegisterCallDialog
-              open={!!registerCallId}
-              callId={registerCallId ?? ''}
-              onOpenChange={(v) => { if (!v) setRegisterCallId(null) }}
+              open={!!registerTarget}
+              callId={registerTarget?.callId}
+              leadId={registerTarget?.leadId}
+              onOpenChange={(v) => { if (!v) setRegisterTarget(null) }}
               onDone={(outcome) => {
-                setRegisterCallId(null)
+                setRegisterTarget(null)
                 refreshAll()
                 if (outcome === 'descartado') setShowBaja(true)
               }}
@@ -1393,13 +1396,15 @@ const APPT_TIPO_OPTIONS: { value: ApptTipo; label: string }[] = [
 const APPT_DURATIONS = [30, 60, 90, 120] as const
 
 function RegisterCallDialog({
-  open, callId, onOpenChange, onDone,
+  open, callId, leadId, onOpenChange, onDone,
 }: {
   open:         boolean
-  callId:       string
+  callId?:      string          // registrar una llamada YA agendada
+  leadId?:      string          // registrar una llamada ad-hoc (la crea)
   onOpenChange: (v: boolean) => void
   onDone:       (outcome: CallOutcome) => void
 }) {
+  const isAdHoc = !callId && !!leadId
   const [outcome,    setOutcome]    = useState<CallOutcome | null>(null)
   const [notas,      setNotas]      = useState('')
   const [nextCallAt, setNextCallAt] = useState('')
@@ -1452,7 +1457,7 @@ function RegisterCallDialog({
 
     startTransition(async () => {
       const res = await registerCall({
-        callId,
+        ...(callId ? { callId } : { leadId }),
         outcome,
         notasResultado:   notas.trim() || undefined,
         proximaLlamadaAt: outcome === 'proxima_llamada' ? new Date(nextCallAt).toISOString() : undefined,
@@ -1489,6 +1494,11 @@ function RegisterCallDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-1">
+          {isAdHoc && (
+            <p className="text-[11px] text-muted-foreground bg-muted/50 border border-border rounded-lg px-3 py-2">
+              Registrás una llamada que ya hiciste. Elegí en qué quedó para definir el próximo paso.
+            </p>
+          )}
           {/* Outcome selector */}
           <div className="space-y-2">
             <Label>¿En qué quedamos? *</Label>

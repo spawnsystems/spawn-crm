@@ -457,63 +457,6 @@ export async function reactivateFromRescue(
   return { success: true, data: undefined }
 }
 
-// ── markContacted ─────────────────────────────────────────────
-// Registra un contacto — resetea at_risk y last_contact_at.
-// El lead permanece en GESTIÓN (estado de trabajo); el avance de etapa
-// se hace explícitamente. "advanced" indica si es el primer contacto.
-
-export async function markContacted(
-  leadId: string,
-  nota?:  string,
-): Promise<ActionResult<{ advanced: boolean }>> {
-  const { user, tenantId, q, forTenant } = await requireTenant()
-
-  // Leer last_contact_at para distinguir el primer contacto
-  const current = await dbAdmin
-    .select({ last_contact_at: schema.leads.last_contact_at })
-    .from(schema.leads)
-    .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
-    .limit(1)
-
-  if (!current[0]) return { success: false, error: 'Lead no encontrado' }
-
-  const advanced = current[0].last_contact_at === null
-
-  await q.update(schema.leads)
-    .set({
-      last_contact_at:       new Date(),
-      last_contact_critical: false,
-      at_risk:               false,
-      updated_by:            user.id,
-    })
-    .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
-
-  const contactedTitle = advanced ? 'Primer contacto registrado' : 'Contacto registrado'
-  if (nota?.trim()) {
-    await dbAdmin.insert(schema.leadNotes).values({
-      tenant_id: tenantId,
-      lead_id:   leadId,
-      author_id: user.id,
-      texto:     nota.trim(),
-    })
-    await appendTimeline(tenantId, leadId, user.id, 'contacted', contactedTitle, nota.trim())
-  } else {
-    await appendTimeline(tenantId, leadId, user.id, 'contacted', contactedTitle)
-  }
-
-  void logAudit({
-    tenantId,
-    actorId:  user.id,
-    action:   'lead.contacted',
-    entity:   'lead',
-    entityId: leadId,
-  })
-
-  revalidatePath('/leads')
-  revalidatePath('/all-leads')
-  return { success: true, data: { advanced } }
-}
-
 // ── addNote ───────────────────────────────────────────────────
 
 export async function addNote(

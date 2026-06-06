@@ -36,7 +36,13 @@ const scheduleCallSchema = z.object({
 })
 
 const registerCallSchema = z.object({
-  callId:           z.string().uuid(),
+  // Una llamada se registra de dos formas, mutuamente excluyentes:
+  //  - callId: registrar una llamada YA agendada (leadCall pendiente).
+  //  - leadId: llamada ad-hoc (no se había agendado) → se crea y registra
+  //            en un solo paso. Así toda llamada pasa por el mismo flujo
+  //            con resultado obligatorio y deriva en una acción siguiente.
+  callId:           z.string().uuid().optional(),
+  leadId:           z.string().uuid().optional(),
   outcome:          z.enum(['proxima_llamada', 'cita', 'descartado']),
   notasResultado:   z.string().max(1000).optional(),
   proximaLlamadaAt: z.string().datetime({ offset: true }).optional(),
@@ -52,6 +58,13 @@ const registerCallSchema = z.object({
     notas:        z.string().max(2000).optional(),
   }).optional(),
 }).superRefine((val, ctx) => {
+  if (!val.callId && !val.leadId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['callId'],
+      message: 'Falta la llamada o el lead a registrar.',
+    })
+  }
   if (val.outcome === 'cita' && !val.appointment) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -130,23 +143,32 @@ export async function registerCall(
 
   const parsed = registerCallSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
-  const { callId, outcome, notasResultado, proximaLlamadaAt, appointment } = parsed.data
+  const { callId, leadId: adHocLeadId, outcome, notasResultado, proximaLlamadaAt, appointment } = parsed.data
 
-  // 1) Verificar que la llamada existe y pertenece al tenant
-  const call = await dbAdmin
-    .select()
-    .from(schema.leadCalls)
-    .where(and(eq(schema.leadCalls.id, callId), eq(schema.leadCalls.tenant_id, tenantId)))
-    .limit(1)
+  // 1) Resolver el lead — desde la llamada agendada (callId) o directo (ad-hoc).
+  let leadId: string
+  if (callId) {
+    const call = await dbAdmin
+      .select()
+      .from(schema.leadCalls)
+      .where(and(eq(schema.leadCalls.id, callId), eq(schema.leadCalls.tenant_id, tenantId)))
+      .limit(1)
+    if (!call[0]) return { success: false, error: 'Llamada no encontrada' }
+    if (call[0].realizada_at) return { success: false, error: 'Esta llamada ya fue registrada' }
+    leadId = call[0].lead_id
+  } else {
+    leadId = adHocLeadId!
+  }
 
-  if (!call[0]) return { success: false, error: 'Llamada no encontrada' }
-  if (call[0].realizada_at) return { success: false, error: 'Esta llamada ya fue registrada' }
-
-  const leadId = call[0].lead_id
-
-  // 2) Scope: el usuario debe tener acceso al lead de la llamada (no solo al tenant)
+  // 2) Scope: el usuario debe tener acceso al lead (no solo al tenant)
   const lead = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
   if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
+
+  // Llamada ad-hoc: no se puede registrar sobre un lead cerrado / dado de baja
+  // (salvo outcome=cita, que reactiva de rescate más abajo).
+  if (!callId && isTerminal(lead.status) && outcome !== 'cita') {
+    return { success: false, error: terminalBlockReason(lead.status) ?? 'El lead no admite cambios' }
+  }
 
   // 3) Pre-check para outcome=cita: validar la fecha y que no haya otra cita programada
   //    ANTES de tocar la llamada (para no dejarla "registrada sin cita" si esto falla).
@@ -187,15 +209,27 @@ export async function registerCall(
     equipoId = member[0]?.equipo_id ?? lead.equipo_id ?? null
   }
 
-  // 5) Marcar la llamada como realizada
-  await dbAdmin
-    .update(schema.leadCalls)
-    .set({
-      realizada_at:   new Date(),
+  // 5) Registrar la llamada: actualizar la agendada o crear una ya realizada (ad-hoc)
+  if (callId) {
+    await dbAdmin
+      .update(schema.leadCalls)
+      .set({
+        realizada_at:   new Date(),
+        outcome,
+        notas_resultado: notasResultado ?? null,
+      })
+      .where(eq(schema.leadCalls.id, callId))
+  } else {
+    await dbAdmin.insert(schema.leadCalls).values({
+      tenant_id:       tenantId,
+      lead_id:         leadId,
+      created_by:      user.id,
+      scheduled_at:    new Date(),   // llamada espontánea: agendada = realizada = ahora
+      realizada_at:    new Date(),
       outcome,
       notas_resultado: notasResultado ?? null,
     })
-    .where(eq(schema.leadCalls.id, callId))
+  }
 
   const outcomeLabel: Record<string, string> = {
     proxima_llamada: 'Se agendó próxima llamada',

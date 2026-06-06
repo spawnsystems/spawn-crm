@@ -6,13 +6,12 @@ import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { cn, toBADate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { AppointmentDialog } from '@/components/leads/appointment-dialog'
 import {
-  Phone, CalendarCheck, CheckCircle2, LifeBuoy, Plus, RotateCcw, Loader2, Send,
+  Phone, CalendarCheck, CheckCircle2, LifeBuoy, Plus, RotateCcw, Loader2,
   Trophy, ThumbsDown, UserX,
 } from 'lucide-react'
-import { markContacted, reactivateFromRescue } from '@/app/actions/leads'
+import { reactivateFromRescue } from '@/app/actions/leads'
 import { markAppointmentDone, markAppointmentNoShow, cancelAppointment } from '@/app/actions/appointments'
 import type { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { APPOINTMENT_TIPO_LABEL } from '@/lib/schemas/appointments'
@@ -34,11 +33,13 @@ interface NextActionCardProps {
   }
   nextAppointment: Appointment
   onLeadUpdated:   () => void
+  /** Abre el flujo unificado de registrar llamada (ad-hoc) para este lead. */
+  onRegisterCall:  () => void
 }
 
 // ── Component ─────────────────────────────────────────────────────
 
-export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextActionCardProps) {
+export function NextActionCard({ lead, nextAppointment, onLeadUpdated, onRegisterCall }: NextActionCardProps) {
   const currentUser = useCurrentUser()
   const canReactivate = currentUser.rol !== 'vendedor'
 
@@ -328,47 +329,33 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
   return (
     <ContactadoCard
       lead={lead}
-      isPending={isPending}
       showDialog={showDialog}
       setShowDialog={setShowDialog}
       onLeadUpdated={onLeadUpdated}
-      run={run}
+      onRegisterCall={onRegisterCall}
     />
   )
 }
 
 // ── Sub-componente para el estado Contactado ──────────────────────
-// Separado para poder tener su propio estado de UI (llamada inline)
-// sin contaminar el hook isPending/startTransition del padre.
+// El registro de llamada usa el flujo unificado (con resultado) que vive
+// en el lead sheet; acá solo disparamos su apertura vía onRegisterCall.
 
 function ContactadoCard({
   lead,
-  isPending,
   showDialog,
   setShowDialog,
   onLeadUpdated,
-  run,
+  onRegisterCall,
 }: {
   lead: NextActionCardProps['lead']
-  isPending: boolean
   showDialog: boolean
   setShowDialog: (v: boolean) => void
   onLeadUpdated: () => void
-  run: (fn: () => Promise<{ success: boolean; error?: string; data?: unknown }>, msg?: string) => void
+  onRegisterCall: () => void
 }) {
-  const [showCallForm, setShowCallForm] = useState(false)
-  const [callNote,     setCallNote]     = useState('')
   // "sin cita activa" cuando ya estaba en ENTREVISTA PACTADA pero la cita se completó
   const isCitado = lead.status === 'ENTREVISTA PACTADA'
-
-  function handleRegisterCall() {
-    run(
-      () => markContacted(lead.id, callNote.trim() || undefined),
-      'Llamada registrada',
-    )
-    setCallNote('')
-    setShowCallForm(false)
-  }
 
   return (
     <div className="mx-6 mb-4 rounded-xl bg-blue-50 border border-blue-200/60 px-4 py-3">
@@ -381,7 +368,7 @@ function ContactadoCard({
       <p className="text-xs text-blue-700/60 mb-3">
         {isCitado
           ? 'La cita anterior fue completada. Organizá una nueva cita para avanzar.'
-          : 'Registrá cada llamada o contacto, y organizá una cita cuando el cliente esté listo.'}
+          : 'Registrá la llamada (queda con su resultado) o agendá una cita cuando el cliente esté listo.'}
       </p>
 
       {/* Acciones principales */}
@@ -391,57 +378,19 @@ function ContactadoCard({
           Organizar cita
         </Button>
 
-        {/* Registrar llamada — solo para Contactado, no para Citado sin cita */}
+        {/* Registrar llamada — flujo unificado con resultado */}
         {!isCitado && (
           <Button
             size="sm"
             variant="outline"
             className="gap-1.5"
-            onClick={() => setShowCallForm((v) => !v)}
+            onClick={onRegisterCall}
           >
             <Phone className="size-3.5" />
             Registrar llamada
           </Button>
         )}
       </div>
-
-      {/* Mini-form inline para la nota de la llamada */}
-      {showCallForm && (
-        <div className="mt-3 pt-3 border-t border-blue-200/60 space-y-2">
-          <p className="text-[11px] text-blue-700/60">
-            Opcional: dejá una nota sobre la llamada (resultado, qué dijo el cliente, etc.)
-          </p>
-          <Textarea
-            placeholder="Ej: llamé, interesado pero viaja esta semana. Vuelvo a llamar el lunes."
-            className="text-sm min-h-[60px] resize-none bg-white border-blue-200"
-            value={callNote}
-            onChange={(e) => setCallNote(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) handleRegisterCall() }}
-            autoFocus
-          />
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={handleRegisterCall}
-              disabled={isPending}
-            >
-              {isPending
-                ? <Loader2 className="size-3.5 animate-spin" />
-                : <Send className="size-3.5" />}
-              Guardar
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground"
-              onClick={() => { setShowCallForm(false); setCallNote('') }}
-            >
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      )}
 
       <AppointmentDialog
         open={showDialog}
