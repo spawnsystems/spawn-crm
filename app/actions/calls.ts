@@ -1,11 +1,13 @@
 'use server'
 
 import { z } from 'zod'
+import { revalidatePath } from 'next/cache'
 import { eq, and, desc } from 'drizzle-orm'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { dbAdmin, schema } from '@/lib/db'
 import { requireTenant, appendTimeline, assertLeadAccess } from '@/lib/leads/server-helpers'
+import { advanceStatus, isTerminal, terminalBlockReason } from '@/lib/leads/state-machine'
 import type { ActionResult } from './auth'
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
@@ -37,6 +39,11 @@ export async function scheduleCall(
   const lead = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
   if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
 
+  // No se puede agendar una llamada sobre un lead cerrado o dado de baja.
+  if (isTerminal(lead.status)) {
+    return { success: false, error: terminalBlockReason(lead.status) ?? 'El lead no admite cambios' }
+  }
+
   const [row] = await dbAdmin
     .insert(schema.leadCalls)
     .values({
@@ -56,6 +63,18 @@ export async function scheduleCall(
     notasPrevias ?? undefined,
   )
 
+  // Avance de etapa: coordinar una llamada lleva el lead a HORARIO ASIGNADO.
+  // advanceStatus nunca degrada (si ya está más adelante, no toca nada).
+  const nextStatus = advanceStatus(lead.status, 'HORARIO ASIGNADO')
+  if (nextStatus !== lead.status) {
+    await dbAdmin.update(schema.leads)
+      .set({ status: nextStatus, updated_by: user.id })
+      .where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
+  }
+
+  revalidatePath('/leads')
+  revalidatePath('/pipeline')
+  revalidatePath('/all-leads')
   return { success: true, data: { id: row.id } }
 }
 

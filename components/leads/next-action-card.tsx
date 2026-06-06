@@ -12,12 +12,13 @@ import {
   Phone, CalendarCheck, CheckCircle2, LifeBuoy, Plus, RotateCcw, Loader2, Send,
   Trophy, ThumbsDown, UserX,
 } from 'lucide-react'
-import { markContacted, markAsClosed, reactivateFromRescue, changeStatus } from '@/app/actions/leads'
+import { markContacted, reactivateFromRescue } from '@/app/actions/leads'
 import { markAppointmentDone, markAppointmentNoShow, cancelAppointment } from '@/app/actions/appointments'
 import type { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { APPOINTMENT_TIPO_LABEL } from '@/lib/schemas/appointments'
 import { isBaja, isRescatable, statusLabel } from '@/lib/leads/constants'
 import { BajaDialog } from '@/components/leads/baja-dialog'
+import { RegistrarVentaDialog } from '@/components/leads/registrar-venta-dialog'
 import { useCurrentUser } from '@/lib/tenant/context'
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
 
   const [showDialog,          setShowDialog]          = useState(false)
   const [showBajaNoInteresado, setShowBajaNoInteresado] = useState(false)
+  const [showVenta,           setShowVenta]           = useState(false)
   const [isPending,            startTransition]        = useTransition()
 
   /** Fire an action, show a toast, then refresh the parent */
@@ -159,32 +161,20 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                    onClick={() => run(async () => {
-                      const r1 = await markAppointmentDone(nextAppointment.id)
-                      if (!r1.success) return r1
-                      return changeStatus(lead.id, 'CIERRE')
-                    }, 'Cita realizada — avanzado a Cierre')}
+                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                    onClick={() => run(
+                      () => markAppointmentDone(nextAppointment.id),
+                      'Cita realizada — en proceso de cierre',
+                    )}
                     disabled={isPending}
                   >
                     {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-                    En proceso de cierre
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
-                    onClick={() => run(async () => {
-                      const r1 = await markAppointmentDone(nextAppointment.id)
-                      if (!r1.success) return r1
-                      return markAsClosed(lead.id)
-                    }, '¡Venta concretada!')}
-                    disabled={isPending}
-                  >
-                    {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Trophy className="size-3.5" />}
-                    Marcar venta
+                    Cita realizada → Cierre
                   </Button>
                 </div>
+                <p className="text-[10px] text-emerald-700/60 mt-1.5">
+                  La venta se registra desde el lead una vez en Cierre.
+                </p>
               </div>
 
               {/* Fallo */}
@@ -283,6 +273,57 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated }: NextAct
     )
   }
 
+  // ── CIERRE — en negociación, listo para registrar la venta ────
+  if (lead.status === 'CIERRE') {
+    return (
+      <>
+        <div className="mx-6 mb-4 rounded-xl bg-emerald-50 border border-emerald-200/60 px-4 py-3">
+          <div className="flex items-center gap-2 mb-1.5">
+            <Trophy className="size-4 text-emerald-600 shrink-0" />
+            <span className="text-sm font-semibold text-emerald-900">En proceso de cierre</span>
+          </div>
+          <p className="text-xs text-emerald-700/70 mb-3">
+            La entrevista se concretó. Cuando se cierre el trato, registrá la venta para
+            finalizar el lead.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => setShowVenta(true)}
+              disabled={isPending}
+            >
+              <Trophy className="size-3.5" />
+              Registrar venta
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowDialog(true)}>
+              <Plus className="size-3.5" />
+              Organizar otra cita
+            </Button>
+          </div>
+        </div>
+
+        <RegistrarVentaDialog
+          open={showVenta}
+          onOpenChange={setShowVenta}
+          leadId={lead.id}
+          leadNombre={lead.nombre}
+          defaultModelo={lead.modelo}
+          onDone={onLeadUpdated}
+        />
+
+        <AppointmentDialog
+          open={showDialog}
+          onOpenChange={setShowDialog}
+          leadId={lead.id}
+          leadNombre={lead.nombre}
+          defaultModelo={lead.modelo}
+          onCreated={() => { setShowDialog(false); onLeadUpdated() }}
+        />
+      </>
+    )
+  }
+
   // ── Contactado o Citado sin cita viva ─────────────────────────
   return (
     <ContactadoCard
@@ -339,7 +380,7 @@ function ContactadoCard({
       </div>
       <p className="text-xs text-blue-700/60 mb-3">
         {isCitado
-          ? 'La cita anterior fue completada. Organizá una nueva cita o cerrá la venta.'
+          ? 'La cita anterior fue completada. Organizá una nueva cita para avanzar.'
           : 'Registrá cada llamada o contacto, y organizá una cita cuando el cliente esté listo.'}
       </p>
 
@@ -362,19 +403,6 @@ function ContactadoCard({
             Registrar llamada
           </Button>
         )}
-
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5"
-          onClick={() => run(() => markAsClosed(lead.id), 'Venta concretada')}
-          disabled={isPending}
-        >
-          {isPending
-            ? <Loader2 className="size-3.5 animate-spin" />
-            : <CheckCircle2 className="size-3.5" />}
-          Marcar venta
-        </Button>
       </div>
 
       {/* Mini-form inline para la nota de la llamada */}

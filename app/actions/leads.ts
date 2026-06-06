@@ -7,6 +7,7 @@ import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/le
 import { logAudit } from '@/lib/audit/log'
 import { requireTenant, appendTimeline, getTenantSlaConfig, assertLeadAccess } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
+import { activeIndex, terminalBlockReason } from '@/lib/leads/state-machine'
 import { computeSla, type SlaConfig } from '@/lib/leads/sla'
 import type { ActionResult } from './auth'
 
@@ -163,6 +164,13 @@ export async function changeStatus(
 
   if (!current[0]) return { success: false, error: 'Lead no encontrado' }
 
+  const from = current[0].status
+
+  // Origen terminal (VENTA o baja): bloqueado. La salida de una baja es por
+  // Rescate; de VENTA no hay salida.
+  const blocked = terminalBlockReason(from)
+  if (blocked) return { success: false, error: blocked }
+
   // Los estados de baja se setean solo vía darDeBaja (motivo obligatorio).
   if (isBaja(newStatus)) {
     return { success: false, error: 'Usá "Dar de baja" para este estado' }
@@ -171,6 +179,19 @@ export async function changeStatus(
   // VENTA solo vía "Registrar venta"
   if (newStatus === 'VENTA') {
     return { success: false, error: 'Para registrar una venta usá el botón "Registrar venta"' }
+  }
+
+  // No se puede retroceder ni saltar etapas a mano: la etapa avanza con las
+  // acciones reales (llamada, cita, cita realizada, venta).
+  const fromIdx = activeIndex(from)
+  const toIdx   = activeIndex(newStatus)
+  if (toIdx <= fromIdx) {
+    return { success: false, error: 'La etapa avanza con las acciones del lead, no se cambia a mano.' }
+  }
+
+  // CIERRE: se alcanza marcando la cita como realizada.
+  if (newStatus === 'CIERRE') {
+    return { success: false, error: 'Marcá la cita como realizada para pasar a Cierre' }
   }
 
   // HORARIO ASIGNADO: requiere al menos una llamada coordinada (agendada o registrada)
@@ -281,32 +302,15 @@ export async function assignLead(
   return { success: true, data: undefined }
 }
 
-// ── markAsClosed ──────────────────────────────────────────────
-// Marca el lead como VENTA (terminal positivo).
-
-export async function markAsClosed(leadId: string): Promise<ActionResult<void>> {
-  const { user, tenantId, q, forTenant } = await requireTenant()
-
-  await q.update(schema.leads)
-    .set({ status: 'VENTA', abandoned_at: null, updated_by: user.id })
-    .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
-
-  await appendTimeline(tenantId, leadId, user.id, 'closed_won', '¡Venta concretada! Trato confirmado')
-
-  void logAudit({
-    tenantId,
-    actorId:        user.id,
-    action:         'lead.closed_won',
-    entity:         'lead',
-    entityId:       leadId,
-    visibleToDueno: true,
-  })
-
-  revalidatePath('/leads')
-  revalidatePath('/all-leads')
-  revalidatePath('/dashboard')
-  revalidatePath('/pipeline')
-  return { success: true, data: undefined }
+// ── markAsClosed (DEPRECADO) ──────────────────────────────────
+// La venta ahora se concreta SOLO vía `registrarVenta` (cotizaciones.ts), que
+// exige que el lead esté en CIERRE y deja registro en registro_ventas. Esta
+// función se mantiene como stub para no romper imports viejos: no marca venta.
+export async function markAsClosed(_leadId: string): Promise<ActionResult<void>> {
+  return {
+    success: false,
+    error:   'Para concretar la venta usá "Registrar venta" desde el cotizador.',
+  }
 }
 
 // ── darDeBaja ─────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, gte, lte, ne, sql } from 'drizzle-orm'
 import { requireTenant, appendTimeline, assertLeadAccess } from '@/lib/leads/server-helpers'
 import { isBaja } from '@/lib/leads/constants'
+import { advanceStatus } from '@/lib/leads/state-machine'
 import { getCurrentUserTeamScope, buildAppointmentScopeWhere } from '@/lib/tenant/teams'
 import { logAudit } from '@/lib/audit/log'
 import {
@@ -61,6 +62,11 @@ export async function createAppointment(
     .limit(1)
 
   if (!lead[0]) return { success: false, error: 'Lead no encontrado' }
+
+  // Un lead vendido es terminal: no se le agendan citas.
+  if (lead[0].status === 'VENTA') {
+    return { success: false, error: 'El lead ya está vendido — es un estado final y no admite nuevas citas.' }
+  }
 
   // Scope: el usuario debe tener acceso al lead (no solo al tenant)
   const accessible = await assertLeadAccess(data.lead_id, user.id, user.rol, tenantId)
@@ -245,7 +251,7 @@ export async function cancelAppointment(
   appointmentId: string,
   reason?:       string,
 ): Promise<ActionResult<void>> {
-  const { user, tenantId } = await requireTenant()
+  const { user, tenantId, q, forTenant } = await requireTenant()
 
   const appt = await dbAdmin
     .select({ lead_id: schema.leadAppointments.lead_id })
@@ -256,8 +262,8 @@ export async function cancelAppointment(
     ))
     .limit(1)
   if (!appt[0]) return { success: false, error: 'Cita no encontrada' }
-  if (!await assertLeadAccess(appt[0].lead_id, user.id, user.rol, tenantId))
-    return { success: false, error: 'No tenés acceso a esta cita' }
+  const leadRow = await assertLeadAccess(appt[0].lead_id, user.id, user.rol, tenantId)
+  if (!leadRow) return { success: false, error: 'No tenés acceso a esta cita' }
 
   await dbAdmin.update(schema.leadAppointments)
     .set({
@@ -270,10 +276,20 @@ export async function cancelAppointment(
       eq(schema.leadAppointments.tenant_id, tenantId),
     ))
 
+  // Cancelar la cita retrocede el lead de ENTREVISTA PACTADA a HORARIO ASIGNADO.
+  // (Reagendar es otra acción que NO pasa por acá y mantiene la etapa.)
+  if (leadRow.status === 'ENTREVISTA PACTADA') {
+    await q.update(schema.leads)
+      .set({ status: 'HORARIO ASIGNADO', updated_by: user.id })
+      .where(and(eq(schema.leads.id, appt[0].lead_id), forTenant(schema.leads)))
+  }
+
   await appendTimeline(
     tenantId, appt[0].lead_id, user.id,
     'appointment_cancelled',
-    'Cita cancelada',
+    leadRow.status === 'ENTREVISTA PACTADA'
+      ? 'Cita cancelada — vuelve a recoordinar'
+      : 'Cita cancelada',
     reason?.trim(),
   )
 
@@ -306,8 +322,8 @@ export async function markAppointmentDone(
     ))
     .limit(1)
   if (!appt[0]) return { success: false, error: 'Cita no encontrada' }
-  if (!await assertLeadAccess(appt[0].lead_id, user.id, user.rol, tenantId))
-    return { success: false, error: 'No tenés acceso a esta cita' }
+  const leadRow = await assertLeadAccess(appt[0].lead_id, user.id, user.rol, tenantId)
+  if (!leadRow) return { success: false, error: 'No tenés acceso a esta cita' }
 
   await dbAdmin.update(schema.leadAppointments)
     .set({
@@ -320,9 +336,12 @@ export async function markAppointmentDone(
       eq(schema.leadAppointments.tenant_id, tenantId),
     ))
 
-  // También registramos un contacto en el lead — la cita realizada cuenta como contacto
+  // La cita realizada cuenta como contacto y avanza la etapa a CIERRE
+  // (entró en negociación). advanceStatus no degrada si ya está más adelante.
+  const nextStatus = advanceStatus(leadRow.status, 'CIERRE')
   await q.update(schema.leads)
     .set({
+      status:                nextStatus,
       last_contact_at:       new Date(),
       last_contact_critical: false,
       at_risk:               false,
@@ -333,7 +352,9 @@ export async function markAppointmentDone(
   await appendTimeline(
     tenantId, appt[0].lead_id, user.id,
     'appointment_done',
-    'Cita realizada',
+    nextStatus === 'CIERRE' && leadRow.status !== 'CIERRE'
+      ? 'Cita realizada — en proceso de cierre'
+      : 'Cita realizada',
     outcomeNotes?.trim() ?? `${APPOINTMENT_TIPO_LABEL[appt[0].tipo]} completado`,
   )
 
@@ -354,7 +375,7 @@ export async function markAppointmentNoShow(
   appointmentId: string,
   notes?:        string,
 ): Promise<ActionResult<void>> {
-  const { user, tenantId } = await requireTenant()
+  const { user, tenantId, q, forTenant } = await requireTenant()
 
   const appt = await dbAdmin
     .select({ lead_id: schema.leadAppointments.lead_id })
@@ -365,8 +386,8 @@ export async function markAppointmentNoShow(
     ))
     .limit(1)
   if (!appt[0]) return { success: false, error: 'Cita no encontrada' }
-  if (!await assertLeadAccess(appt[0].lead_id, user.id, user.rol, tenantId))
-    return { success: false, error: 'No tenés acceso a esta cita' }
+  const leadRow = await assertLeadAccess(appt[0].lead_id, user.id, user.rol, tenantId)
+  if (!leadRow) return { success: false, error: 'No tenés acceso a esta cita' }
 
   await dbAdmin.update(schema.leadAppointments)
     .set({
@@ -379,10 +400,20 @@ export async function markAppointmentNoShow(
       eq(schema.leadAppointments.tenant_id, tenantId),
     ))
 
+  // Si el lead estaba en ENTREVISTA PACTADA, la cita falló: retrocede a
+  // HORARIO ASIGNADO para recoordinar. No tocamos otras etapas.
+  if (leadRow.status === 'ENTREVISTA PACTADA') {
+    await q.update(schema.leads)
+      .set({ status: 'HORARIO ASIGNADO', updated_by: user.id })
+      .where(and(eq(schema.leads.id, appt[0].lead_id), forTenant(schema.leads)))
+  }
+
   await appendTimeline(
     tenantId, appt[0].lead_id, user.id,
     'appointment_no_show',
-    'No se presentó a la cita',
+    leadRow.status === 'ENTREVISTA PACTADA'
+      ? 'No se presentó — vuelve a recoordinar'
+      : 'No se presentó a la cita',
     notes?.trim(),
   )
 

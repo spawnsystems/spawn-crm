@@ -21,20 +21,17 @@ import { StatusBadge } from '@/components/status-badge'
 import { NextActionCard } from '@/components/leads/next-action-card'
 import { LeadStatusStepper } from '@/components/leads/lead-status-stepper'
 import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
-} from '@/components/ui/dropdown-menu'
-import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
   Phone, Mail, Car, CheckCircle2, Circle, CalendarIcon, FileText,
-  MessageCircle, Send, ChevronDown, Loader2, Pencil, X, Check,
+  MessageCircle, Send, Loader2, Pencil, X, Check,
   UserCircle, Plus, RotateCcw, UserPlus, UserCheck, ArrowRight,
   CalendarCheck, Trophy, LifeBuoy, AlertTriangle, CalendarX,
   ArrowRightLeft, PhoneCall, PhoneIncoming, Clock3,
 } from 'lucide-react'
 import {
-  changeStatus, addNote, toggleTask, getLeadDetail,
+  addNote, toggleTask, getLeadDetail,
   updateLead, addTask, assignLead,
 } from '@/app/actions/leads'
 import { requestTransfer } from '@/app/actions/transfers'
@@ -43,7 +40,7 @@ import { BajaDialog } from '@/components/leads/baja-dialog'
 import { CotizadorDialog } from '@/components/cotizador/cotizador-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresDelTenant } from '@/app/actions/users'
-import { leadSourceValues, activeStatusValues } from '@/lib/schemas/leads'
+import { leadSourceValues } from '@/lib/schemas/leads'
 import { isBaja } from '@/lib/leads/constants'
 import { useCurrentUser } from '@/lib/tenant/context'
 import type { Lead } from '@/lib/db'
@@ -150,10 +147,6 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const timeline        = detail?.timeline        ?? []
   const tasks           = detail?.tasks           ?? []
   const calls           = detail?.calls           ?? []
-  const anyAppointment  = detail?.anyAppointment  ?? false
-
-  // Prerequisitos para ciertos estados
-  const hasCall = calls.length > 0
 
   /** Re-fetch everything (called after mutations in NextActionCard) */
   async function refreshAll() {
@@ -176,21 +169,6 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const wasRescued = timeline.some((e) => e.event_type === 'reactivated_from_rescue')
 
   // ── Mutations ──────────────────────────────────────────────────
-
-  function handleStatusChange(newStatus: string) {
-    if (!lead) return
-    startTransition(async () => {
-      const res = await changeStatus(lead.id, newStatus as Lead['status'])
-      if (res.success) {
-        setDetail((d) => d ? { ...d, lead: { ...d.lead, status: newStatus as Lead['status'] } } : d)
-        setEditForm((f) => ({ ...f, status: newStatus as Lead['status'] }))
-        onStatusChange?.(lead.id, newStatus)
-        toast.success(`Estado: ${newStatus}`)
-      } else {
-        toast.error(res.error)
-      }
-    })
-  }
 
   function handleToggleTask(taskId: string, done: boolean) {
     startTransition(async () => {
@@ -331,48 +309,11 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                     )}
                   </div>
 
-                  {/* Model + Status dropdown */}
+                  {/* Model + Status (la etapa avanza con las acciones, no se edita a mano) */}
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <Car className="size-4 text-primary" />
                     <span className="font-medium">{lead.modelo ?? 'Sin modelo'}</span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="flex items-center gap-1 rounded-md hover:bg-accent px-1 py-0.5 transition-colors">
-                          <StatusBadge status={lead.status} />
-                          <ChevronDown className="size-3 text-muted-foreground" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        {activeStatusValues
-                          .filter((s) => s !== 'VENTA') // VENTA solo vía "Registrar venta"
-                          .map((s) => {
-                            const locked =
-                              (s === 'HORARIO ASIGNADO' && !hasCall) ||
-                              (s === 'ENTREVISTA PACTADA' && !anyAppointment)
-                            const lockReason =
-                              s === 'HORARIO ASIGNADO'
-                                ? 'Agendá una llamada primero'
-                                : s === 'ENTREVISTA PACTADA'
-                                  ? 'Creá una cita primero'
-                                  : undefined
-                            return (
-                              <DropdownMenuItem
-                                key={s}
-                                onClick={() => !locked && handleStatusChange(s)}
-                                disabled={locked}
-                                className="gap-2 flex-col items-start"
-                              >
-                                <StatusBadge status={s} />
-                                {locked && lockReason && (
-                                  <span className="text-[10px] text-muted-foreground leading-tight pl-0.5">
-                                    {lockReason}
-                                  </span>
-                                )}
-                              </DropdownMenuItem>
-                            )
-                          })}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <StatusBadge status={lead.status} />
                   </div>
 
                   {/* Vendedor asignado */}

@@ -70,9 +70,9 @@ export function NewLeadDialog({
 
   // Modelo efectivo: si eligió OTRO_MODELO usa el texto libre, si no usa la opción
   const modeloFinal = form.modelo === OTRO_MODELO ? form.modeloCustom.trim() : form.modelo
-  // Source efectivo
-  const sourceFinal   = form.source === OTRO_SOURCE ? 'Otro' : (form.source || 'Otro')
-  const sourceCustom  = form.source === OTRO_SOURCE ? form.sourceCustom.trim() : undefined
+  // Source efectivo (sin fallback a 'Otro' porque ahora es obligatorio)
+  const sourceFinal  = form.source === OTRO_SOURCE ? 'Otro' : form.source as typeof leadSourceValues[number]
+  const sourceCustom = form.source === OTRO_SOURCE ? form.sourceCustom.trim() : undefined
 
   function handleSubmit() {
     const emailErr = validateEmail(form.email)
@@ -82,13 +82,13 @@ export function NewLeadDialog({
     startTransition(async () => {
       const res = await createLead({
         nombre:              form.nombre,
-        telefono:            form.telefono || undefined,
+        telefono:            form.telefono,
         email:               form.email    || undefined,
-        modelo:              modeloFinal   || undefined,
-        source:              sourceFinal   as typeof leadSourceValues[number],
+        modelo:              modeloFinal,
+        source:              sourceFinal,
         source_custom:       sourceCustom  || undefined,
-        localidad:           form.localidad     || undefined,
-        provincia:           form.provincia     || undefined,
+        localidad:           form.localidad,
+        provincia:           form.provincia,
         horario_preferencia: form.horario_preferencia || undefined,
         tiene_usado:         form.tiene_usado,
         observaciones:       form.observaciones || undefined,
@@ -106,8 +106,15 @@ export function NewLeadDialog({
     })
   }
 
-  const canSubmit = !!form.nombre.trim() && !emailError && !isPending
-    && (form.modelo !== OTRO_MODELO || form.modeloCustom.trim().length > 0)
+  const canSubmit =
+    !!form.nombre.trim() &&
+    form.telefono.trim().length >= 6 &&
+    form.localidad.trim().length >= 2 &&
+    form.provincia.trim().length >= 2 &&
+    !!modeloFinal &&
+    !!form.source &&
+    !emailError &&
+    !isPending
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
@@ -133,7 +140,7 @@ export function NewLeadDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="nl-phone">Teléfono</Label>
+                <Label htmlFor="nl-phone">Teléfono <span className="text-destructive">*</span></Label>
                 <Input
                   id="nl-phone"
                   placeholder="+54 9 11 ..."
@@ -161,7 +168,7 @@ export function NewLeadDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="nl-localidad">Localidad</Label>
+                <Label htmlFor="nl-localidad">Localidad <span className="text-destructive">*</span></Label>
                 <Input
                   id="nl-localidad"
                   placeholder="Ej: Mar del Plata"
@@ -171,7 +178,7 @@ export function NewLeadDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="nl-provincia">Provincia</Label>
+                <Label htmlFor="nl-provincia">Provincia <span className="text-destructive">*</span></Label>
                 <Input
                   id="nl-provincia"
                   placeholder="Ej: Buenos Aires"
@@ -201,7 +208,7 @@ export function NewLeadDialog({
               <div className="col-span-2 space-y-1.5">
                 <Label className="flex items-center gap-1.5">
                   <Car className="size-3.5 text-muted-foreground" />
-                  Modelo de interés
+                  Modelo de interés <span className="text-destructive">*</span>
                 </Label>
                 <Select
                   value={form.modelo}
@@ -273,7 +280,7 @@ export function NewLeadDialog({
 
               {/* Source con "Otro" inline */}
               <div className="space-y-1.5">
-                <Label>¿De dónde viene?</Label>
+                <Label>¿De dónde viene? <span className="text-destructive">*</span></Label>
                 <Select
                   value={form.source}
                   onValueChange={(v) => {

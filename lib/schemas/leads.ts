@@ -21,13 +21,13 @@ export const leadStatusValues = [
 
 export const createLeadSchema = z.object({
   nombre:               z.string().min(2, 'El nombre es requerido'),
-  telefono:             z.string().optional(),
+  telefono:             z.string().min(6, 'El teléfono es requerido'),
   email:                z.string().email('Email inválido').optional().or(z.literal('')),
-  modelo:               z.string().optional(),
-  source:               z.enum(leadSourceValues).default('Otro'),
+  modelo:               z.string().min(1, 'El modelo de interés es requerido'),
+  source:               z.enum(leadSourceValues, { errorMap: () => ({ message: 'Seleccioná el origen del lead' }) }),
   source_custom:        z.string().optional(),
-  localidad:            z.string().optional(),
-  provincia:            z.string().optional(),
+  localidad:            z.string().min(2, 'La localidad es requerida'),
+  provincia:            z.string().min(2, 'La provincia es requerida'),
   horario_preferencia:  z.string().optional(),
   tiene_usado:          z.boolean().default(false),
   observaciones:        z.string().optional(),

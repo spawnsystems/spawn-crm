@@ -3,8 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, desc } from 'drizzle-orm'
-import { requireTenant, assertLeadAccess } from '@/lib/leads/server-helpers'
+import { requireTenant, assertLeadAccess, appendTimeline } from '@/lib/leads/server-helpers'
 import { calcularUsado, condicionesComerciales } from '@/lib/cotizador/calc'
+import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
 import { z } from 'zod'
 
@@ -96,11 +97,28 @@ export async function getCotizacionesForLead(leadId: string) {
 // ── registrarVenta ────────────────────────────────────────────────────────────
 
 export async function registrarVenta(input: unknown): Promise<ActionResult<{ id: string }>> {
-  const { user, tenantId, q } = await requireTenant()
+  const { user, tenantId, q, forTenant } = await requireTenant()
 
   const parsed = registrarVentaSchema.safeParse(input)
   if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
   const data = parsed.data
+
+  // Si la venta se vincula a un lead, es la ÚNICA vía para marcarlo VENTA y
+  // exige que el lead esté en CIERRE (no se vende algo que no pasó por el embudo).
+  if (data.lead_id) {
+    const lead = await assertLeadAccess(data.lead_id, user.id, user.rol, tenantId)
+    if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
+
+    if (lead.status === 'VENTA') {
+      return { success: false, error: 'Este lead ya figura como vendido.' }
+    }
+    if (lead.status !== 'CIERRE') {
+      return {
+        success: false,
+        error:   'Para registrar la venta el lead tiene que estar en CIERRE. Avanzá la cita y el cierre primero.',
+      }
+    }
+  }
 
   const [row] = await q.insert(schema.registroVentas).values({
     tenant_id:       tenantId,
@@ -111,7 +129,34 @@ export async function registrarVenta(input: unknown): Promise<ActionResult<{ id:
     usado_tomado_id: data.usado_tomado_id ?? null,
   }).returning({ id: schema.registroVentas.id })
 
+  // Marcar el lead como VENTA (terminal positivo) + timeline + audit.
+  if (data.lead_id) {
+    await q.update(schema.leads)
+      .set({ status: 'VENTA', abandoned_at: null, updated_by: user.id })
+      .where(and(eq(schema.leads.id, data.lead_id), forTenant(schema.leads)))
+
+    await appendTimeline(
+      tenantId, data.lead_id, user.id,
+      'closed_won',
+      '¡Venta concretada! Trato confirmado',
+    )
+
+    void logAudit({
+      tenantId,
+      actorId:        user.id,
+      action:         'venta.registrar',
+      entity:         'lead',
+      entityId:       data.lead_id,
+      meta:           { modelo: data.modelo, monto: data.monto, registro_id: row.id },
+      visibleToDueno: true,
+    })
+  }
+
   revalidatePath('/cotizador')
+  revalidatePath('/leads')
+  revalidatePath('/all-leads')
+  revalidatePath('/pipeline')
+  revalidatePath('/dashboard')
   return { success: true, data: { id: row.id } }
 }
 

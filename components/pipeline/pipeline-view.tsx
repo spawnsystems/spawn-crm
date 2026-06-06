@@ -8,9 +8,7 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import type { Lead } from '@/lib/db'
-import { changeStatus } from '@/app/actions/leads'
 import { isBaja } from '@/lib/leads/constants'
-import { toast } from 'sonner'
 
 const ALL = '__all__'
 
@@ -51,29 +49,18 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
   )
 
   // El board solo muestra estados activos; los de baja viven en /rescate.
+  // Es de solo lectura: la etapa avanza con las acciones del lead (llamada,
+  // cita, cita realizada, registrar venta), no arrastrando tarjetas.
   const activeLeads  = visibleLeads.filter((l) => !isBaja(l.status))
-
-  async function handleDrop(leadId: string, newStatus: LeadLike['status']) {
-    const prev = leads.find((l) => l.id === leadId)?.status
-    if (prev === newStatus) return
-
-    // Optimistic update
-    setLeads((ls) => ls.map((l) => l.id === leadId ? { ...l, status: newStatus } : l))
-
-    const res = await changeStatus(leadId, newStatus)
-    if (!res.success) {
-      // Rollback
-      setLeads((ls) => ls.map((l) => l.id === leadId ? { ...l, status: prev! } : l))
-      toast.error(res.error)
-    }
-  }
 
   return (
     <div className="p-4 md:p-8 max-w-[1600px] mx-auto">
       <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Pipeline</h1>
-          <p className="text-sm text-muted-foreground mt-1">Vista Kanban de tu embudo de ventas</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Vista del embudo · tocá un lead para gestionarlo
+          </p>
         </div>
         {vendedores.length > 1 && (
           <Select value={filterVend} onValueChange={setFilterVend}>
@@ -102,7 +89,6 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
               leads={items}
               totalValue={total}
               onCardClick={setOpenLeadId}
-              onDrop={(leadId) => handleDrop(leadId, stage.id as LeadLike['status'])}
             />
           )
         })}
@@ -135,11 +121,9 @@ interface KanbanColumnProps {
   leads: LeadLike[]
   totalValue: number
   onCardClick: (id: string) => void
-  onDrop: (leadId: string) => void
 }
 
-function KanbanColumn({ stage, leads, totalValue, onCardClick, onDrop }: KanbanColumnProps) {
-  const [isDragOver, setIsDragOver] = useState(false)
+function KanbanColumn({ stage, leads, totalValue, onCardClick }: KanbanColumnProps) {
   const [visibleCount, setVisibleCount] = useState(COLUMN_PAGE_SIZE)
 
   // Resetear al colapso mínimo cuando cambia el filtro de vendedor
@@ -156,20 +140,7 @@ function KanbanColumn({ stage, leads, totalValue, onCardClick, onDrop }: KanbanC
     : '—'
 
   return (
-    <div
-      className={cn(
-        'w-72 shrink-0 rounded-xl transition-colors',
-        isDragOver && 'bg-primary/5 ring-2 ring-primary/20',
-      )}
-      onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
-      onDragLeave={() => setIsDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setIsDragOver(false)
-        const leadId = e.dataTransfer.getData('leadId')
-        if (leadId) onDrop(leadId)
-      }}
-    >
+    <div className="w-72 shrink-0 rounded-xl">
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2">
           <span className={cn('size-2 rounded-full', stage.color)} />
@@ -188,12 +159,9 @@ function KanbanColumn({ stage, leads, totalValue, onCardClick, onDrop }: KanbanC
           />
         ))}
         {leads.length === 0 && (
-          <div className={cn(
-            'flex items-center justify-center rounded-lg border-2 border-dashed min-h-[72px] transition-colors',
-            isDragOver ? 'border-primary/40 bg-primary/5' : 'border-border/30',
-          )}>
+          <div className="flex items-center justify-center rounded-lg border-2 border-dashed min-h-[72px] border-border/30">
             <span className="text-xs text-muted-foreground/35 select-none">
-              Arrastrá un lead aquí
+              Sin leads en esta etapa
             </span>
           </div>
         )}
@@ -220,9 +188,7 @@ function KanbanCard({ lead, onClick }: { lead: LeadLike; onClick: () => void }) 
 
   return (
     <Card
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData('leadId', lead.id)}
-      className="p-3 cursor-grab active:cursor-grabbing hover:shadow-elevated transition-shadow"
+      className="p-3 cursor-pointer hover:shadow-elevated transition-shadow"
       onClick={onClick}
     >
       <div className="text-sm font-medium">{lead.nombre}</div>
