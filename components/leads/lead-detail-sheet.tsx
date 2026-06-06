@@ -28,7 +28,7 @@ import {
   MessageCircle, Send, Loader2, Pencil, X, Check,
   UserCircle, Plus, RotateCcw, UserPlus, UserCheck, ArrowRight,
   CalendarCheck, Trophy, LifeBuoy, AlertTriangle, CalendarX,
-  ArrowRightLeft, PhoneCall, PhoneIncoming, Clock3,
+  ArrowRightLeft, PhoneCall, PhoneIncoming, Clock3, ChevronDown,
 } from 'lucide-react'
 import {
   addNote, toggleTask, getLeadDetail,
@@ -82,6 +82,13 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
   _default:                { bg: 'bg-muted-foreground', Icon: ArrowRight    },
 }
 
+// ── Preview limits ────────────────────────────────────────────────
+// Cuántos ítems mostrar en cada sección antes de colapsar.
+// "Ver más" expande el resto inline; el sheet no scrollea por defecto.
+const PREVIEW_TASKS    = 2
+const PREVIEW_CALLS    = 2
+const PREVIEW_NOTES    = 2
+
 // ── Main component ────────────────────────────────────────────────
 
 interface LeadDetailSheetProps {
@@ -108,12 +115,19 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const [showScheduleCall, setShowScheduleCall] = useState(false)
   const [registerCallId,   setRegisterCallId]   = useState<string | null>(null)
   const [showTimelineDialog, setShowTimelineDialog] = useState(false)
+  const [showAllTasks,    setShowAllTasks]    = useState(false)
+  const [showAllCalls,    setShowAllCalls]    = useState(false)
+  const [showAllNotes,    setShowAllNotes]    = useState(false)
   const [isPending,       startTransition]    = useTransition()
 
   // Fetch all data when sheet opens.
   // `cancelled` flag prevents stale updates on quick open/close.
   useEffect(() => {
     if (!leadId) { setDetail(null); setNextAppointment(null); setEditing(false); return }
+    // Colapsar todas las secciones cuando se abre un lead nuevo
+    setShowAllTasks(false)
+    setShowAllCalls(false)
+    setShowAllNotes(false)
     setLoading(true)
     let cancelled = false
 
@@ -516,45 +530,62 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
 
                 {/* Tasks */}
                 <Section icon={<CalendarIcon className="size-4" />} title="Próximas acciones">
-                  {tasks.length > 0 && (
-                    <div className="space-y-2 mb-3">
-                      {tasks.map((t) => (
-                        <div
-                          key={t.id}
-                          className="flex items-center gap-3 rounded-lg border border-border p-3"
-                        >
-                          <button
-                            onClick={() => handleToggleTask(t.id, !t.done)}
-                            className="shrink-0"
-                            disabled={isPending}
-                          >
-                            {t.done
-                              ? <CheckCircle2 className="size-4 text-success" />
-                              : <Circle className="size-4 text-muted-foreground hover:text-primary transition-colors" />}
-                          </button>
-                          <div className="flex-1">
-                            <div className={cn('text-sm', t.done && 'line-through text-muted-foreground')}>
-                              {t.texto}
-                            </div>
-                            {t.due_at && (
-                              <div className="text-[11px] text-muted-foreground mt-0.5">
-                                {fmtDayMonthAR(t.due_at)}
-                              </div>
-                            )}
-                          </div>
-                          {!t.done && (
-                            <Button
-                              size="sm" variant="ghost" className="h-7 text-xs"
-                              onClick={() => handleToggleTask(t.id, true)}
-                              disabled={isPending}
+                  {tasks.length > 0 && (() => {
+                    // Pendientes primero, completadas al final
+                    const sorted = [...tasks].sort((a, b) => Number(a.done) - Number(b.done))
+                    const visible = showAllTasks ? sorted : sorted.slice(0, PREVIEW_TASKS)
+                    const hiddenCount = sorted.length - PREVIEW_TASKS
+                    return (
+                      <div className="mb-3">
+                        <div className="space-y-2">
+                          {visible.map((t) => (
+                            <div
+                              key={t.id}
+                              className="flex items-center gap-3 rounded-lg border border-border p-3"
                             >
-                              Hecho
-                            </Button>
-                          )}
+                              <button
+                                onClick={() => handleToggleTask(t.id, !t.done)}
+                                className="shrink-0"
+                                disabled={isPending}
+                              >
+                                {t.done
+                                  ? <CheckCircle2 className="size-4 text-success" />
+                                  : <Circle className="size-4 text-muted-foreground hover:text-primary transition-colors" />}
+                              </button>
+                              <div className="flex-1">
+                                <div className={cn('text-sm', t.done && 'line-through text-muted-foreground')}>
+                                  {t.texto}
+                                </div>
+                                {t.due_at && (
+                                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                                    {fmtDayMonthAR(t.due_at)}
+                                  </div>
+                                )}
+                              </div>
+                              {!t.done && (
+                                <Button
+                                  size="sm" variant="ghost" className="h-7 text-xs"
+                                  onClick={() => handleToggleTask(t.id, true)}
+                                  disabled={isPending}
+                                >
+                                  Hecho
+                                </Button>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        {sorted.length > PREVIEW_TASKS && (
+                          <button
+                            onClick={() => setShowAllTasks((v) => !v)}
+                            className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <ChevronDown className={cn('size-3 transition-transform', showAllTasks && 'rotate-180')} />
+                            {showAllTasks ? 'Ver menos' : `Ver ${hiddenCount} más`}
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })()}
 
                   {/* Add task — with optional due date */}
                   <div className="space-y-2">
@@ -617,17 +648,36 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
 
                 {/* Llamadas */}
                 <Section icon={<PhoneCall className="size-4" />} title="Llamadas">
-                  {calls.length > 0 && (
-                    <div className="space-y-2 mb-3">
-                      {calls.map((call) => (
-                        <CallCard
-                          key={call.id}
-                          call={call}
-                          onRegister={() => setRegisterCallId(call.id)}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  {calls.length > 0 && (() => {
+                    // Pendientes (sin registrar) primero
+                    const sorted = [...calls].sort((a, b) =>
+                      Number(!!a.realizada_at) - Number(!!b.realizada_at)
+                    )
+                    const visible = showAllCalls ? sorted : sorted.slice(0, PREVIEW_CALLS)
+                    const hiddenCount = sorted.length - PREVIEW_CALLS
+                    return (
+                      <div className="mb-3">
+                        <div className="space-y-2">
+                          {visible.map((call) => (
+                            <CallCard
+                              key={call.id}
+                              call={call}
+                              onRegister={() => setRegisterCallId(call.id)}
+                            />
+                          ))}
+                        </div>
+                        {sorted.length > PREVIEW_CALLS && (
+                          <button
+                            onClick={() => setShowAllCalls((v) => !v)}
+                            className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <ChevronDown className={cn('size-3 transition-transform', showAllCalls && 'rotate-180')} />
+                            {showAllCalls ? 'Ver menos' : `Ver ${hiddenCount} más`}
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })()}
                   {calls.length === 0 && (
                     <p className="text-sm text-muted-foreground mb-3">Sin llamadas coordinadas.</p>
                   )}
@@ -644,19 +694,40 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
 
                 {/* Notes */}
                 <Section icon={<FileText className="size-4" />} title="Notas internas">
-                  <div className="space-y-2 mb-3">
-                    {notes.map((n) => (
-                      <div key={n.id} className="rounded-lg border border-border p-3 bg-muted/30">
-                        <div className="text-xs text-muted-foreground mb-1">
-                          {n.autor ?? 'Usuario'} ·{' '}
-                          {fmtDayMonthAR(n.created_at)}
-                        </div>
-                        <div className="text-sm">{n.texto}</div>
-                      </div>
-                    ))}
+                  <div className="mb-3">
                     {notes.length === 0 && (
-                      <p className="text-sm text-muted-foreground">Sin notas aún.</p>
+                      <p className="text-sm text-muted-foreground mb-2">Sin notas aún.</p>
                     )}
+                    {notes.length > 0 && (() => {
+                      // Más recientes primero
+                      const sorted = [...notes].reverse()
+                      const visible = showAllNotes ? sorted : sorted.slice(0, PREVIEW_NOTES)
+                      const hiddenCount = sorted.length - PREVIEW_NOTES
+                      return (
+                        <>
+                          <div className="space-y-2">
+                            {visible.map((n) => (
+                              <div key={n.id} className="rounded-lg border border-border p-3 bg-muted/30">
+                                <div className="text-xs text-muted-foreground mb-1">
+                                  {n.autor ?? 'Usuario'} ·{' '}
+                                  {fmtDayMonthAR(n.created_at)}
+                                </div>
+                                <div className="text-sm">{n.texto}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {sorted.length > PREVIEW_NOTES && (
+                            <button
+                              onClick={() => setShowAllNotes((v) => !v)}
+                              className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
+                            >
+                              <ChevronDown className={cn('size-3 transition-transform', showAllNotes && 'rotate-180')} />
+                              {showAllNotes ? 'Ver menos' : `Ver ${hiddenCount} anteriores`}
+                            </button>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                   <div className="flex gap-2">
                     <Textarea
