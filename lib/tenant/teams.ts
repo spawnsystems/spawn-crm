@@ -5,7 +5,7 @@
  */
 
 import { dbAdmin, schema } from '@/lib/db'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import type { AppRole } from '@/lib/auth/get-current-user'
 
@@ -92,7 +92,7 @@ export function buildScopeWhere(scope: TeamScope): SQL | null {
     case 'teams':
       return scope.equipoIds.length > 0
         ? inArray(schema.leads.equipo_id, scope.equipoIds)
-        : eq(schema.leads.id, 'no-match') // scope vacío → 0 resultados
+        : sql`false` // scope vacío → 0 resultados
 
     case 'team':
       return eq(schema.leads.equipo_id, scope.equipoId)
@@ -106,7 +106,7 @@ export function buildScopeWhere(scope: TeamScope): SQL | null {
 
     case 'none':
     default:
-      return eq(schema.leads.id, 'no-match')
+      return sql`false`
   }
 }
 
@@ -127,7 +127,7 @@ export function buildAppointmentScopeWhere(scope: TeamScope): SQL | null {
     case 'teams':
       return scope.equipoIds.length > 0
         ? inArray(schema.leadAppointments.equipo_id, scope.equipoIds)
-        : eq(schema.leadAppointments.id, 'no-match')
+        : sql`false`
 
     case 'team':
       return eq(schema.leadAppointments.equipo_id, scope.equipoId)
@@ -137,6 +137,6 @@ export function buildAppointmentScopeWhere(scope: TeamScope): SQL | null {
 
     case 'none':
     default:
-      return eq(schema.leadAppointments.id, 'no-match')
+      return sql`false`
   }
 }

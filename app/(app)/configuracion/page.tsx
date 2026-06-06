@@ -37,6 +37,8 @@ export default async function ConfiguracionPage({
 
   const canManage         = ['dueno'].includes(user.rol)
   const canManageModelos  = ['dueno', 'gerente'].includes(user.rol)
+  // vendedor y supervisor solo ven "Mi cuenta"
+  const canSeeConfig      = ['dueno', 'gerente'].includes(user.rol)
 
   return (
     <ConfiguracionView
@@ -51,6 +53,7 @@ export default async function ConfiguracionPage({
       vendedores={vendedores}
       canManage={canManage}
       canManageModelos={canManageModelos}
+      canSeeConfig={canSeeConfig}
       currentYear={currentYear}
       currentMonth={currentMonth}
       defaultTab={tab}

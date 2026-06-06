@@ -168,6 +168,38 @@ export async function changeStatus(
     return { success: false, error: 'Usá "Dar de baja" para este estado' }
   }
 
+  // VENTA solo vía "Registrar venta"
+  if (newStatus === 'VENTA') {
+    return { success: false, error: 'Para registrar una venta usá el botón "Registrar venta"' }
+  }
+
+  // HORARIO ASIGNADO: requiere al menos una llamada coordinada (agendada o registrada)
+  if (newStatus === 'HORARIO ASIGNADO') {
+    const call = await dbAdmin
+      .select({ id: schema.leadCalls.id })
+      .from(schema.leadCalls)
+      .where(and(eq(schema.leadCalls.lead_id, leadId), eq(schema.leadCalls.tenant_id, tenantId)))
+      .limit(1)
+    if (!call[0]) {
+      return { success: false, error: 'Agendá o registrá una llamada primero para pasar a Horario Asignado' }
+    }
+  }
+
+  // ENTREVISTA PACTADA: requiere al menos una cita (el sistema lo hace automáticamente al crear la cita)
+  if (newStatus === 'ENTREVISTA PACTADA') {
+    const appt = await dbAdmin
+      .select({ id: schema.leadAppointments.id })
+      .from(schema.leadAppointments)
+      .where(and(
+        eq(schema.leadAppointments.lead_id, leadId),
+        eq(schema.leadAppointments.tenant_id, tenantId),
+      ))
+      .limit(1)
+    if (!appt[0]) {
+      return { success: false, error: 'Creá una cita primero — el sistema avanzará a Entrevista Pactada automáticamente' }
+    }
+  }
+
   await q.update(schema.leads)
     .set({ status: newStatus, updated_by: user.id })
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
@@ -840,7 +872,7 @@ export async function getLeadDetail(leadId: string) {
   const accessible = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
   if (!accessible) return null
 
-  const [lead, notes, timeline, tasks, calls] = await Promise.all([
+  const [lead, notes, timeline, tasks, calls, appts] = await Promise.all([
     dbAdmin
       .select()
       .from(schema.leads)
@@ -896,6 +928,16 @@ export async function getLeadDetail(leadId: string) {
         ),
       )
       .orderBy(desc(schema.leadCalls.scheduled_at)),
+
+    // ¿Existe al menos una cita (para habilitar avance a ENTREVISTA PACTADA)?
+    dbAdmin
+      .select({ id: schema.leadAppointments.id })
+      .from(schema.leadAppointments)
+      .where(and(
+        eq(schema.leadAppointments.lead_id, leadId),
+        eq(schema.leadAppointments.tenant_id, tenantId),
+      ))
+      .limit(1),
   ])
 
   if (!lead[0]) return null
@@ -911,5 +953,5 @@ export async function getLeadDetail(leadId: string) {
 
   const creator_nombre = creatorRow[0]?.alias || creatorRow[0]?.nombre || null
 
-  return { lead: { ...lead[0], creator_nombre }, notes, timeline, tasks, calls }
+  return { lead: { ...lead[0], creator_nombre }, notes, timeline, tasks, calls, anyAppointment: appts.length > 0 }
 }

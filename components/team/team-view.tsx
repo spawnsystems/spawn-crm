@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils'
 import {
   Trophy, Medal, Plus, Users, Pencil, X,
-  UserCircle, Loader2, Check,
+  UserCircle, Loader2, Check, AlertTriangle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -41,10 +41,12 @@ interface RankingEntry {
 }
 
 interface TeamViewProps {
-  ranking:   RankingEntry[]
-  equipos:   Equipo[]
-  miembros:  Miembro[]
-  canManage: boolean
+  ranking:             RankingEntry[]
+  equipos:             Equipo[]
+  miembros:            Miembro[]
+  canManage:           boolean
+  supervisorSinEquipo?: boolean
+  userRol?:            string
 }
 
 const MEDAL_COLORS = [
@@ -59,7 +61,7 @@ const ROLES_LABEL: Record<string, string> = {
 
 // ── Main ──────────────────────────────────────────────────────
 
-export function TeamView({ ranking, equipos: initialEquipos, miembros: initialMiembros, canManage }: TeamViewProps) {
+export function TeamView({ ranking, equipos: initialEquipos, miembros: initialMiembros, canManage, supervisorSinEquipo, userRol }: TeamViewProps) {
   const router = useRouter()
   const [tab, setTab] = useState<'ranking' | 'equipos'>('ranking')
   const [equipos,  setEquipos]  = useState<Equipo[]>(initialEquipos)
@@ -101,7 +103,21 @@ export function TeamView({ ranking, equipos: initialEquipos, miembros: initialMi
         )}
       </div>
 
-      {tab === 'ranking' && <RankingTab ranking={ranking} />}
+      {/* Alerta: supervisor sin equipo asignado */}
+      {supervisorSinEquipo && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">No estás asignado a ningún equipo</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Para ver los datos de tu equipo necesitás estar asignado como supervisor de uno.
+              Contactá con tu gerente o dueño para que te asignen.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {tab === 'ranking' && !supervisorSinEquipo && <RankingTab ranking={ranking} userRol={userRol} />}
 
       {tab === 'equipos' && canManage && (
         <EquiposTab equipos={equipos} miembros={miembros} onRefresh={refresh} />
@@ -112,18 +128,24 @@ export function TeamView({ ranking, equipos: initialEquipos, miembros: initialMi
 
 // ── Ranking tab ───────────────────────────────────────────────
 
-function RankingTab({ ranking }: { ranking: RankingEntry[] }) {
+function RankingTab({ ranking, userRol }: { ranking: RankingEntry[]; userRol?: string }) {
   const maxClosed = ranking[0]?.closed ?? 1
 
   if (ranking.length === 0) {
-    return <p className="text-sm text-muted-foreground">Sin datos de ranking este mes.</p>
+    return (
+      <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+        Sin datos de ranking este mes.
+      </div>
+    )
   }
+
+  const scopeLabel = userRol === 'supervisor' ? 'en tu equipo' : 'este mes'
 
   return (
     <>
       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-6">
         <Trophy className="size-4 text-yellow-500" />
-        <span>{ranking.length} vendedores activos este mes</span>
+        <span>{ranking.length} vendedor{ranking.length !== 1 ? 'es' : ''} activo{ranking.length !== 1 ? 's' : ''} {scopeLabel}</span>
       </div>
 
       {ranking.length >= 2 && (
@@ -190,6 +212,10 @@ function EquiposTab({ equipos, miembros, onRefresh }: {
   const vendedores   = miembros.filter((m) => m.rol === 'vendedor')
   const sinEquipo    = vendedores.filter((v) => !v.equipo_id)
 
+  // Supervisores que no están asignados como supervisor_id en ningún equipo activo
+  const supervisoresAsignados = new Set(equipos.map((e) => e.supervisor_id).filter(Boolean))
+  const supervisoresSinEquipo = supervisores.filter((s) => !supervisoresAsignados.has(s.user_id))
+
   return (
     <div className="space-y-4">
       {/* Actions */}
@@ -198,6 +224,26 @@ function EquiposTab({ equipos, miembros, onRefresh }: {
           <Plus className="size-3.5" />Nuevo equipo
         </Button>
       </div>
+
+      {/* Alerta: supervisores sin equipo */}
+      {supervisoresSinEquipo.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 mb-2">
+            <AlertTriangle className="size-3.5" />
+            Supervisores sin equipo asignado ({supervisoresSinEquipo.length})
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {supervisoresSinEquipo.map((m) => (
+              <Badge key={m.user_id} variant="outline" className="text-xs border-amber-300 text-amber-700">
+                {m.alias || m.nombre || m.email}
+              </Badge>
+            ))}
+          </div>
+          <p className="text-[11px] text-amber-600 mt-2">
+            Estos supervisores no pueden ver ni gestionar su equipo hasta que sean asignados a uno.
+          </p>
+        </div>
+      )}
 
       {/* Unassigned vendedores */}
       {sinEquipo.length > 0 && (

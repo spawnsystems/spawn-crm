@@ -145,11 +145,15 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
     return () => { cancelled = true }
   }, [leadId])
 
-  const lead     = detail?.lead
-  const notes    = detail?.notes    ?? []
-  const timeline = detail?.timeline ?? []
-  const tasks    = detail?.tasks    ?? []
-  const calls    = detail?.calls    ?? []
+  const lead            = detail?.lead
+  const notes           = detail?.notes          ?? []
+  const timeline        = detail?.timeline        ?? []
+  const tasks           = detail?.tasks           ?? []
+  const calls           = detail?.calls           ?? []
+  const anyAppointment  = detail?.anyAppointment  ?? false
+
+  // Prerequisitos para ciertos estados
+  const hasCall = calls.length > 0
 
   /** Re-fetch everything (called after mutations in NextActionCard) */
   async function refreshAll() {
@@ -339,15 +343,34 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start">
-                        {activeStatusValues.map((s) => (
-                          <DropdownMenuItem
-                            key={s}
-                            onClick={() => handleStatusChange(s)}
-                            className="gap-2"
-                          >
-                            <StatusBadge status={s} />
-                          </DropdownMenuItem>
-                        ))}
+                        {activeStatusValues
+                          .filter((s) => s !== 'VENTA') // VENTA solo vía "Registrar venta"
+                          .map((s) => {
+                            const locked =
+                              (s === 'HORARIO ASIGNADO' && !hasCall) ||
+                              (s === 'ENTREVISTA PACTADA' && !anyAppointment)
+                            const lockReason =
+                              s === 'HORARIO ASIGNADO'
+                                ? 'Agendá una llamada primero'
+                                : s === 'ENTREVISTA PACTADA'
+                                  ? 'Creá una cita primero'
+                                  : undefined
+                            return (
+                              <DropdownMenuItem
+                                key={s}
+                                onClick={() => !locked && handleStatusChange(s)}
+                                disabled={locked}
+                                className="gap-2 flex-col items-start"
+                              >
+                                <StatusBadge status={s} />
+                                {locked && lockReason && (
+                                  <span className="text-[10px] text-muted-foreground leading-tight pl-0.5">
+                                    {lockReason}
+                                  </span>
+                                )}
+                              </DropdownMenuItem>
+                            )
+                          })}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>

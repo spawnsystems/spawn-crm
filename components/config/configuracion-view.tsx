@@ -65,6 +65,7 @@ interface Props {
   vendedores:    { user_id: string; nombre: string | null; alias: string | null }[]
   canManage:         boolean
   canManageModelos:  boolean
+  canSeeConfig:      boolean
   currentYear:   number
   currentMonth:  number
   defaultTab:    string
@@ -74,7 +75,7 @@ interface Props {
 
 export function ConfiguracionView({
   user, tenant, miembros: initialMiembros, equipos, modelos, sourcesCustom,
-  metas, auditLogs, vendedores, canManage, canManageModelos, currentYear, currentMonth, defaultTab,
+  metas, auditLogs, vendedores, canManage, canManageModelos, canSeeConfig, currentYear, currentMonth, defaultTab,
 }: Props) {
   const router       = useRouter()
   const searchParams = useSearchParams()
@@ -104,11 +105,11 @@ export function ConfiguracionView({
       <Tabs value={activeTab} onValueChange={onTabChange}>
         <TabsList className="mb-6 flex-wrap h-auto gap-1">
           <TabsTrigger value="cuenta">Mi cuenta</TabsTrigger>
-          <TabsTrigger value="concesionaria">Concesionaria</TabsTrigger>
+          {canSeeConfig && <TabsTrigger value="concesionaria">Concesionaria</TabsTrigger>}
           {canManageModelos && <TabsTrigger value="modelos">Modelos</TabsTrigger>}
           {canManage && <TabsTrigger value="fuentes">Fuentes</TabsTrigger>}
           {canManage && <TabsTrigger value="equipos">Equipos</TabsTrigger>}
-          <TabsTrigger value="miembros">Miembros</TabsTrigger>
+          {canSeeConfig && <TabsTrigger value="miembros">Miembros</TabsTrigger>}
           {canManage && <TabsTrigger value="metas">Metas</TabsTrigger>}
           {canManage && <TabsTrigger value="audit">Auditoría</TabsTrigger>}
         </TabsList>
@@ -143,11 +144,13 @@ export function ConfiguracionView({
         </TabsContent>
 
         {/* ── Concesionaria ─────────────────────────── */}
-        <TabsContent value="concesionaria">
-          {tenant
-            ? <ConcesionariaForm tenant={tenant} canManage={canManage} onSaved={refresh} />
-            : <p className="text-sm text-muted-foreground">No hay datos de la concesionaria.</p>}
-        </TabsContent>
+        {canSeeConfig && (
+          <TabsContent value="concesionaria">
+            {tenant
+              ? <ConcesionariaForm tenant={tenant} canManage={canManage} onSaved={refresh} />
+              : <p className="text-sm text-muted-foreground">No hay datos de la concesionaria.</p>}
+          </TabsContent>
+        )}
 
         {/* ── Modelos ───────────────────────────────── */}
         {canManageModelos && (
@@ -171,18 +174,20 @@ export function ConfiguracionView({
         )}
 
         {/* ── Miembros ──────────────────────────────── */}
-        <TabsContent value="miembros">
-          <div className="space-y-4">
-            {canManage && (
-              <div className="flex justify-end">
-                <Button size="sm" className="gap-1.5" onClick={() => setShowInvite(true)}>
-                  <UserPlus className="size-3.5" />Invitar usuario
-                </Button>
-              </div>
-            )}
-            <MiembrosTable miembros={miembros} />
-          </div>
-        </TabsContent>
+        {canSeeConfig && (
+          <TabsContent value="miembros">
+            <div className="space-y-4">
+              {canManage && (
+                <div className="flex justify-end">
+                  <Button size="sm" className="gap-1.5" onClick={() => setShowInvite(true)}>
+                    <UserPlus className="size-3.5" />Invitar usuario
+                  </Button>
+                </div>
+              )}
+              <MiembrosTable miembros={miembros} />
+            </div>
+          </TabsContent>
+        )}
 
         {/* ── Metas ─────────────────────────────────── */}
         {canManage && (
