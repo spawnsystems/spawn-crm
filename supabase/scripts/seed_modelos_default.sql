@@ -1,10 +1,11 @@
--- Seed/activar los 8 modelos por defecto para todos los tenants.
--- Inserta el modelo si no existe; si ya existe, lo marca como activo.
+-- Reemplazar modelos existentes por los 8 modelos oficiales.
+-- 1) Borra todos los modelos que NO estén en la lista.
+-- 2) Inserta los que faltan; activa los que ya existan.
 -- Ejecutar en el SQL Editor de Supabase.
 
 DO $$
 DECLARE
-  t_id uuid;
+  t_id   uuid;
   modelo text;
   modelos text[] := ARRAY[
     'TRACKER 1.2T LT AT',
@@ -17,14 +18,17 @@ DECLARE
     'SPIN 1.8'
   ];
 BEGIN
+  -- Paso 1: eliminar modelos que no están en la lista oficial
+  DELETE FROM modelos_vehiculo
+  WHERE nombre != ALL(modelos);
+
+  -- Paso 2: para cada tenant, insertar/activar cada modelo oficial
   FOR t_id IN SELECT id FROM tenants LOOP
     FOREACH modelo IN ARRAY modelos LOOP
-      -- Si ya existe (por nombre + tenant), activarlo
       UPDATE modelos_vehiculo
         SET activo = true
         WHERE tenant_id = t_id AND nombre = modelo;
 
-      -- Si no existía, insertarlo
       IF NOT FOUND THEN
         INSERT INTO modelos_vehiculo (tenant_id, nombre, activo)
         VALUES (t_id, modelo, true);
