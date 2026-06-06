@@ -36,12 +36,13 @@ interface DashboardViewProps {
 }
 
 const SOURCE_COLORS: Record<string, string> = {
-  'Meta Ads':      'oklch(0.65 0.16 232)',
-  'Mercado Libre': 'oklch(0.72 0.18 80)',
-  'Web':           'oklch(0.65 0.16 152)',
-  'Referido':      'oklch(0.65 0.14 280)',
-  'Walk-in':       'oklch(0.65 0.14 20)',
-  'Otro':          'oklch(0.6 0.01 250)',
+  'Meta Ads':        'oklch(0.65 0.16 232)',
+  'Mercado Libre':   'oklch(0.72 0.18 80)',
+  'Sitio web':       'oklch(0.65 0.16 152)',
+  'Referido':        'oklch(0.65 0.14 280)',
+  'Visita al local': 'oklch(0.65 0.14 20)',
+  'Contacto directo':'oklch(0.65 0.16 60)',
+  'Otro':            'oklch(0.6 0.01 250)',
 }
 
 export function DashboardView({

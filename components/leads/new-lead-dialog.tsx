@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator,
+  SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { UserCircle, Loader2, Car, ChevronDown } from 'lucide-react'
 import { createLead } from '@/app/actions/leads'
@@ -21,8 +22,9 @@ import { useCurrentUser } from '@/lib/tenant/context'
 
 const emailSchema = z.string().email('Ingresá un email válido')
 
-const OTRO_MODELO = '__otro__'
-const OTRO_SOURCE = '__otro__'
+const OTRO_MODELO  = '__otro__'
+const OTRO_SOURCE  = '__otro__'
+const CUSTOM_PREFIX = '__custom__:'
 
 interface Vendedor {
   user_id: string
@@ -36,6 +38,7 @@ interface NewLeadDialogProps {
   onOpenChange: (open: boolean) => void
   vendedores: Vendedor[]
   modelos?: string[]
+  customSources?: string[]
   onCreated?: (id: string) => void
 }
 
@@ -47,7 +50,7 @@ const EMPTY = {
 }
 
 export function NewLeadDialog({
-  open, onOpenChange, vendedores, modelos = [], onCreated,
+  open, onOpenChange, vendedores, modelos = [], customSources = [], onCreated,
 }: NewLeadDialogProps) {
   const currentUser  = useCurrentUser()
   const isVendedor   = currentUser.rol === 'vendedor'
@@ -70,9 +73,20 @@ export function NewLeadDialog({
 
   // Modelo efectivo: si eligió OTRO_MODELO usa el texto libre, si no usa la opción
   const modeloFinal = form.modelo === OTRO_MODELO ? form.modeloCustom.trim() : form.modelo
-  // Source efectivo (sin fallback a 'Otro' porque ahora es obligatorio)
-  const sourceFinal  = form.source === OTRO_SOURCE ? 'Otro' : form.source as typeof leadSourceValues[number]
-  const sourceCustom = form.source === OTRO_SOURCE ? form.sourceCustom.trim() : undefined
+
+  // Source efectivo:
+  //   - Valor estándar del enum   → sourceFinal = ese valor, sin custom
+  //   - '__custom__:Nombre'       → sourceFinal = 'Otro', sourceCustom = 'Nombre' (fuente previamente guardada)
+  //   - '__otro__' (texto libre)  → sourceFinal = 'Otro', sourceCustom = lo que escribió el usuario
+  const isCustomSaved = form.source.startsWith(CUSTOM_PREFIX)
+  const sourceFinal: typeof leadSourceValues[number] = (form.source === OTRO_SOURCE || isCustomSaved)
+    ? 'Otro'
+    : form.source as typeof leadSourceValues[number]
+  const sourceCustom = isCustomSaved
+    ? form.source.slice(CUSTOM_PREFIX.length)
+    : form.source === OTRO_SOURCE
+    ? form.sourceCustom.trim()
+    : undefined
 
   function handleSubmit() {
     const emailErr = validateEmail(form.email)
@@ -106,13 +120,16 @@ export function NewLeadDialog({
     })
   }
 
+  // Origen válido: algo seleccionado; si es "escribir", el texto debe tener al menos 2 chars
+  const sourceOk = !!form.source && (form.source !== OTRO_SOURCE || form.sourceCustom.trim().length >= 2)
+
   const canSubmit =
     !!form.nombre.trim() &&
     form.telefono.trim().length >= 6 &&
     form.localidad.trim().length >= 2 &&
     form.provincia.trim().length >= 2 &&
     !!modeloFinal &&
-    !!form.source &&
+    sourceOk &&
     !emailError &&
     !isPending
 
@@ -278,7 +295,7 @@ export function NewLeadDialog({
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Origen</p>
             <div className="grid grid-cols-2 gap-3">
 
-              {/* Source con "Otro" inline */}
+              {/* Source — estándar + personalizadas del tenant + "Otro" */}
               <div className="space-y-1.5">
                 <Label>¿De dónde viene? <span className="text-destructive">*</span></Label>
                 <Select
@@ -292,21 +309,46 @@ export function NewLeadDialog({
                     <SelectValue placeholder="Seleccionar origen..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {leadSourceValues.filter((s) => s !== 'Otro').map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
+                    {/* Fuentes estándar */}
+                    <SelectGroup>
+                      {leadSourceValues.filter((s) => s !== 'Otro').map((s) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectGroup>
+
+                    {/* Fuentes personalizadas guardadas previamente */}
+                    {customSources.length > 0 && (
+                      <>
+                        <SelectSeparator />
+                        <SelectGroup>
+                          <SelectLabel className="text-[11px]">Personalizadas</SelectLabel>
+                          {customSources.map((s) => (
+                            <SelectItem key={s} value={`${CUSTOM_PREFIX}${s}`}>{s}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </>
+                    )}
+
+                    {/* Siempre al final: escribir texto libre (se guardará) */}
+                    <SelectSeparator />
                     <SelectItem value={OTRO_SOURCE}>
-                      <span className="text-muted-foreground">Otro (escribir)</span>
+                      <span className="text-muted-foreground">Otro (escribir...)</span>
                     </SelectItem>
                   </SelectContent>
                 </Select>
+
                 {form.source === OTRO_SOURCE && (
-                  <Input
-                    placeholder="Ej: Reel Instagram del 5/6..."
-                    value={form.sourceCustom}
-                    onChange={(e) => set('sourceCustom', e.target.value)}
-                    autoFocus
-                  />
+                  <div className="space-y-1">
+                    <Input
+                      placeholder="Ej: Expo Auto 2025, Instagram Story..."
+                      value={form.sourceCustom}
+                      onChange={(e) => set('sourceCustom', e.target.value)}
+                      autoFocus
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Se guardará como fuente disponible para el próximo lead.
+                    </p>
+                  </div>
                 )}
               </div>
 

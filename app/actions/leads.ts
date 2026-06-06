@@ -80,6 +80,15 @@ export async function createLead(
     updated_by:          user.id,
   }).returning({ id: schema.leads.id })
 
+  // Si se usó "Otro" con texto libre, guardarlo como fuente custom del tenant
+  // (upsert seguro: la unique constraint lo ignora si ya existe)
+  if (data.source === 'Otro' && data.source_custom?.trim()) {
+    await dbAdmin
+      .insert(schema.leadSourcesCustom)
+      .values({ tenant_id: tenantId, nombre: data.source_custom.trim() })
+      .onConflictDoNothing()
+  }
+
   const assignedName = effectiveAssignedTo ? await getVendedorName(effectiveAssignedTo) : null
   await appendTimeline(tenantId, row.id, user.id, 'lead_created', 'Lead ingresado al sistema',
     assignedName ? `Asignado a ${assignedName}` : 'Sin asignar — en Bandeja General',

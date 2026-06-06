@@ -1,7 +1,8 @@
 import { z } from 'zod'
 
 export const leadSourceValues = [
-  'Meta Ads', 'Mercado Libre', 'Web', 'Referido', 'Walk-in', 'Otro',
+  'Meta Ads', 'Mercado Libre', 'Sitio web', 'Referido',
+  'Visita al local', 'Contacto directo', 'Otro',
 ] as const
 
 // Estados activos del pipeline (seleccionables para avanzar el lead)

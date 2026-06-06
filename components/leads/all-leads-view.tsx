@@ -25,6 +25,7 @@ interface AllLeadsViewProps {
   initialLeads: LeadRow[]
   vendedores: Awaited<ReturnType<typeof getVendedoresDelTenant>>
   modelos: string[]
+  customSources?: string[]
   canCreate: boolean
 }
 
@@ -34,7 +35,7 @@ const PAGE_SIZE = 20
 type SortKey = 'last_contact_at' | 'vendedor' | 'status'
 type SortDir = 'asc' | 'desc'
 
-export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: AllLeadsViewProps) {
+export function AllLeadsView({ initialLeads, vendedores, modelos, customSources = [], canCreate }: AllLeadsViewProps) {
   const [leads,        setLeads]        = useState<LeadRow[]>(initialLeads)
   const [search,       setSearch]       = useState('')
   const [filterVend,     setFilterVend]     = useState(ALL)
@@ -393,6 +394,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, canCreate }: A
         onOpenChange={setShowNewLead}
         vendedores={vendedores}
         modelos={modelos}
+        customSources={customSources}
         onCreated={refresh}
       />
     </div>

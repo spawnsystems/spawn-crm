@@ -27,9 +27,10 @@ export const leadStatusEnum = pgEnum('lead_status', [
 export const leadSourceEnum = pgEnum('lead_source', [
   'Meta Ads',
   'Mercado Libre',
-  'Web',
+  'Sitio web',
   'Referido',
-  'Walk-in',
+  'Visita al local',
+  'Contacto directo',
   'Dato viejo',
   'Otro',
 ])

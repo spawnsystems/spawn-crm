@@ -2,16 +2,18 @@ import { requireAuth } from '@/lib/auth/require-role'
 import { getMyLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { getActiveModelNames } from '@/app/actions/modelos'
+import { getSourcesCustom } from '@/app/actions/sources'
 import { LeadsView } from '@/components/leads/leads-view'
 
 export const dynamic = 'force-dynamic'
 
 export default async function LeadsPage() {
-  const [user, leads, vendedores, modelos] = await Promise.all([
+  const [user, leads, vendedores, modelos, sourcesCustom] = await Promise.all([
     requireAuth(),
     getMyLeads(),
     getVendedoresDelTenant(),
     getActiveModelNames(),
+    getSourcesCustom(),
   ])
 
   const canCreate = true // todos los roles pueden capturar leads
@@ -21,6 +23,7 @@ export default async function LeadsPage() {
       initialLeads={leads}
       vendedores={vendedores}
       modelos={modelos}
+      customSources={sourcesCustom.filter((s) => s.activo).map((s) => s.nombre)}
       canCreate={canCreate}
     />
   )

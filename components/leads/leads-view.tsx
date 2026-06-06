@@ -31,10 +31,11 @@ interface LeadsViewProps {
   initialLeads: Lead[]
   vendedores: Vendedor[]
   modelos: string[]
+  customSources?: string[]
   canCreate: boolean
 }
 
-export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: LeadsViewProps) {
+export function LeadsView({ initialLeads, vendedores, modelos, customSources = [], canCreate }: LeadsViewProps) {
   const [leads,       setLeads]       = useState<Lead[]>(initialLeads)
   const [filter,      setFilter]      = useState<FilterTab>('Todos')
   const [openLeadId,  setOpenLeadId]  = useState<string | null>(null)
@@ -217,6 +218,7 @@ export function LeadsView({ initialLeads, vendedores, modelos, canCreate }: Lead
         onOpenChange={setShowNewLead}
         vendedores={vendedores}
         modelos={modelos}
+        customSources={customSources}
         onCreated={refresh}
       />
     </div>
