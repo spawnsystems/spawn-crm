@@ -41,12 +41,15 @@ interface RankingEntry {
 }
 
 interface TeamViewProps {
-  ranking:             RankingEntry[]
-  equipos:             Equipo[]
-  miembros:            Miembro[]
-  canManage:           boolean
+  ranking:              RankingEntry[]
+  equipos:              Equipo[]
+  miembros:             Miembro[]
+  canManage:            boolean
   supervisorSinEquipo?: boolean
-  userRol?:            string
+  vendedorSinEquipo?:   boolean
+  userRol?:             string
+  currentUserId?:       string
+  teamName?:            string | null
 }
 
 const MEDAL_COLORS = [
@@ -61,7 +64,11 @@ const ROLES_LABEL: Record<string, string> = {
 
 // ── Main ──────────────────────────────────────────────────────
 
-export function TeamView({ ranking, equipos: initialEquipos, miembros: initialMiembros, canManage, supervisorSinEquipo, userRol }: TeamViewProps) {
+export function TeamView({
+  ranking, equipos: initialEquipos, miembros: initialMiembros,
+  canManage, supervisorSinEquipo, vendedorSinEquipo,
+  userRol, currentUserId, teamName,
+}: TeamViewProps) {
   const router = useRouter()
   const [tab, setTab] = useState<'ranking' | 'equipos'>('ranking')
   const [equipos,  setEquipos]  = useState<Equipo[]>(initialEquipos)
@@ -74,6 +81,37 @@ export function TeamView({ ranking, equipos: initialEquipos, miembros: initialMi
     Promise.all([getEquiposConMiembros(), getMiembrosDelTenant()])
       .then(([e, m]) => { setEquipos(e); setMiembros(m) })
     router.refresh()
+  }
+
+  // Vendedor: vista completamente diferente
+  if (userRol === 'vendedor') {
+    return (
+      <div className="p-4 md:p-8 max-w-[700px] mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold tracking-tight">Mi equipo</h1>
+          <p className="text-sm text-muted-foreground mt-1 capitalize">{monthLabel}</p>
+        </div>
+
+        {vendedorSinEquipo ? (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+            <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800">No estás asignado a ningún equipo</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                Contactá con tu supervisor, gerente o dueño para que te asignen a un equipo.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <VendedorTeamView
+            ranking={ranking}
+            currentUserId={currentUserId ?? ''}
+            teamName={teamName ?? null}
+            monthLabel={monthLabel}
+          />
+        )}
+      </div>
+    )
   }
 
   return (
@@ -577,6 +615,177 @@ function NewEquipoDialog({ open, onOpenChange, gerentes, supervisores, onCreated
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ── VendedorTeamView ──────────────────────────────────────────
+// Vista read-only para vendedores: leaderboard de su equipo con su posición destacada.
+
+function VendedorTeamView({
+  ranking, currentUserId, teamName, monthLabel,
+}: {
+  ranking:       RankingEntry[]
+  currentUserId: string
+  teamName:      string | null
+  monthLabel:    string
+}) {
+  const myIdx       = ranking.findIndex((r) => r.user_id === currentUserId)
+  const myPos       = myIdx + 1   // 0 si no está en el ranking (mes sin leads)
+  const myEntry     = ranking[myIdx] ?? null
+  const teamTotal   = ranking.reduce((a, r) => a + r.closed, 0)
+  const totalLeads  = ranking.reduce((a, r) => a + r.total, 0)
+  const avgConv     = ranking.length > 0
+    ? Math.round(ranking.reduce((a, r) => a + r.conversion, 0) / ranking.length)
+    : 0
+
+  // Posición de podio: badge de color
+  const PODIUM_BG: Record<number, string> = {
+    1: 'bg-yellow-400 text-yellow-900 border-yellow-300',
+    2: 'bg-slate-200 text-slate-700 border-slate-300',
+    3: 'bg-orange-300 text-orange-900 border-orange-200',
+  }
+
+  return (
+    <div className="space-y-4">
+
+      {/* ── Mis stats personales ── */}
+      {myEntry ? (
+        <div className="grid grid-cols-3 gap-3">
+          <Card className="p-4 text-center">
+            <div className="text-2xl font-bold text-primary">
+              {myPos > 0 ? `#${myPos}` : '—'}
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">Tu posición</div>
+            <div className="text-[10px] text-muted-foreground">de {ranking.length}</div>
+          </Card>
+          <Card className="p-4 text-center">
+            <div className="text-2xl font-bold text-emerald-600">{myEntry.closed}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Tus ventas</div>
+            <div className="text-[10px] text-muted-foreground">{myEntry.conversion}% conversión</div>
+          </Card>
+          <Card className="p-4 text-center">
+            <div className="text-2xl font-bold">{myEntry.total}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">Tus leads</div>
+            {myEntry.atRisk > 0 && (
+              <div className="text-[10px] text-destructive">{myEntry.atRisk} demorados</div>
+            )}
+          </Card>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted-foreground">
+          Todavía no tenés actividad este mes. ¡Sumá tu primer lead!
+        </div>
+      )}
+
+      {/* ── Leaderboard ── */}
+      <Card className="overflow-hidden">
+        {/* Header */}
+        <div className="px-5 py-3.5 border-b border-border bg-muted/30 flex items-center gap-2">
+          <Trophy className="size-4 text-yellow-500" />
+          <span className="font-semibold text-sm">{teamName ?? 'Mi equipo'}</span>
+          <span className="text-xs text-muted-foreground capitalize ml-1">— {monthLabel}</span>
+        </div>
+
+        {ranking.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            Sin datos este mes todavía.
+          </div>
+        ) : (
+          <div className="divide-y divide-border/50">
+            {ranking.map((seller, i) => {
+              const pos    = i + 1
+              const isMe   = seller.user_id === currentUserId
+              const name   = seller.alias || seller.nombre
+              const initials = name.split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase()
+              const podiumCls = PODIUM_BG[pos]
+
+              return (
+                <div
+                  key={seller.user_id}
+                  className={cn(
+                    'flex items-center gap-4 px-5 py-3.5 transition-colors',
+                    isMe
+                      ? 'bg-primary/5 border-l-4 border-l-primary'
+                      : 'hover:bg-muted/20',
+                  )}
+                >
+                  {/* Posición */}
+                  <div className={cn(
+                    'size-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 border',
+                    podiumCls ?? 'bg-muted text-muted-foreground border-border',
+                  )}>
+                    {pos <= 3 ? (pos === 1 ? '🥇' : pos === 2 ? '🥈' : '🥉') : pos}
+                  </div>
+
+                  {/* Avatar */}
+                  <div className={cn(
+                    'size-8 rounded-full flex items-center justify-center font-semibold text-sm shrink-0',
+                    isMe
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-gradient-to-br from-muted to-muted/50 text-muted-foreground',
+                  )}>
+                    {initials}
+                  </div>
+
+                  {/* Nombre */}
+                  <div className="flex-1 min-w-0">
+                    <div className={cn('text-sm font-medium truncate', isMe && 'text-primary')}>
+                      {name}
+                      {isMe && (
+                        <span className="ml-2 text-[10px] font-semibold bg-primary text-primary-foreground rounded-full px-1.5 py-0.5">
+                          Vos
+                        </span>
+                      )}
+                    </div>
+                    {seller.atRisk > 0 && (
+                      <div className="text-[10px] text-destructive">{seller.atRisk} demorados</div>
+                    )}
+                  </div>
+
+                  {/* Métricas */}
+                  <div className="flex items-center gap-5 shrink-0 text-right">
+                    <div>
+                      <div className={cn('text-sm font-bold', isMe && 'text-primary')}>{seller.closed}</div>
+                      <div className="text-[10px] text-muted-foreground">ventas</div>
+                    </div>
+                    <div className="hidden sm:block">
+                      <div className="text-sm font-medium">{seller.conversion}%</div>
+                      <div className="text-[10px] text-muted-foreground">conv.</div>
+                    </div>
+                    <div className="hidden sm:block">
+                      <div className="text-sm text-muted-foreground">{seller.total}</div>
+                      <div className="text-[10px] text-muted-foreground">leads</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* ── Totales del equipo ── */}
+      <Card className="p-5">
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+          Totales del equipo este mes
+        </div>
+        <div className="grid grid-cols-3 gap-4 text-center">
+          <div>
+            <div className="text-2xl font-bold text-emerald-600">{teamTotal}</div>
+            <div className="text-xs text-muted-foreground">ventas</div>
+          </div>
+          <div>
+            <div className="text-2xl font-bold">{totalLeads}</div>
+            <div className="text-xs text-muted-foreground">leads</div>
+          </div>
+          <div>
+            <div className="text-2xl font-bold">{avgConv}%</div>
+            <div className="text-xs text-muted-foreground">conv. media</div>
+          </div>
+        </div>
+      </Card>
+
+    </div>
   )
 }
 

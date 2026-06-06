@@ -119,7 +119,7 @@ const NAV_ITEMS: NavItem[] = [
     href:    '/equipo',
     label:   'Equipo',
     icon:    <Trophy className="size-4" />,
-    roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor'],
+    roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
     section: 'equipo',
   },
 ]

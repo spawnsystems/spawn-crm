@@ -12,31 +12,64 @@ export const dynamic = 'force-dynamic'
 
 export default async function EquipoPage() {
   const [user, tenantId] = await Promise.all([
-    requireRole('supervisor'),
+    requireRole('vendedor'),
     getCurrentTenantId(),
   ])
   if (!tenantId) redirect('/login')
 
   const canManage = ['dueno', 'gerente'].includes(user.rol)
   const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
-  const sla = await getTenantSlaConfig(tenantId)
+  const sla    = await getTenantSlaConfig(tenantId)
   const demorado = demoradoCondition(sla.primerContactoHoras)
 
-  // Scope del usuario actual (para supervisor: filtra a su equipo)
+  // Scope del usuario actual
   const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
   const supervisorSinEquipo = user.rol === 'supervisor' && scope.type === 'none'
 
-  // Construir filtro extra para el ranking según el scope del usuario
-  const scopeFilter: ReturnType<typeof and>[] = []
+  // Para vendedor: getCurrentUserTeamScope devuelve 'self', no el equipo.
+  // Hay que buscarlo directamente en tenant_members.
+  let vendedorEquipoId:   string | null = null
+  let vendedorTeamName:   string | null = null
+  let vendedorSinEquipo                 = false
+
+  if (user.rol === 'vendedor') {
+    const member = await dbAdmin
+      .select({ equipo_id: schema.tenantMembers.equipo_id })
+      .from(schema.tenantMembers)
+      .where(and(
+        eq(schema.tenantMembers.tenant_id, tenantId),
+        eq(schema.tenantMembers.user_id, user.id),
+      ))
+      .limit(1)
+    vendedorEquipoId = member[0]?.equipo_id ?? null
+
+    if (!vendedorEquipoId) {
+      vendedorSinEquipo = true
+    } else {
+      const equipoRow = await dbAdmin
+        .select({ nombre: schema.equipos.nombre })
+        .from(schema.equipos)
+        .where(eq(schema.equipos.id, vendedorEquipoId))
+        .limit(1)
+      vendedorTeamName = equipoRow[0]?.nombre ?? null
+    }
+  }
+
+  // Filtro de scope para el ranking
+  const scopeFilter: ReturnType<typeof eq>[] = []
   if (scope.type === 'team') {
     scopeFilter.push(eq(schema.leads.equipo_id, scope.equipoId))
-  } else if (scope.type === 'teams') {
-    scopeFilter.push(inArray(schema.leads.equipo_id, scope.equipoIds))
+  } else if (scope.type === 'teams' && scope.equipoIds.length > 0) {
+    // inArray devuelve SQL — usamos un cast compatible
+    scopeFilter.push(inArray(schema.leads.equipo_id, scope.equipoIds) as unknown as ReturnType<typeof eq>)
+  } else if (user.rol === 'vendedor' && vendedorEquipoId) {
+    scopeFilter.push(eq(schema.leads.equipo_id, vendedorEquipoId))
   }
-  // scope 'all' → sin filtro; scope 'none' → ranking vacío (supervisorSinEquipo)
+
+  const skipRanking = supervisorSinEquipo || vendedorSinEquipo
 
   const [rawRanking, equipos, miembros] = await Promise.all([
-    supervisorSinEquipo
+    skipRanking
       ? Promise.resolve([])
       : dbAdmin
           .select({
@@ -83,7 +116,10 @@ export default async function EquipoPage() {
       miembros={miembros}
       canManage={canManage}
       supervisorSinEquipo={supervisorSinEquipo}
+      vendedorSinEquipo={vendedorSinEquipo}
       userRol={user.rol}
+      currentUserId={user.id}
+      teamName={vendedorTeamName}
     />
   )
 }
