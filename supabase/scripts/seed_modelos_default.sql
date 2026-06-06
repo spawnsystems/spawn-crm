@@ -15,7 +15,7 @@ DECLARE
     'SONIC 1.0T PREMIER AT',
     'S10 CD 2.8 TD 4X2 WT',
     'ONIX PLUS 1.0T LT MT',
-    'SPIN 1.8'
+    'SPIN LT MT 1.8 LT'
   ];
 BEGIN
   -- Paso 1: eliminar modelos que no están en la lista oficial
