@@ -45,6 +45,7 @@ import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues, activeStatusValues } from '@/lib/schemas/leads'
 import { isBaja } from '@/lib/leads/constants'
+import { useCurrentUser } from '@/lib/tenant/context'
 import type { Lead } from '@/lib/db'
 import { cn, parseNumeric, safeRefetch, fmtDayMonthAR, toBADate } from '@/lib/utils'
 
@@ -93,6 +94,7 @@ interface LeadDetailSheetProps {
 }
 
 export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailSheetProps) {
+  const currentUser = useCurrentUser()
   const [detail,          setDetail]          = useState<DetailData | null>(null)
   const [nextAppointment, setNextAppointment] = useState<Appointment>(null)
   const [loading,         setLoading]         = useState(false)
@@ -108,6 +110,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const [showTransfer,    setShowTransfer]    = useState(false)
   const [showScheduleCall, setShowScheduleCall] = useState(false)
   const [registerCallId,   setRegisterCallId]   = useState<string | null>(null)
+  const [showTimelineDialog, setShowTimelineDialog] = useState(false)
   const [isPending,       startTransition]    = useTransition()
 
   // Fetch all data when sheet opens.
@@ -350,7 +353,12 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                   </div>
 
                   {/* Vendedor asignado */}
-                  {vendedores.length > 0 && (
+                  {currentUser.rol === 'vendedor' ? (
+                    <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <UserCircle className="size-3.5 shrink-0" />
+                      <span>Asignado a vos</span>
+                    </div>
+                  ) : vendedores.length > 0 ? (
                     <div className="mt-2 flex items-center gap-1.5">
                       <UserCircle className="size-3.5 text-muted-foreground shrink-0" />
                       <Select
@@ -376,7 +384,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                         </SelectContent>
                       </Select>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Quick-action buttons */}
@@ -713,37 +721,31 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                 {timeline.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Sin actividad.</p>
                 ) : (
-                  <div className="relative">
-                    {/* línea vertical centrada bajo los íconos */}
-                    <div className="absolute left-[9px] top-5 bottom-0 w-px bg-border" />
-                    {timeline.map((e) => {
-                      const { bg, Icon } = TIMELINE_EVENT_STYLE[e.event_type] ?? TIMELINE_EVENT_STYLE._default
-                      return (
-                        <div key={e.id} className="relative flex gap-3 pb-4">
-                          {/* ícono en el eje de la línea, nunca superpuesto al texto */}
-                          <div className={cn(
-                            'relative z-10 shrink-0 size-[18px] rounded-full mt-0.5',
-                            'ring-2 ring-background flex items-center justify-center text-white',
-                            bg,
-                          )}>
-                            <Icon className="size-2.5" />
-                          </div>
-                          {/* contenido */}
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[11px] text-muted-foreground leading-none mb-0.5">
-                              {format(toBADate(e.created_at), 'dd/MM HH:mm')}
-                            </div>
-                            <div className="text-sm font-medium">{e.title}</div>
-                            {e.description && (
-                              <div className="text-xs text-muted-foreground mt-0.5">{e.description}</div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+                  <>
+                    <TimelineList events={timeline.slice(0, 5)} />
+                    {timeline.length > 5 && (
+                      <button
+                        onClick={() => setShowTimelineDialog(true)}
+                        className="mt-1 text-xs text-primary hover:underline"
+                      >
+                        Ver todos ({timeline.length - 5} más)
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
+
+              {/* Full timeline dialog */}
+              <Dialog open={showTimelineDialog} onOpenChange={setShowTimelineDialog}>
+                <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Historial completo</DialogTitle>
+                  </DialogHeader>
+                  <div className="py-2">
+                    <TimelineList events={timeline} />
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
 
             {/* ── Status stepper (footer) ── */}
@@ -821,6 +823,39 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
 }
 
 // ── Subcomponents ─────────────────────────────────────────────────
+
+type TimelineEvent = NonNullable<DetailData>['timeline'][number]
+
+function TimelineList({ events }: { events: TimelineEvent[] }) {
+  return (
+    <div className="relative">
+      <div className="absolute left-[9px] top-5 bottom-0 w-px bg-border" />
+      {events.map((e) => {
+        const { bg, Icon } = TIMELINE_EVENT_STYLE[e.event_type] ?? TIMELINE_EVENT_STYLE._default
+        return (
+          <div key={e.id} className="relative flex gap-3 pb-4">
+            <div className={cn(
+              'relative z-10 shrink-0 size-[18px] rounded-full mt-0.5',
+              'ring-2 ring-background flex items-center justify-center text-white',
+              bg,
+            )}>
+              <Icon className="size-2.5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] text-muted-foreground leading-none mb-0.5">
+                {format(toBADate(e.created_at), 'dd/MM HH:mm')}
+              </div>
+              <div className="text-sm font-medium">{e.title}</div>
+              {e.description && (
+                <div className="text-xs text-muted-foreground mt-0.5">{e.description}</div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 function Section({ icon, title, children }: {
   icon: React.ReactNode

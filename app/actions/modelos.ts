@@ -14,8 +14,8 @@ import type { ActionResult } from './auth'
 async function requireDueno() {
   const [user, tenantId] = await Promise.all([getCurrentUser(), getCurrentTenantId()])
   if (!user || !tenantId) return { error: 'No autenticado' as const, user: null, tenantId: null }
-  if (!['dueno'].includes(user.rol)) {
-    return { error: 'Solo el dueño puede gestionar modelos' as const, user: null, tenantId: null }
+  if (!['dueno', 'gerente'].includes(user.rol)) {
+    return { error: 'Solo el dueño o gerente puede gestionar modelos' as const, user: null, tenantId: null }
   }
   return { error: null, user, tenantId }
 }

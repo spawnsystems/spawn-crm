@@ -35,7 +35,8 @@ export default async function ConfiguracionPage({
       getAuditLogs(),
     ])
 
-  const canManage = ['dueno'].includes(user.rol)
+  const canManage         = ['dueno'].includes(user.rol)
+  const canManageModelos  = ['dueno', 'gerente'].includes(user.rol)
 
   return (
     <ConfiguracionView
@@ -49,6 +50,7 @@ export default async function ConfiguracionPage({
       auditLogs={auditLogs}
       vendedores={vendedores}
       canManage={canManage}
+      canManageModelos={canManageModelos}
       currentYear={currentYear}
       currentMonth={currentMonth}
       defaultTab={tab}

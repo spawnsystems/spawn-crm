@@ -21,7 +21,6 @@ import { useCurrentUser } from '@/lib/tenant/context'
 
 const emailSchema = z.string().email('Ingresá un email válido')
 
-const HORARIOS = ['Mañana (9–13 hs)', 'Tarde (13–18 hs)', 'Noche (18–21 hs)', 'Cualquier horario']
 const OTRO_MODELO = '__otro__'
 const OTRO_SOURCE = '__otro__'
 
@@ -183,16 +182,12 @@ export function NewLeadDialog({
 
               <div className="col-span-2 space-y-1.5">
                 <Label>Horario de preferencia</Label>
-                <Select value={form.horario_preferencia} onValueChange={(v) => set('horario_preferencia', v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="¿Cuándo prefiere ser contactado?" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {HORARIOS.map((h) => (
-                      <SelectItem key={h} value={h}>{h}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <input
+                  type="time"
+                  value={form.horario_preferencia}
+                  onChange={(e) => set('horario_preferencia', e.target.value)}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
               </div>
             </div>
           </div>
@@ -312,7 +307,7 @@ export function NewLeadDialog({
                 // Vendedor siempre se auto-asigna — mostramos solo la info
                 <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
                   <UserCircle className="size-4 shrink-0" />
-                  <span>Se asignará automáticamente a vos</span>
+                  <span>Se te asignará automáticamente</span>
                 </div>
               ) : (
               <div className="space-y-1.5">
