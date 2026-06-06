@@ -7,7 +7,7 @@ import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/le
 import { logAudit } from '@/lib/audit/log'
 import {
   requireTenant, appendTimeline, getTenantSlaConfig, assertLeadAccess,
-  pendingCallAtSql, openApptAtSql,
+  pendingCallAtSql, openApptAtSql, openApptTipoSql,
 } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
 import { activeIndex, terminalBlockReason } from '@/lib/leads/state-machine'
@@ -695,6 +695,7 @@ export async function getMyLeads() {
         ...getTableColumns(schema.leads),
         pending_call_at: pendingCallAtSql,
         open_appt_at:    openApptAtSql,
+        open_appt_tipo:  openApptTipoSql,
       })
       .from(schema.leads)
       .where(

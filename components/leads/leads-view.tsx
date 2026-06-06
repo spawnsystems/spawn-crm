@@ -7,15 +7,18 @@ import { StatusBadge } from '@/components/status-badge'
 import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
 import { NewLeadDialog } from '@/components/leads/new-lead-dialog'
 import { Paginator } from '@/components/ui/paginator'
-import { cn, formatRelative, safeRefetch } from '@/lib/utils'
+import { cn, formatRelative, safeRefetch, toBADate } from '@/lib/utils'
+import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
 import {
   AlertTriangle, MessageCircle, Phone, ChevronRight, Clock, Target, Plus,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, CalendarCheck, PhoneCall,
 } from 'lucide-react'
 import type { Lead } from '@/lib/db'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { getMyLeads } from '@/app/actions/leads'
 import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
+import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appointments'
 
 type Vendedor = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 
@@ -283,6 +286,66 @@ function SortButton({
   )
 }
 
+// ── Próximo paso derivado ─────────────────────────────────────
+// Se calcula a partir del estado real del lead (cita programada,
+// llamada pendiente) y cae al texto libre next_action como último
+// recurso. Es la "próxima acción" auto-generada que ve el vendedor.
+
+type NextStepTone = 'appt' | 'call' | 'callOverdue' | 'text'
+
+interface NextStep {
+  Icon:    React.FC<{ className?: string }>
+  label:   string
+  when:    Date | null
+  overdue: boolean
+  tone:    NextStepTone
+}
+
+function deriveNextStep(lead: MyLead): NextStep | null {
+  // 1) Cita programada — máxima prioridad
+  if (lead.open_appt_at) {
+    const tipo = lead.open_appt_tipo
+      ? APPOINTMENT_TIPO_LABEL[lead.open_appt_tipo as AppointmentTipo] ?? null
+      : null
+    const when = new Date(lead.open_appt_at)
+    return {
+      Icon:    CalendarCheck,
+      label:   tipo ? `Cita · ${tipo}` : 'Cita agendada',
+      when,
+      overdue: when.getTime() < Date.now(),
+      tone:    'appt',
+    }
+  }
+  // 2) Llamada pendiente
+  if (lead.pending_call_at) {
+    const when    = new Date(lead.pending_call_at)
+    const overdue = when.getTime() < Date.now()
+    return {
+      Icon:    PhoneCall,
+      label:   'Llamada agendada',
+      when,
+      overdue,
+      tone:    overdue ? 'callOverdue' : 'call',
+    }
+  }
+  // 3) Texto libre de próxima acción
+  if (lead.next_action) {
+    return { Icon: Target, label: lead.next_action, when: null, overdue: false, tone: 'text' }
+  }
+  return null
+}
+
+const NEXT_STEP_TONE: Record<NextStepTone, string> = {
+  appt:        'text-violet-700 bg-violet-50 border-violet-200/70',
+  call:        'text-sky-700 bg-sky-50 border-sky-200/70',
+  callOverdue: 'text-destructive bg-destructive-soft border-destructive/20',
+  text:        'text-muted-foreground bg-muted/50 border-border',
+}
+
+function fmtNextStepWhen(d: Date): string {
+  return format(toBADate(d), "EEE d 'a las' HH:mm", { locale: es })
+}
+
 // ── Lead card ─────────────────────────────────────────────────
 
 function LeadCard({ lead, onOpen }: { lead: MyLead; onOpen: () => void }) {
@@ -290,7 +353,8 @@ function LeadCard({ lead, onOpen }: { lead: MyLead; onOpen: () => void }) {
     ? formatRelative(new Date(lead.last_contact_at))
     : 'Sin contactar'
 
-  const alta = lead.attention_severity === 'alta'
+  const alta     = lead.attention_severity === 'alta'
+  const nextStep = deriveNextStep(lead)
 
   return (
     <Card
@@ -331,14 +395,31 @@ function LeadCard({ lead, onOpen }: { lead: MyLead; onOpen: () => void }) {
             <span className="mx-2">·</span>
             <span>{lead.source}</span>
           </div>
-          <div className="mt-2 flex items-center gap-4 text-xs">
+          <div className="mt-2.5 flex items-center gap-2.5 flex-wrap text-xs">
             <span className={cn('inline-flex items-center gap-1', lead.last_contact_critical ? 'text-destructive font-medium' : 'text-muted-foreground')}>
               <Clock className="size-3" />
               {lastContact}
             </span>
-            {lead.next_action && (
-              <span className="text-muted-foreground">
-                Próxima acción: <span className="text-foreground font-medium">{lead.next_action}</span>
+
+            {/* Próximo paso derivado (cita / llamada / texto libre) */}
+            {nextStep && (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium max-w-[22rem]',
+                  NEXT_STEP_TONE[nextStep.tone],
+                )}
+                title={nextStep.when ? fmtNextStepWhen(nextStep.when) : nextStep.label}
+              >
+                <nextStep.Icon className="size-3 shrink-0" />
+                <span className="truncate">{nextStep.label}</span>
+                {nextStep.when && (
+                  <span className="font-normal opacity-80 whitespace-nowrap">
+                    · {fmtNextStepWhen(nextStep.when)}
+                  </span>
+                )}
+                {nextStep.overdue && (
+                  <span className="font-semibold uppercase tracking-wide text-[10px]">· Vencida</span>
+                )}
               </span>
             )}
           </div>

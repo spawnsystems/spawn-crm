@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect } from 'react'
 import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
@@ -41,6 +42,7 @@ import { CotizadorDialog } from '@/components/cotizador/cotizador-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues } from '@/lib/schemas/leads'
+import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appointments'
 import { isBaja } from '@/lib/leads/constants'
 import { useCurrentUser } from '@/lib/tenant/context'
 import type { Lead } from '@/lib/db'
@@ -86,10 +88,71 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
 // ── Preview limits ────────────────────────────────────────────────
 // Cuántos ítems mostrar en cada sección antes de colapsar.
 // "Ver más" expande el resto inline; el sheet no scrollea por defecto.
-const PREVIEW_TASKS    = 1
+const PREVIEW_AGENDA   = 1
 const PREVIEW_CALLS    = 1
 const PREVIEW_NOTES    = 1
 const PREVIEW_TIMELINE = 6
+
+// ── Agenda derivada ───────────────────────────────────────────────
+// "Próximas acciones" ya no es una lista manual: se arma sola a partir
+// del estado real del lead (cita programada + llamadas pendientes +
+// tareas manuales sin completar), ordenada por fecha. El vendedor
+// puede sumar acciones manuales, pero las comunes aparecen solas.
+
+type AgendaItem =
+  | { kind: 'appointment'; id: string; date: Date;        overdue: boolean; tipo: AppointmentTipo; lugar: string | null }
+  | { kind: 'call';        id: string; date: Date;        overdue: boolean; notas: string | null }
+  | { kind: 'task';        id: string; date: Date | null;                   texto: string }
+
+function buildAgenda(
+  tasks: NonNullable<DetailData>['tasks'],
+  calls: NonNullable<DetailData>['calls'],
+  appt:  Appointment,
+): AgendaItem[] {
+  const now = Date.now()
+  const items: AgendaItem[] = []
+
+  // 1) Cita programada (a lo sumo una por lead)
+  if (appt) {
+    const d = new Date(appt.scheduled_at)
+    items.push({
+      kind: 'appointment', id: appt.id, date: d,
+      overdue: d.getTime() < now, tipo: appt.tipo, lugar: appt.lugar,
+    })
+  }
+
+  // 2) Llamadas pendientes (sin registrar)
+  for (const c of calls) {
+    if (c.realizada_at) continue
+    const d = new Date(c.scheduled_at)
+    items.push({
+      kind: 'call', id: c.id, date: d,
+      overdue: d.getTime() < now, notas: c.notas_previas,
+    })
+  }
+
+  // 3) Tareas manuales sin completar
+  for (const t of tasks) {
+    if (t.done) continue
+    items.push({
+      kind: 'task', id: t.id,
+      date: t.due_at ? new Date(t.due_at) : null,
+      texto: t.texto,
+    })
+  }
+
+  // Orden cronológico; las acciones sin fecha (tareas) van al final
+  return items.sort((a, b) => {
+    const at = a.date ? a.date.getTime() : Infinity
+    const bt = b.date ? b.date.getTime() : Infinity
+    return at - bt
+  })
+}
+
+/** Formato compacto "mié 12/06 14:00" para la agenda. */
+function fmtAgendaWhen(d: Date): string {
+  return format(toBADate(d), "EEE d/MM HH:mm", { locale: es })
+}
 
 // ── Main component ────────────────────────────────────────────────
 
@@ -117,7 +180,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const [showScheduleCall, setShowScheduleCall] = useState(false)
   const [registerCallId,   setRegisterCallId]   = useState<string | null>(null)
   const [showTimelineDialog, setShowTimelineDialog] = useState(false)
-  const [showAllTasks,    setShowAllTasks]    = useState(false)
+  const [showAllAgenda,   setShowAllAgenda]   = useState(false)
   const [showAllCalls,    setShowAllCalls]    = useState(false)
   const [showAllNotes,    setShowAllNotes]    = useState(false)
   const [isPending,       startTransition]    = useTransition()
@@ -127,7 +190,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   useEffect(() => {
     if (!leadId) { setDetail(null); setNextAppointment(null); setEditing(false); return }
     // Colapsar todas las secciones cuando se abre un lead nuevo
-    setShowAllTasks(false)
+    setShowAllAgenda(false)
     setShowAllCalls(false)
     setShowAllNotes(false)
     setLoading(true)
@@ -163,6 +226,9 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const timeline        = detail?.timeline        ?? []
   const tasks           = detail?.tasks           ?? []
   const calls           = detail?.calls           ?? []
+
+  // Agenda derivada: cita + llamadas pendientes + tareas, ordenada por fecha
+  const agenda = buildAgenda(tasks, calls, nextAppointment)
 
   /** Re-fetch everything (called after mutations in NextActionCard) */
   async function refreshAll() {
@@ -546,70 +612,48 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
               {/* Left col — 2/3 width */}
               <div className="col-span-2 space-y-6">
 
-                {/* Tasks */}
+                {/* Próximas acciones — agenda derivada (cita + llamadas + tareas) */}
                 <Section icon={<CalendarIcon className="size-4" />} title="Próximas acciones">
-                  {tasks.length > 0 && (() => {
-                    // Pendientes primero, completadas al final
-                    const sorted = [...tasks].sort((a, b) => Number(a.done) - Number(b.done))
-                    const visible = showAllTasks ? sorted : sorted.slice(0, PREVIEW_TASKS)
-                    const hiddenCount = sorted.length - PREVIEW_TASKS
+                  {agenda.length === 0 && (
+                    <p className="text-sm text-muted-foreground mb-3">
+                      No hay acciones pendientes. Se generan solas al agendar una llamada o
+                      cita; también podés sumar una manual.
+                    </p>
+                  )}
+                  {agenda.length > 0 && (() => {
+                    const visible     = showAllAgenda ? agenda : agenda.slice(0, PREVIEW_AGENDA)
+                    const hiddenCount = agenda.length - PREVIEW_AGENDA
                     return (
                       <div className="mb-3">
                         <div className="space-y-2">
-                          {visible.map((t) => (
-                            <div
-                              key={t.id}
-                              className="flex items-center gap-3 rounded-lg border border-border p-3"
-                            >
-                              <button
-                                onClick={() => handleToggleTask(t.id, !t.done)}
-                                className="shrink-0"
-                                disabled={isPending}
-                              >
-                                {t.done
-                                  ? <CheckCircle2 className="size-4 text-success" />
-                                  : <Circle className="size-4 text-muted-foreground hover:text-primary transition-colors" />}
-                              </button>
-                              <div className="flex-1">
-                                <div className={cn('text-sm', t.done && 'line-through text-muted-foreground')}>
-                                  {t.texto}
-                                </div>
-                                {t.due_at && (
-                                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                                    {fmtDayMonthAR(t.due_at)}
-                                  </div>
-                                )}
-                              </div>
-                              {!t.done && (
-                                <Button
-                                  size="sm" variant="ghost" className="h-7 text-xs"
-                                  onClick={() => handleToggleTask(t.id, true)}
-                                  disabled={isPending}
-                                >
-                                  Hecho
-                                </Button>
-                              )}
-                            </div>
+                          {visible.map((item) => (
+                            <AgendaRow
+                              key={`${item.kind}-${item.id}`}
+                              item={item}
+                              isPending={isPending}
+                              onRegisterCall={() => setRegisterCallId(item.id)}
+                              onCompleteTask={() => handleToggleTask(item.id, true)}
+                            />
                           ))}
                         </div>
-                        {sorted.length > PREVIEW_TASKS && (
+                        {agenda.length > PREVIEW_AGENDA && (
                           <button
-                            onClick={() => setShowAllTasks((v) => !v)}
+                            onClick={() => setShowAllAgenda((v) => !v)}
                             className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
                           >
-                            <ChevronDown className={cn('size-3 transition-transform', showAllTasks && 'rotate-180')} />
-                            {showAllTasks ? 'Ver menos' : `Ver ${hiddenCount} más`}
+                            <ChevronDown className={cn('size-3 transition-transform', showAllAgenda && 'rotate-180')} />
+                            {showAllAgenda ? 'Ver menos' : `Ver ${hiddenCount} más`}
                           </button>
                         )}
                       </div>
                     )
                   })()}
 
-                  {/* Add task — with optional due date */}
+                  {/* Agregar acción manual — con fecha/hora opcional */}
                   <div className="space-y-2">
                     <div className="flex gap-2">
                       <Input
-                        placeholder="Nueva tarea..."
+                        placeholder="Acción manual (ej: enviar cotización)..."
                         className="h-8 text-sm"
                         value={newTask}
                         onChange={(e) => setNewTask(e.target.value)}
@@ -939,6 +983,102 @@ function Section({ icon, title, children }: {
         {title}
       </div>
       {children}
+    </div>
+  )
+}
+
+// ── AgendaRow ─────────────────────────────────────────────────────
+// Renderiza un ítem de la agenda derivada según su tipo. Las citas y
+// llamadas vienen del estado real del lead; las tareas son manuales.
+
+function AgendaRow({
+  item, isPending, onRegisterCall, onCompleteTask,
+}: {
+  item:           AgendaItem
+  isPending:      boolean
+  onRegisterCall: () => void
+  onCompleteTask: () => void
+}) {
+  // ── Cita programada ──
+  if (item.kind === 'appointment') {
+    return (
+      <div className={cn(
+        'rounded-lg border p-3',
+        item.overdue ? 'border-amber-300 bg-amber-50/60' : 'border-violet-200 bg-violet-50/50',
+      )}>
+        <div className="flex items-center gap-1.5">
+          <CalendarCheck className={cn('size-3.5 shrink-0', item.overdue ? 'text-amber-600' : 'text-violet-600')} />
+          <span className={cn('text-xs font-semibold', item.overdue ? 'text-amber-800' : 'text-violet-800')}>
+            Cita · {APPOINTMENT_TIPO_LABEL[item.tipo]}
+          </span>
+          {item.overdue && (
+            <span className="text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200/60 rounded-full px-1.5 py-0.5">
+              Ya pasó — resolvé arriba
+            </span>
+          )}
+        </div>
+        <div className={cn('text-xs mt-1 pl-5', item.overdue ? 'text-amber-700/80' : 'text-violet-700/80')}>
+          {fmtAgendaWhen(item.date)}
+          {item.lugar && ` · ${item.lugar}`}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Llamada pendiente ──
+  if (item.kind === 'call') {
+    return (
+      <div className={cn(
+        'rounded-lg border p-3',
+        item.overdue ? 'border-destructive/40 bg-destructive-soft' : 'border-sky-200 bg-sky-50/50',
+      )}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            {item.overdue
+              ? <AlertTriangle className="size-3.5 text-destructive shrink-0" />
+              : <Clock3 className="size-3.5 text-sky-600 shrink-0" />}
+            <span className={cn('text-xs font-semibold truncate',
+              item.overdue ? 'text-destructive' : 'text-sky-700')}>
+              {item.overdue ? 'Llamada vencida' : 'Llamada agendada'} · {fmtAgendaWhen(item.date)}
+            </span>
+          </div>
+          <Button
+            size="sm" variant="outline"
+            className={cn('h-6 px-2 text-[11px] gap-1 shrink-0',
+              item.overdue ? 'text-destructive border-destructive/40 hover:bg-destructive/10'
+                : 'text-sky-700 border-sky-300 hover:bg-sky-100')}
+            onClick={onRegisterCall}
+            disabled={isPending}
+          >
+            <PhoneCall className="size-3" />Registrar
+          </Button>
+        </div>
+        {item.notas && (
+          <p className="text-xs text-muted-foreground pl-5 mt-1">{item.notas}</p>
+        )}
+      </div>
+    )
+  }
+
+  // ── Tarea manual ──
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+      <button onClick={onCompleteTask} className="shrink-0" disabled={isPending} title="Marcar como hecha">
+        <Circle className="size-4 text-muted-foreground hover:text-primary transition-colors" />
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm">{item.texto}</div>
+        {item.date && (
+          <div className="text-[11px] text-muted-foreground mt-0.5">{fmtAgendaWhen(item.date)}</div>
+        )}
+      </div>
+      <Button
+        size="sm" variant="ghost" className="h-7 text-xs"
+        onClick={onCompleteTask}
+        disabled={isPending}
+      >
+        Hecho
+      </Button>
     </div>
   )
 }

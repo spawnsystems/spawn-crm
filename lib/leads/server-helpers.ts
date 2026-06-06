@@ -37,6 +37,14 @@ export const openApptAtSql = sql<string | null>`(
   LIMIT 1
 )`
 
+/** Tipo de la cita 'programada' del lead (para mostrar en la card). */
+export const openApptTipoSql = sql<string | null>`(
+  SELECT la.tipo
+  FROM ${schema.leadAppointments} la
+  WHERE la.lead_id = ${schema.leads.id} AND la.status = 'programada'
+  LIMIT 1
+)`
+
 /**
  * Carga el usuario actual + tenant y arma el helper de queries.
  * Tira error si falta cualquiera de los dos.
