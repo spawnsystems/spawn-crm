@@ -29,7 +29,7 @@ import {
   MessageCircle, Send, Loader2, Pencil, X, Check,
   UserCircle, Plus, RotateCcw, UserPlus, UserCheck, ArrowRight,
   CalendarCheck, Trophy, LifeBuoy, AlertTriangle, CalendarX,
-  ArrowRightLeft, PhoneCall, PhoneIncoming, Clock3, ChevronDown, Trash2,
+  ArrowRightLeft, PhoneCall, PhoneIncoming, Clock3, ChevronDown, Trash2, Calculator,
 } from 'lucide-react'
 import {
   addNote, deleteNote, toggleTask, getLeadDetail,
@@ -46,7 +46,8 @@ import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appo
 import { isBaja } from '@/lib/leads/constants'
 import { useCurrentUser } from '@/lib/tenant/context'
 import type { Lead } from '@/lib/db'
-import { cn, parseNumeric, safeRefetch, fmtDayMonthAR, toBADate } from '@/lib/utils'
+import { cn, parseNumeric, safeRefetch, fmtDayMonthAR, toBADate, formatCurrencyARS } from '@/lib/utils'
+import { formatHorarios } from '@/lib/leads/horarios'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -82,6 +83,7 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
   transfer_cancelled:      { bg: 'bg-slate-400',     Icon: ArrowRightLeft   },
   call_scheduled:          { bg: 'bg-sky-500',       Icon: PhoneCall        },
   call_registered:         { bg: 'bg-teal-500',      Icon: PhoneIncoming    },
+  cotizacion_created:      { bg: 'bg-amber-500',     Icon: Calculator       },
   _default:                { bg: 'bg-muted-foreground', Icon: ArrowRight    },
 }
 
@@ -227,6 +229,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const timeline        = detail?.timeline        ?? []
   const tasks           = detail?.tasks           ?? []
   const calls           = detail?.calls           ?? []
+  const cotizaciones    = detail?.cotizaciones    ?? []
 
   // Agenda derivada: cita + llamadas pendientes + tareas, ordenada por fecha
   const agenda = buildAgenda(tasks, calls, nextAppointment)
@@ -400,6 +403,11 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                         <Mail className="size-3.5" />{lead.email}
                       </span>
                     )}
+                    {formatHorarios(lead.horario_preferencia) && (
+                      <span className="inline-flex items-center gap-1.5" title="Horarios de preferencia">
+                        <Clock3 className="size-3.5" />{formatHorarios(lead.horario_preferencia)}
+                      </span>
+                    )}
                     {detail?.lead.creator_nombre && (
                       <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/70">
                         <UserPlus className="size-3" />
@@ -506,21 +514,73 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
               />
             </div>
 
-            {/* ── Cotizador de usado ── */}
+            {/* ── Usado en parte de pago ── */}
             {lead.tiene_usado && (
-              <div className="mx-6 mb-4 flex items-center justify-between gap-3 rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-amber-800">Tiene auto para dar en parte de pago</p>
-                  <p className="text-xs text-amber-700/60 mt-0.5">Calculá el valor de toma con las reglas InfoAuto.</p>
+              <div className="mx-6 mb-4 rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Car className="size-4 text-amber-700 shrink-0" />
+                    <span className="text-sm font-semibold text-amber-800">Usado en parte de pago</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 h-7 gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-100"
+                    onClick={() => setShowCotizador(true)}
+                  >
+                    <Calculator className="size-3.5" />
+                    {cotizaciones.length > 0 ? 'Nueva cotización' : 'Cotizar usado'}
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0 gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-100"
-                  onClick={() => setShowCotizador(true)}
-                >
-                  Cotizar usado
-                </Button>
+
+                {cotizaciones.length === 0 ? (
+                  <p className="text-xs text-amber-700/70">
+                    Todavía sin cotizar. Calculá el valor de toma con las reglas InfoAuto.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {cotizaciones.map((c, idx) => (
+                      <div
+                        key={c.id}
+                        className={cn(
+                          'rounded-lg border px-3 py-2 bg-white/70',
+                          c.rechazado ? 'border-rose-200' : 'border-emerald-200',
+                          idx > 0 && 'opacity-70',
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">
+                              {c.marca_modelo || 'Usado'}
+                              {c.anio ? <span className="text-muted-foreground font-normal"> · {c.anio}</span> : null}
+                              {typeof c.km === 'number' ? <span className="text-muted-foreground font-normal"> · {c.km.toLocaleString('es-AR')} km</span> : null}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              {idx === 0 ? 'Última cotización' : 'Anterior'} · {fmtDayMonthAR(c.created_at)}
+                            </div>
+                          </div>
+                          {c.rechazado ? (
+                            <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5">
+                              <AlertTriangle className="size-3" />Rechazado
+                            </span>
+                          ) : (
+                            <div className="shrink-0 text-right">
+                              <div className="text-[10px] text-muted-foreground leading-none">
+                                Valor de toma{c.descuento_pct ? ` · −${Number(c.descuento_pct)}%` : ''}
+                              </div>
+                              <div className="text-sm font-semibold text-emerald-700">
+                                {formatCurrencyARS(c.valor_final)}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {c.rechazado && c.rechazo_motivo && (
+                          <p className="text-[11px] text-rose-700/70 mt-1">{c.rechazo_motivo}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -916,7 +976,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
               leadId={lead.id}
               leadNombre={lead.nombre}
               provincia={lead.provincia ?? undefined}
-              onCreated={() => setShowCotizador(false)}
+              onCreated={() => { setShowCotizador(false); refreshAll() }}
             />
 
             {/* ── Transfer dialog ── */}

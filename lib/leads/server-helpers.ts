@@ -45,6 +45,24 @@ export const openApptTipoSql = sql<string | null>`(
   LIMIT 1
 )`
 
+/** Valor final de la cotización de usado más reciente del lead (o null). */
+export const usadoValorSql = sql<string | null>`(
+  SELECT c.valor_final
+  FROM ${schema.cotizaciones} c
+  WHERE c.lead_id = ${schema.leads.id}
+  ORDER BY c.created_at DESC
+  LIMIT 1
+)`
+
+/** ¿La cotización de usado más reciente fue rechazada? (null si no hay). */
+export const usadoRechazadoSql = sql<boolean | null>`(
+  SELECT c.rechazado
+  FROM ${schema.cotizaciones} c
+  WHERE c.lead_id = ${schema.leads.id}
+  ORDER BY c.created_at DESC
+  LIMIT 1
+)`
+
 /**
  * Carga el usuario actual + tenant y arma el helper de queries.
  * Tira error si falta cualquiera de los dos.

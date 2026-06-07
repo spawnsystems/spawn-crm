@@ -70,6 +70,8 @@ export async function createCotizacion(input: unknown): Promise<ActionResult<{ i
   }).returning({ id: schema.cotizaciones.id })
 
   revalidatePath('/cotizador')
+  revalidatePath('/leads')
+  revalidatePath('/all-leads')
   return { success: true, data: { id: row.id, result } }
 }
 

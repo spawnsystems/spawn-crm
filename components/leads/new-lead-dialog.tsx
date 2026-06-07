@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useMemo } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import {
@@ -14,17 +14,24 @@ import {
   Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator,
   SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { UserCircle, Loader2, Car, ChevronDown } from 'lucide-react'
+import {
+  UserCircle, Loader2, Car, Plus, X, Clock, Calculator, AlertTriangle, CheckCircle2,
+} from 'lucide-react'
 import { createLead } from '@/app/actions/leads'
 import { leadSourceValues } from '@/lib/schemas/leads'
-import { getInitials } from '@/lib/utils'
+import { getInitials, formatCurrencyARS } from '@/lib/utils'
 import { useCurrentUser } from '@/lib/tenant/context'
+import { PROVINCIAS_AR, PROVINCIA_DEFAULT } from '@/lib/ar/provincias'
+import { type HorarioRange } from '@/lib/leads/horarios'
+import { calcularUsado, type UsoVehiculo } from '@/lib/cotizador/calc'
 
 const emailSchema = z.string().email('Ingresá un email válido')
 
 const OTRO_MODELO  = '__otro__'
 const OTRO_SOURCE  = '__otro__'
 const CUSTOM_PREFIX = '__custom__:'
+
+const YEAR_NOW = new Date().getFullYear()
 
 interface Vendedor {
   user_id: string
@@ -45,8 +52,12 @@ interface NewLeadDialogProps {
 const EMPTY = {
   nombre: '', telefono: '', email: '', modelo: '', modeloCustom: '',
   source: '' as string, sourceCustom: '',
-  localidad: '', provincia: '', horario_preferencia: '',
+  localidad: '', provincia: PROVINCIA_DEFAULT as string,
+  horarios: [] as HorarioRange[],
   tiene_usado: false, observaciones: '', assigned_to: '',
+  // Usado en parte de pago (cotizador inline)
+  usadoMarca: '', usadoAnio: String(YEAR_NOW - 2),
+  usadoKm: '', usadoUso: 'particular' as UsoVehiculo, usadoBase: '',
 }
 
 export function NewLeadDialog({
@@ -64,6 +75,41 @@ export function NewLeadDialog({
   function set<K extends keyof typeof EMPTY>(key: K, value: typeof EMPTY[K]) {
     setForm((f) => ({ ...f, [key]: value }))
   }
+
+  // ── Horarios de preferencia (rangos) ──────────────────────────
+  function addHorario() {
+    setForm((f) => ({ ...f, horarios: [...f.horarios, { from: '', to: '' }] }))
+  }
+  function updateHorario(i: number, field: keyof HorarioRange, val: string) {
+    setForm((f) => ({
+      ...f,
+      horarios: f.horarios.map((r, idx) => (idx === i ? { ...r, [field]: val } : r)),
+    }))
+  }
+  function removeHorario(i: number) {
+    setForm((f) => ({ ...f, horarios: f.horarios.filter((_, idx) => idx !== i) }))
+  }
+
+  // ── Preview del usado (valor de toma en vivo) ─────────────────
+  const usadoNums = useMemo(() => {
+    const base = parseFloat(form.usadoBase.replace(/\./g, '').replace(',', '.'))
+    const km   = parseInt(form.usadoKm.replace(/\./g, ''), 10)
+    const anio = parseInt(form.usadoAnio, 10)
+    return { base, km, anio }
+  }, [form.usadoBase, form.usadoKm, form.usadoAnio])
+
+  const usadoComplete = !!usadoNums.base && usadoNums.base > 0 && !isNaN(usadoNums.km) && !isNaN(usadoNums.anio)
+
+  const usadoPreview = useMemo(() => {
+    if (!form.tiene_usado || !usadoComplete) return null
+    return calcularUsado({
+      baseInfoauto: usadoNums.base,
+      km:           usadoNums.km,
+      anio:         usadoNums.anio,
+      uso:          form.usadoUso,
+      provincia:    form.provincia,
+    })
+  }, [form.tiene_usado, usadoComplete, usadoNums, form.usadoUso, form.provincia])
 
   function validateEmail(value: string): string | null {
     if (!value.trim()) return null
@@ -93,6 +139,20 @@ export function NewLeadDialog({
     setEmailError(emailErr)
     if (emailErr) return
 
+    // Rangos válidos (ambos extremos cargados)
+    const horariosValidos = form.horarios.filter((r) => r.from && r.to)
+
+    // Usado: si está activo y los datos mínimos están, mandamos la cotización inline
+    const usadoPayload = form.tiene_usado && usadoComplete
+      ? {
+          marca_modelo:  form.usadoMarca.trim() || undefined,
+          anio:          usadoNums.anio,
+          km:            usadoNums.km,
+          uso:           form.usadoUso,
+          base_infoauto: usadoNums.base,
+        }
+      : undefined
+
     startTransition(async () => {
       const res = await createLead({
         nombre:              form.nombre,
@@ -103,8 +163,9 @@ export function NewLeadDialog({
         source_custom:       sourceCustom  || undefined,
         localidad:           form.localidad,
         provincia:           form.provincia,
-        horario_preferencia: form.horario_preferencia || undefined,
+        horarios:            horariosValidos.length ? horariosValidos : undefined,
         tiene_usado:         form.tiene_usado,
+        usado:               usadoPayload,
         observaciones:       form.observaciones || undefined,
         assigned_to:         form.assigned_to   || undefined,
       })
@@ -195,23 +256,70 @@ export function NewLeadDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="nl-provincia">Provincia <span className="text-destructive">*</span></Label>
-                <Input
-                  id="nl-provincia"
-                  placeholder="Ej: Buenos Aires"
-                  value={form.provincia}
-                  onChange={(e) => set('provincia', e.target.value)}
-                />
+                <Label>Provincia <span className="text-destructive">*</span></Label>
+                <Select value={form.provincia} onValueChange={(v) => set('provincia', v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar provincia..." />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {PROVINCIAS_AR.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
+              {/* Horarios de preferencia — rangos personalizables */}
               <div className="col-span-2 space-y-1.5">
-                <Label>Horario de preferencia</Label>
-                <input
-                  type="time"
-                  value={form.horario_preferencia}
-                  onChange={(e) => set('horario_preferencia', e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                />
+                <Label className="flex items-center gap-1.5">
+                  <Clock className="size-3.5 text-muted-foreground" />
+                  Horarios de preferencia
+                </Label>
+                {form.horarios.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Sin franjas. Agregá una o más (ej: 09:00–12:00 y 17:00–19:00).
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {form.horarios.map((r, i) => {
+                      const invalid = r.from && r.to && r.from >= r.to
+                      return (
+                        <div key={i} className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={r.from}
+                            onChange={(e) => updateHorario(i, 'from', e.target.value)}
+                            className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          />
+                          <span className="text-muted-foreground text-sm shrink-0">a</span>
+                          <input
+                            type="time"
+                            value={r.to}
+                            onChange={(e) => updateHorario(i, 'to', e.target.value)}
+                            className={`flex h-9 w-full rounded-md border bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                              invalid ? 'border-destructive' : 'border-input'
+                            }`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeHorario(i)}
+                            className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                            title="Quitar franja"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                <Button
+                  type="button" size="sm" variant="outline"
+                  className="h-7 gap-1 text-xs mt-1"
+                  onClick={addHorario}
+                >
+                  <Plus className="size-3" />Agregar franja
+                </Button>
               </div>
             </div>
           </div>
@@ -279,14 +387,98 @@ export function NewLeadDialog({
                       form.tiene_usado ? 'translate-x-4' : 'translate-x-0'
                     }`} />
                   </button>
-                  <div>
-                    <span className="text-sm font-medium">¿Tiene auto para dar en parte de pago?</span>
-                    {form.tiene_usado && (
-                      <span className="ml-2 text-xs text-primary font-medium">→ Cotizar usado al crear</span>
-                    )}
-                  </div>
+                  <span className="text-sm font-medium">¿Tiene auto para dar en parte de pago?</span>
                 </label>
               </div>
+
+              {/* Cotizador del usado — aparece inline al activar el switch */}
+              {form.tiene_usado && (
+                <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-3">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
+                    <Calculator className="size-3.5" />
+                    Cotización del usado
+                    <span className="font-normal text-amber-700/70">— se calcula con reglas InfoAuto</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2 space-y-1.5">
+                      <Label className="text-xs">Marca y modelo</Label>
+                      <Input
+                        placeholder="Ej: Toyota Corolla"
+                        className="h-8 text-sm bg-white"
+                        value={form.usadoMarca}
+                        onChange={(e) => set('usadoMarca', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Año</Label>
+                      <Input
+                        type="number" className="h-8 text-sm bg-white"
+                        placeholder={String(YEAR_NOW - 2)}
+                        value={form.usadoAnio}
+                        onChange={(e) => set('usadoAnio', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Kilometraje</Label>
+                      <Input
+                        type="number" className="h-8 text-sm bg-white"
+                        placeholder="Ej: 65000"
+                        value={form.usadoKm}
+                        onChange={(e) => set('usadoKm', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Tipo de uso</Label>
+                      <Select value={form.usadoUso} onValueChange={(v) => set('usadoUso', v as UsoVehiculo)}>
+                        <SelectTrigger className="h-8 text-sm bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="particular">Particular</SelectItem>
+                          <SelectItem value="taxi_uber_transporte">Taxi / Uber / Transporte</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Valor InfoAuto</Label>
+                      <Input
+                        type="number" className="h-8 text-sm bg-white"
+                        placeholder="Ej: 8500000"
+                        value={form.usadoBase}
+                        onChange={(e) => set('usadoBase', e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Preview en vivo del valor de toma */}
+                  {usadoPreview && (
+                    usadoPreview.rechazado ? (
+                      <div className="flex items-start gap-2 rounded-lg bg-rose-50 border border-rose-200/60 px-3 py-2">
+                        <AlertTriangle className="size-4 text-rose-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-semibold text-rose-800">Auto rechazado</p>
+                          <p className="text-xs text-rose-700/70 mt-0.5">{usadoPreview.rechazoMotivo}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 border border-emerald-200/60 px-3 py-2">
+                        <div className="flex items-center gap-1.5">
+                          <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                          <span className="text-xs text-emerald-800">Valor de toma (−{usadoPreview.descuentoPct}%)</span>
+                        </div>
+                        <span className="text-sm font-semibold text-emerald-700">
+                          {formatCurrencyARS(usadoPreview.valorCalculado.toString())}
+                        </span>
+                      </div>
+                    )
+                  )}
+
+                  <p className="text-[11px] text-amber-700/70">
+                    Podés dejarlo vacío y cotizar más tarde desde la ficha del lead.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

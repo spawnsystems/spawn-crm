@@ -7,12 +7,12 @@ import { StatusBadge } from '@/components/status-badge'
 import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
 import { NewLeadDialog } from '@/components/leads/new-lead-dialog'
 import { Paginator } from '@/components/ui/paginator'
-import { cn, formatRelative, safeRefetch, toBADate } from '@/lib/utils'
+import { cn, formatRelative, safeRefetch, toBADate, formatCurrencyARS } from '@/lib/utils'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
   AlertTriangle, MessageCircle, Phone, ChevronRight, Clock, Target, Plus,
-  ArrowUp, ArrowDown, CalendarCheck, PhoneCall,
+  ArrowUp, ArrowDown, CalendarCheck, PhoneCall, Car,
 } from 'lucide-react'
 import type { Lead } from '@/lib/db'
 import { getVendedoresDelTenant } from '@/app/actions/users'
@@ -346,6 +346,36 @@ function fmtNextStepWhen(d: Date): string {
   return format(toBADate(d), "EEE d 'a las' HH:mm", { locale: es })
 }
 
+// ── Badge de usado en parte de pago ───────────────────────────
+// Muestra el valor de toma si ya se cotizó, "rechazado" si fue rechazado,
+// o "s/cotizar" si tiene usado pero todavía no hay cotización.
+
+function UsadoBadge({ lead }: { lead: MyLead }) {
+  const tieneValor = lead.usado_valor != null && !lead.usado_rechazado
+  const rechazado  = lead.usado_rechazado === true
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium',
+        rechazado
+          ? 'text-rose-700 bg-rose-50 border-rose-200/70'
+          : tieneValor
+          ? 'text-amber-800 bg-amber-50 border-amber-200/70'
+          : 'text-muted-foreground bg-muted/50 border-border',
+      )}
+      title="Usado en parte de pago"
+    >
+      <Car className="size-3 shrink-0" />
+      {rechazado
+        ? 'Usado · rechazado'
+        : tieneValor
+        ? `Usado · ${formatCurrencyARS(lead.usado_valor as string)}`
+        : 'Usado · s/cotizar'}
+    </span>
+  )
+}
+
 // ── Lead card ─────────────────────────────────────────────────
 
 function LeadCard({ lead, onOpen }: { lead: MyLead; onOpen: () => void }) {
@@ -390,10 +420,13 @@ function LeadCard({ lead, onOpen }: { lead: MyLead; onOpen: () => void }) {
               </span>
             )}
           </div>
-          <div className="mt-1.5 text-sm text-muted-foreground">
-            <span className="text-foreground/80 font-medium">{lead.modelo ?? '—'}</span>
-            <span className="mx-2">·</span>
-            <span>{lead.source}</span>
+          <div className="mt-1.5 flex items-center gap-2 flex-wrap text-sm text-muted-foreground">
+            <span>
+              <span className="text-foreground/80 font-medium">{lead.modelo ?? '—'}</span>
+              <span className="mx-2">·</span>
+              <span>{lead.source}</span>
+            </span>
+            {lead.tiene_usado && <UsadoBadge lead={lead} />}
           </div>
           <div className="mt-2.5 flex items-center gap-2.5 flex-wrap text-xs">
             <span className={cn('inline-flex items-center gap-1', lead.last_contact_critical ? 'text-destructive font-medium' : 'text-muted-foreground')}>

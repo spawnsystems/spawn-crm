@@ -20,6 +20,21 @@ export const leadStatusValues = [
   ...activeStatusValues, ...bajaStatusValues,
 ] as const
 
+// Rango horario de preferencia (puede haber varios).
+export const horarioRangeSchema = z.object({
+  from: z.string().regex(/^\d{2}:\d{2}$/, 'Hora inválida'),
+  to:   z.string().regex(/^\d{2}:\d{2}$/, 'Hora inválida'),
+})
+
+// Usado en parte de pago — datos para cotizar junto con el alta del lead.
+export const usadoInlineSchema = z.object({
+  marca_modelo:  z.string().max(150).optional(),
+  anio:          z.number().int().min(1900).max(new Date().getFullYear() + 1),
+  km:            z.number().int().min(0),
+  uso:           z.enum(['particular', 'taxi_uber_transporte']),
+  base_infoauto: z.number().positive('El valor InfoAuto debe ser mayor a 0'),
+})
+
 export const createLeadSchema = z.object({
   nombre:               z.string().min(2, 'El nombre es requerido'),
   telefono:             z.string().min(6, 'El teléfono es requerido'),
@@ -29,8 +44,11 @@ export const createLeadSchema = z.object({
   source_custom:        z.string().optional(),
   localidad:            z.string().min(2, 'La localidad es requerida'),
   provincia:            z.string().min(2, 'La provincia es requerida'),
-  horario_preferencia:  z.string().optional(),
+  // Rangos horarios; se serializan a JSON en la columna text horario_preferencia.
+  horarios:             z.array(horarioRangeSchema).optional(),
   tiene_usado:          z.boolean().default(false),
+  // Cotización del usado a crear junto con el lead (opcional aunque tiene_usado).
+  usado:                usadoInlineSchema.optional(),
   observaciones:        z.string().optional(),
   est_value:            z.number().positive().optional(),
   next_action:          z.string().optional(),

@@ -7,9 +7,11 @@ import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/le
 import { logAudit } from '@/lib/audit/log'
 import {
   requireTenant, appendTimeline, getTenantSlaConfig, assertLeadAccess,
-  pendingCallAtSql, openApptAtSql, openApptTipoSql,
+  pendingCallAtSql, openApptAtSql, openApptTipoSql, usadoValorSql, usadoRechazadoSql,
 } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
+import { serializeHorarios } from '@/lib/leads/horarios'
+import { calcularUsado } from '@/lib/cotizador/calc'
 import { activeIndex, terminalBlockReason } from '@/lib/leads/state-machine'
 import { type SlaConfig } from '@/lib/leads/sla'
 import {
@@ -76,7 +78,7 @@ export async function createLead(
     source_custom:       data.source_custom ?? null,
     localidad:           data.localidad ?? null,
     provincia:           data.provincia ?? null,
-    horario_preferencia: data.horario_preferencia ?? null,
+    horario_preferencia: serializeHorarios(data.horarios ?? []),
     tiene_usado:         data.tiene_usado ?? false,
     observaciones:       data.observaciones ?? null,
     est_value:           data.est_value?.toString() ?? null,
@@ -94,6 +96,43 @@ export async function createLead(
       .insert(schema.leadSourcesCustom)
       .values({ tenant_id: tenantId, nombre: data.source_custom.trim() })
       .onConflictDoNothing()
+  }
+
+  // Si tiene usado y se cargaron los datos, crear la cotización ya asociada al lead.
+  if (data.tiene_usado && data.usado) {
+    const u = data.usado
+    const result = calcularUsado({
+      baseInfoauto: u.base_infoauto,
+      km:           u.km,
+      anio:         u.anio,
+      uso:          u.uso,
+      provincia:    data.provincia ?? undefined,
+    })
+    await dbAdmin.insert(schema.cotizaciones).values({
+      tenant_id:       tenantId,
+      lead_id:         row.id,
+      marca_modelo:    u.marca_modelo ?? null,
+      anio:            u.anio,
+      km:              u.km,
+      uso:             u.uso,
+      base_infoauto:   u.base_infoauto.toString(),
+      descuento_pct:   result.descuentoPct.toString(),
+      valor_calculado: result.valorCalculado.toString(),
+      override_valor:  null,
+      valor_final:     result.valorCalculado.toString(),
+      rechazado:       result.rechazado,
+      rechazo_motivo:  result.rechazoMotivo ?? null,
+      condiciones:     result.condiciones,
+      created_by:      user.id,
+    })
+    await appendTimeline(
+      tenantId, row.id, user.id,
+      'cotizacion_created',
+      result.rechazado ? 'Usado cotizado — rechazado' : 'Usado cotizado',
+      result.rechazado
+        ? (result.rechazoMotivo ?? undefined)
+        : `Valor de toma estimado: $${result.valorCalculado.toLocaleString('es-AR')}`,
+    )
   }
 
   const assignedName = effectiveAssignedTo ? await getVendedorName(effectiveAssignedTo) : null
@@ -639,6 +678,8 @@ export async function getMyLeads() {
         pending_call_at: pendingCallAtSql,
         open_appt_at:    openApptAtSql,
         open_appt_tipo:  openApptTipoSql,
+        usado_valor:     usadoValorSql,
+        usado_rechazado: usadoRechazadoSql,
       })
       .from(schema.leads)
       .where(
@@ -964,7 +1005,7 @@ export async function getLeadDetail(leadId: string) {
   const accessible = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
   if (!accessible) return null
 
-  const [lead, notes, timeline, tasks, calls, appts] = await Promise.all([
+  const [lead, notes, timeline, tasks, calls, appts, cotizaciones] = await Promise.all([
     dbAdmin
       .select()
       .from(schema.leads)
@@ -1031,6 +1072,16 @@ export async function getLeadDetail(leadId: string) {
         eq(schema.leadAppointments.tenant_id, tenantId),
       ))
       .limit(1),
+
+    // Cotizaciones del usado asociadas al lead (más reciente primero)
+    dbAdmin
+      .select()
+      .from(schema.cotizaciones)
+      .where(and(
+        eq(schema.cotizaciones.lead_id, leadId),
+        eq(schema.cotizaciones.tenant_id, tenantId),
+      ))
+      .orderBy(desc(schema.cotizaciones.created_at)),
   ])
 
   if (!lead[0]) return null
@@ -1046,5 +1097,5 @@ export async function getLeadDetail(leadId: string) {
 
   const creator_nombre = creatorRow[0]?.alias || creatorRow[0]?.nombre || null
 
-  return { lead: { ...lead[0], creator_nombre }, notes, timeline, tasks, calls, anyAppointment: appts.length > 0 }
+  return { lead: { ...lead[0], creator_nombre }, notes, timeline, tasks, calls, cotizaciones, anyAppointment: appts.length > 0 }
 }
