@@ -25,7 +25,6 @@ export default async function CitasPage() {
   return (
     <AppointmentsView
       initialAppointments={appointments}
-      initialMonth={startOfMonth(now)}
       vendedores={vendedores}
     />
   )

@@ -9,6 +9,7 @@ import { getAuditLogs } from '@/app/actions/audit'
 import { getTenantSlaConfig } from '@/lib/leads/server-helpers'
 import { DEFAULT_SLA } from '@/lib/leads/sla'
 import { ConfiguracionView } from '@/components/config/configuracion-view'
+import { currentYearMonthAR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,9 +21,7 @@ export default async function ConfiguracionPage({
   const sp = await searchParams
   const tab = typeof sp.tab === 'string' ? sp.tab : 'cuenta'
 
-  const now         = new Date()
-  const currentYear = now.getFullYear()
-  const currentMonth = now.getMonth() + 1
+  const { year: currentYear, month: currentMonth } = currentYearMonthAR()
 
   const [user, tenant, miembros, equipos, modelos, sourcesCustom, vendedores, metas, auditLogs] =
     await Promise.all([

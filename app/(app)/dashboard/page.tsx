@@ -5,6 +5,7 @@ import { eq, and, count, sql } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { DashboardView } from '@/components/dashboard/dashboard-view'
 import { getAttentionSummary } from '@/app/actions/leads'
+import { startOfCurrentMonthAR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +16,7 @@ export default async function DashboardPage() {
   ])
   if (!tenantId) redirect('/login')
 
-  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+  const startOfMonth = startOfCurrentMonthAR().toISOString()
 
   // ── Aggregate queries ────────────────────────────────────────
 

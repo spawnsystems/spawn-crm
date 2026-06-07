@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { PerformanceView } from '@/components/performance/performance-view'
 import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
 import { getMyLeads } from '@/app/actions/leads'
+import { startOfCurrentMonthAR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,7 +17,7 @@ export default async function PerformancePage() {
   ])
   if (!tenantId) redirect('/login')
 
-  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+  const startOfMonth = startOfCurrentMonthAR().toISOString()
 
   const [myLeads, teamRankRaw] = await Promise.all([
     // Mis leads (enriquecidos con el estado de atención del engine)

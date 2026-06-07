@@ -67,15 +67,17 @@ function shiftAnchor(view: CalendarView, anchor: Date, dir: 1 | -1): Date {
 
 interface AppointmentsViewProps {
   initialAppointments: ApptRow[]
-  initialMonth:        Date
   vendedores?:         VendedorRow[]
 }
 
 export function AppointmentsView({
-  initialAppointments, initialMonth, vendedores = [],
+  initialAppointments, vendedores = [],
 }: AppointmentsViewProps) {
   const [view,         setView]         = useState<CalendarView>('month')
-  const [anchor,       setAnchor]       = useState(initialMonth)
+  // El ancla se computa en el cliente para evitar el corrimiento de timezone
+  // (una Date de "inicio de mes" creada en el server en UTC se interpreta en
+  // AR como el mes anterior). Acá siempre arranca en el mes actual local.
+  const [anchor,       setAnchor]       = useState(() => startOfMonth(new Date()))
   const [appts,        setAppts]        = useState<ApptRow[]>(initialAppointments)
   const [loading,      setLoading]      = useState(false)
 

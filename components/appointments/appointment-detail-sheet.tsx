@@ -56,7 +56,8 @@ export function AppointmentDetailSheet({
   return (
     <>
       <Sheet open={!!appt} onOpenChange={(o) => !o && onClose()}>
-        <SheetContent className="w-full sm:max-w-lg p-0 overflow-y-auto">
+        {/* [&>button]:hidden oculta el X de cierre por defecto de shadcn */}
+        <SheetContent className="w-full sm:max-w-lg p-0 overflow-y-auto [&>button]:hidden">
           {appt && (
             <>
               {/* ── Header ── */}

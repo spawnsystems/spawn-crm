@@ -70,6 +70,28 @@ export function fmtDateKeyAR(date: Date | string | number): string {
 }
 
 /**
+ * Inicio del mes actual en horario Argentina, como instante UTC.
+ * Para filtros server-side "del mes" que deben respetar el calendario AR
+ * sin importar el timezone del servidor (Vercel/Supabase corren en UTC).
+ * AR es UTC-3 fijo (sin horario de verano) → 00:00 AR = 03:00 UTC.
+ */
+export function startOfCurrentMonthAR(): Date {
+  const { year, month } = currentYearMonthAR()
+  return new Date(Date.UTC(year, month - 1, 1, 3, 0, 0, 0))
+}
+
+/** Año y mes (1-12) actuales en horario Argentina, sin importar el TZ del server. */
+export function currentYearMonthAR(): { year: number; month: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BA_TZ, year: 'numeric', month: '2-digit',
+  }).formatToParts(new Date())
+  return {
+    year:  Number(parts.find((p) => p.type === 'year')!.value),
+    month: Number(parts.find((p) => p.type === 'month')!.value),
+  }
+}
+
+/**
  * Formatea una fecha como tiempo relativo en español rioplatense.
  * Reemplaza las copias previas que vivían en leads-view.tsx y all-leads-view.tsx.
  *

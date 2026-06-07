@@ -7,6 +7,7 @@ import { TeamView } from '@/components/team/team-view'
 import { getEquiposConMiembros, getMiembrosDelTenant } from '@/app/actions/equipos'
 import { getTeamAttentionCountByUser } from '@/lib/leads/server-helpers'
 import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
+import { startOfCurrentMonthAR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +19,7 @@ export default async function EquipoPage() {
   if (!tenantId) redirect('/login')
 
   const canManage = ['dueno', 'gerente'].includes(user.rol)
-  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+  const startOfMonth = startOfCurrentMonthAR().toISOString()
 
   // Scope del usuario actual
   const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
