@@ -1,7 +1,10 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { format, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay } from 'date-fns'
+import {
+  format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay,
+  addMonths, addDays, eachDayOfInterval,
+} from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -14,96 +17,147 @@ import {
 } from '@/components/ui/dialog'
 import { AppointmentDetailSheet } from '@/components/appointments/appointment-detail-sheet'
 import { AppointmentDialog } from '@/components/leads/appointment-dialog'
-import { cn, fmtDateKeyAR, toBADate } from '@/lib/utils'
+import { MonthGrid } from '@/components/appointments/calendar/month-grid'
+import { TimeGrid } from '@/components/appointments/calendar/time-grid'
+import { DayDetailDialog } from '@/components/appointments/calendar/day-detail-dialog'
+import { type ApptRow, type CalendarView } from '@/components/appointments/calendar/shared'
+import { cn } from '@/lib/utils'
 import {
-  ChevronLeft, ChevronRight, Plus, Search, CalendarCheck,
+  ChevronLeft, ChevronRight, Plus, Search,
 } from 'lucide-react'
 import { getAppointmentsInRange } from '@/app/actions/appointments'
 import { getAllLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import {
-  appointmentTipoValues,
-  appointmentStatusValues,
-  APPOINTMENT_TIPO_LABEL,
-  APPOINTMENT_STATUS_LABEL,
+  appointmentTipoValues, appointmentStatusValues,
+  APPOINTMENT_TIPO_LABEL, APPOINTMENT_STATUS_LABEL,
 } from '@/lib/schemas/appointments'
 
-// ── Types ─────────────────────────────────────────────────────────
-
-type ApptRow    = Awaited<ReturnType<typeof getAppointmentsInRange>>[number]
-type LeadRow    = Awaited<ReturnType<typeof getAllLeads>>[number]
+type LeadRow     = Awaited<ReturnType<typeof getAllLeads>>[number]
 type VendedorRow = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 
 const ALL = '__all__'
 
-// ── Props ─────────────────────────────────────────────────────────
+const VIEW_LABEL: Record<CalendarView, string> = {
+  month: 'Mes', week: 'Semana', day: 'Día',
+}
+
+// Rango a consultar según la vista (el mes incluye días de semanas vecinas).
+function rangeFor(view: CalendarView, anchor: Date): { from: Date; to: Date } {
+  if (view === 'month') {
+    return {
+      from: startOfWeek(startOfMonth(anchor), { weekStartsOn: 1 }),
+      to:   endOfWeek(endOfMonth(anchor),     { weekStartsOn: 1 }),
+    }
+  }
+  if (view === 'week') {
+    return {
+      from: startOfWeek(anchor, { weekStartsOn: 1 }),
+      to:   endOfWeek(anchor,   { weekStartsOn: 1 }),
+    }
+  }
+  return { from: startOfDay(anchor), to: endOfDay(anchor) }
+}
+
+function shiftAnchor(view: CalendarView, anchor: Date, dir: 1 | -1): Date {
+  if (view === 'month') return addMonths(anchor, dir)
+  if (view === 'week')  return addDays(anchor, dir * 7)
+  return addDays(anchor, dir)
+}
 
 interface AppointmentsViewProps {
   initialAppointments: ApptRow[]
   initialMonth:        Date
-  vendedores?:         VendedorRow[]  // populated for supervisor+ roles
+  vendedores?:         VendedorRow[]
 }
-
-// ── Component ─────────────────────────────────────────────────────
 
 export function AppointmentsView({
   initialAppointments, initialMonth, vendedores = [],
 }: AppointmentsViewProps) {
-  const [month,           setMonth]           = useState(initialMonth)
-  const [appointments,    setAppointments]     = useState<ApptRow[]>(initialAppointments)
-  const [filterTipo,      setFilterTipo]       = useState(ALL)
-  const [filterStatus,    setFilterStatus]     = useState<string>('programada')
-  const [filterVend,      setFilterVend]       = useState(ALL)
-  const [showCanceladas,  setShowCanceladas]   = useState(false)
-  const [isLoadingMonth,  setIsLoadingMonth]   = useState(false)
-  const [selectedAppt,    setSelectedAppt]     = useState<ApptRow | null>(null)
+  const [view,         setView]         = useState<CalendarView>('month')
+  const [anchor,       setAnchor]       = useState(initialMonth)
+  const [appts,        setAppts]        = useState<ApptRow[]>(initialAppointments)
+  const [loading,      setLoading]      = useState(false)
 
-  // Nueva cita flow — step 1: select lead
-  const [showLeadSelect,  setShowLeadSelect]   = useState(false)
-  const [leadSearch,      setLeadSearch]       = useState('')
-  const [leads,           setLeads]            = useState<LeadRow[]>([])
-  const [loadingLeads,    setLoadingLeads]      = useState(false)
+  const [filterTipo,   setFilterTipo]   = useState(ALL)
+  const [filterStatus, setFilterStatus] = useState<string>(ALL)
+  const [filterVend,   setFilterVend]   = useState(ALL)
+  const [showCanceladas, setShowCanceladas] = useState(false)
 
-  // Nueva cita flow — step 2: appointment dialog
-  const [selectedLead,    setSelectedLead]     = useState<LeadRow | null>(null)
-  const [showApptDialog,  setShowApptDialog]   = useState(false)
+  const [selectedAppt, setSelectedAppt] = useState<ApptRow | null>(null)
+  const [dayDetail,    setDayDetail]    = useState<Date | null>(null)
 
-  // ── Helpers ──────────────────────────────────────────────────
+  // Nueva cita
+  const [showLeadSelect, setShowLeadSelect] = useState(false)
+  const [leadSearch,     setLeadSearch]     = useState('')
+  const [leads,          setLeads]          = useState<LeadRow[]>([])
+  const [loadingLeads,   setLoadingLeads]   = useState(false)
+  const [selectedLead,   setSelectedLead]   = useState<LeadRow | null>(null)
+  const [showApptDialog, setShowApptDialog] = useState(false)
 
-  async function fetchMonth(
-    newMonth:         Date,
-    includeCancelled: boolean = showCanceladas,
-    vendedorId:       string  = filterVend,
+  // ── Carga ──────────────────────────────────────────────────────
+  async function load(
+    v:      CalendarView,
+    a:      Date,
+    vend:   string  = filterVend,
+    cancel: boolean = showCanceladas,
   ) {
-    setIsLoadingMonth(true)
-    setMonth(newMonth)
-    const from = startOfMonth(newMonth)
-    const to   = endOfMonth(newMonth)
+    setView(v)
+    setAnchor(a)
+    setLoading(true)
+    const { from, to } = rangeFor(v, a)
     try {
       const res = await getAppointmentsInRange(from, to, {
-        includeCancelled,
-        vendedorId: vendedorId !== ALL ? vendedorId : undefined,
+        includeCancelled: cancel,
+        vendedorId:       vend !== ALL ? vend : undefined,
       })
-      setAppointments(res)
+      setAppts(res)
     } catch {
       toast.error('No se pudieron cargar las citas')
     } finally {
-      setIsLoadingMonth(false)
+      setLoading(false)
     }
   }
 
-  async function refresh() {
-    await fetchMonth(month)
-  }
+  function refresh() { return load(view, anchor) }
 
+  // ── Filtro cliente (tipo / estado) ─────────────────────────────
+  const filtered = useMemo(() => appts.filter((a) => {
+    if (filterTipo   !== ALL && a.tipo   !== filterTipo)   return false
+    if (filterStatus !== ALL && a.status !== filterStatus) return false
+    if (!showCanceladas && a.status === 'cancelada')        return false
+    return true
+  }), [appts, filterTipo, filterStatus, showCanceladas])
+
+  // Días para las vistas de grilla horaria
+  const gridDays = useMemo(() => {
+    if (view === 'week') {
+      return eachDayOfInterval({
+        start: startOfWeek(anchor, { weekStartsOn: 1 }),
+        end:   endOfWeek(anchor,   { weekStartsOn: 1 }),
+      })
+    }
+    if (view === 'day') return [anchor]
+    return []
+  }, [view, anchor])
+
+  // Título según vista
+  const title = useMemo(() => {
+    if (view === 'month') return format(anchor, 'MMMM yyyy', { locale: es })
+    if (view === 'day')   return format(anchor, "EEEE d 'de' MMMM", { locale: es })
+    const ws = startOfWeek(anchor, { weekStartsOn: 1 })
+    const we = endOfWeek(anchor,   { weekStartsOn: 1 })
+    return `${format(ws, 'd MMM', { locale: es })} – ${format(we, 'd MMM yyyy', { locale: es })}`
+  }, [view, anchor])
+
+  // ── Nueva cita ─────────────────────────────────────────────────
   async function handleOpenLeadSelect() {
     setLeadSearch('')
     setShowLeadSelect(true)
     if (leads.length === 0) {
       setLoadingLeads(true)
       try {
-        const all = await getAllLeads()
-        setLeads(all)
+        setLeads(await getAllLeads())
       } catch {
         toast.error('No se pudo cargar la lista de leads')
       } finally {
@@ -112,106 +166,81 @@ export function AppointmentsView({
     }
   }
 
-  // ── Derived ──────────────────────────────────────────────────
-
-  const filtered = useMemo(() => appointments.filter((a) => {
-    if (filterTipo   !== ALL && a.tipo   !== filterTipo)   return false
-    if (filterStatus !== ALL && a.status !== filterStatus) return false
-    if (!showCanceladas && a.status === 'cancelada')        return false
-    return true
-  }), [appointments, filterTipo, filterStatus, showCanceladas])
-
-  // Group by day
-  const grouped = useMemo(() => {
-    const map = new Map<string, ApptRow[]>()
-    for (const a of filtered) {
-      const key = fmtDateKeyAR(a.scheduled_at)
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(a)
-    }
-    return Array.from(map.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, items]) => ({ date: new Date(`${key}T12:00:00`), items }))
-  }, [filtered])
-
-  // Lead search
   const filteredLeads = useMemo(() => {
     if (!leadSearch.trim()) return leads.slice(0, 25)
     const q = leadSearch.toLowerCase()
     return leads.filter((l) =>
-      l.nombre.toLowerCase().includes(q) ||
-      (l.modelo ?? '').toLowerCase().includes(q),
+      l.nombre.toLowerCase().includes(q) || (l.modelo ?? '').toLowerCase().includes(q),
     ).slice(0, 25)
   }, [leads, leadSearch])
 
-  // ── Render ───────────────────────────────────────────────────
-
+  // ── Render ─────────────────────────────────────────────────────
   return (
-    <div className="p-4 md:p-8 max-w-[1100px] mx-auto">
+    <div className="p-4 md:p-6 max-w-[1400px] mx-auto">
 
-      {/* ── Header ── */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-5">
-        <div>
+      {/* Header */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-4">
+        <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">Citas</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {filtered.length} cita{filtered.length !== 1 ? 's' : ''} · {format(month, 'MMMM yyyy', { locale: es })}
-          </p>
+          <span className="text-sm text-muted-foreground capitalize">{title}</span>
         </div>
-        <Button size="sm" className="gap-1.5 self-start" onClick={handleOpenLeadSelect}>
-          <Plus className="size-3.5" />Nueva cita
-        </Button>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Hoy + navegación */}
+          <Button size="sm" variant="outline" className="h-9" onClick={() => load(view, new Date())} disabled={loading}>
+            Hoy
+          </Button>
+          <div className="flex items-center gap-0.5 rounded-lg border border-border px-1 py-0.5">
+            <Button size="icon" variant="ghost" className="size-8" disabled={loading}
+              onClick={() => load(view, shiftAnchor(view, anchor, -1))}>
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button size="icon" variant="ghost" className="size-8" disabled={loading}
+              onClick={() => load(view, shiftAnchor(view, anchor, 1))}>
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+
+          {/* Switcher de vista */}
+          <div className="flex items-center rounded-lg border border-border p-0.5">
+            {(['month', 'week', 'day'] as CalendarView[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => load(v, anchor)}
+                className={cn(
+                  'px-3 h-8 rounded-md text-sm font-medium transition-colors',
+                  view === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {VIEW_LABEL[v]}
+              </button>
+            ))}
+          </div>
+
+          <Button size="sm" className="h-9 gap-1.5" onClick={handleOpenLeadSelect}>
+            <Plus className="size-3.5" />Nueva cita
+          </Button>
+        </div>
       </div>
 
-      {/* ── Controls ── */}
-      <div className="flex flex-wrap items-center gap-2 mb-6">
-
-        {/* Month navigator */}
-        <div className="flex items-center gap-0.5 rounded-lg border border-border px-1 py-0.5">
-          <Button
-            size="icon" variant="ghost" className="size-8"
-            onClick={() => fetchMonth(subMonths(month, 1))}
-            disabled={isLoadingMonth}
-          >
-            <ChevronLeft className="size-4" />
-          </Button>
-          <span className="text-sm font-medium capitalize min-w-[140px] text-center px-1 select-none">
-            {format(month, 'MMMM yyyy', { locale: es })}
-          </span>
-          <Button
-            size="icon" variant="ghost" className="size-8"
-            onClick={() => fetchMonth(addMonths(month, 1))}
-            disabled={isLoadingMonth}
-          >
-            <ChevronRight className="size-4" />
-          </Button>
-        </div>
-
-        {/* Vendedor — solo si hay lista (supervisor+) */}
+      {/* Filtros */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         {vendedores.length > 0 && (
-          <Select
-            value={filterVend}
-            onValueChange={(v) => {
-              setFilterVend(v)
-              void fetchMonth(month, showCanceladas, v)
-            }}
-          >
+          <Select value={filterVend} onValueChange={(v) => { setFilterVend(v); void load(view, anchor, v, showCanceladas) }}>
             <SelectTrigger className={cn('h-9 w-44 text-sm', filterVend !== ALL && 'border-primary text-primary')}>
               <SelectValue placeholder="Vendedor" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL}>Todos los vendedores</SelectItem>
               {vendedores.map((v) => (
-                <SelectItem key={v.user_id} value={v.user_id}>
-                  {v.alias || v.nombre || v.user_id}
-                </SelectItem>
+                <SelectItem key={v.user_id} value={v.user_id}>{v.alias || v.nombre || v.user_id}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
 
-        {/* Tipo */}
         <Select value={filterTipo} onValueChange={setFilterTipo}>
-          <SelectTrigger className={cn('h-9 w-44 text-sm', filterTipo !== ALL && 'border-primary text-primary')}>
+          <SelectTrigger className={cn('h-9 w-40 text-sm', filterTipo !== ALL && 'border-primary text-primary')}>
             <SelectValue placeholder="Tipo" />
           </SelectTrigger>
           <SelectContent>
@@ -222,7 +251,6 @@ export function AppointmentsView({
           </SelectContent>
         </Select>
 
-        {/* Status */}
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className={cn('h-9 w-40 text-sm', filterStatus !== ALL && 'border-primary text-primary')}>
             <SelectValue placeholder="Estado" />
@@ -231,82 +259,59 @@ export function AppointmentsView({
             <SelectItem value={ALL}>Todos los estados</SelectItem>
             {appointmentStatusValues
               .filter((s) => showCanceladas || s !== 'cancelada')
-              .map((s) => (
-                <SelectItem key={s} value={s}>{APPOINTMENT_STATUS_LABEL[s]}</SelectItem>
-              ))}
+              .map((s) => <SelectItem key={s} value={s}>{APPOINTMENT_STATUS_LABEL[s]}</SelectItem>)}
           </SelectContent>
         </Select>
 
-        {/* Toggle canceladas */}
         <Button
           size="sm"
           variant={showCanceladas ? 'secondary' : 'ghost'}
           className="h-9 text-xs"
-          onClick={() => {
-            const next = !showCanceladas
-            setShowCanceladas(next)
-            void fetchMonth(month, next)
-          }}
+          onClick={() => { const n = !showCanceladas; setShowCanceladas(n); void load(view, anchor, filterVend, n) }}
         >
           {showCanceladas ? 'Ocultar canceladas' : 'Mostrar canceladas'}
         </Button>
+
+        {/* Leyenda de tipos */}
+        <div className="ml-auto hidden md:flex items-center gap-3 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-emerald-600" />Cierre</span>
+          <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-violet-500" />Visita</span>
+          <span className="inline-flex items-center gap-1"><span className="size-2.5 rounded-full bg-sky-500" />Videollamada</span>
+        </div>
       </div>
 
-      {/* ── Agenda view ── */}
-      <div className={cn('transition-opacity duration-150', isLoadingMonth && 'opacity-40 pointer-events-none')}>
-        {isLoadingMonth && grouped.length === 0 ? (
-          // Skeleton while first load of a new month
-          <div className="space-y-7">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="animate-pulse">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-11 h-11 rounded-lg bg-muted" />
-                  <div className="space-y-1.5">
-                    <div className="h-3.5 w-36 bg-muted rounded" />
-                    <div className="h-2.5 w-16 bg-muted/60 rounded" />
-                  </div>
-                </div>
-                <div className="ml-[56px] space-y-2">
-                  <div className="h-16 rounded-lg bg-muted/60" />
-                  {i === 0 && <div className="h-16 rounded-lg bg-muted/40" />}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : grouped.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <CalendarCheck className="size-10 text-muted-foreground/25 mb-3" />
-            <p className="text-sm font-medium text-muted-foreground">Sin citas para este período</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">
-              Organizá una cita desde la ficha de un lead o usá el botón "Nueva cita".
-            </p>
-          </div>
+      {/* Calendario */}
+      <div className={cn('transition-opacity', loading && 'opacity-50 pointer-events-none')}>
+        {view === 'month' ? (
+          <MonthGrid
+            anchor={anchor}
+            appts={filtered}
+            onApptClick={setSelectedAppt}
+            onMore={(d) => setDayDetail(d)}
+            onDayClick={(d) => load('day', d)}
+          />
         ) : (
-          <div className="space-y-7">
-            {grouped.map(({ date, items }) => (
-              <DaySection
-                key={date.toISOString()}
-                date={date}
-                items={items}
-                onApptClick={setSelectedAppt}
-              />
-            ))}
-          </div>
+          <TimeGrid days={gridDays} appts={filtered} onApptClick={setSelectedAppt} />
         )}
       </div>
 
-      {/* ── Appointment detail sheet ── */}
+      {/* Detalle de cita */}
       <AppointmentDetailSheet
         appointment={selectedAppt}
         onClose={() => setSelectedAppt(null)}
         onUpdated={refresh}
       />
 
-      {/* ── Lead select dialog ── */}
-      <Dialog
-        open={showLeadSelect}
-        onOpenChange={(v) => { if (!v) { setShowLeadSelect(false); setLeadSearch('') } }}
-      >
+      {/* Detalle del día (+N más) */}
+      <DayDetailDialog
+        date={dayDetail}
+        appts={filtered}
+        onClose={() => setDayDetail(null)}
+        onApptClick={(a) => { setDayDetail(null); setSelectedAppt(a) }}
+      />
+
+      {/* Nueva cita — paso 1: elegir lead */}
+      <Dialog open={showLeadSelect} onOpenChange={(v) => { if (!v) { setShowLeadSelect(false); setLeadSearch('') } }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Elegir lead para la cita</DialogTitle>
@@ -329,23 +334,15 @@ export function AppointmentsView({
                 {filteredLeads.map((l) => (
                   <button
                     key={l.id}
-                    onClick={() => {
-                      setSelectedLead(l)
-                      setShowLeadSelect(false)
-                      setShowApptDialog(true)
-                    }}
+                    onClick={() => { setSelectedLead(l); setShowLeadSelect(false); setShowApptDialog(true) }}
                     className="w-full text-left rounded-lg px-3 py-2 hover:bg-muted transition-colors"
                   >
                     <div className="text-sm font-medium">{l.nombre}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {l.modelo ?? 'Sin modelo'} · {l.status}
-                    </div>
+                    <div className="text-xs text-muted-foreground">{l.modelo ?? 'Sin modelo'} · {l.status}</div>
                   </button>
                 ))}
                 {filteredLeads.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-6">
-                    No se encontraron leads.
-                  </p>
+                  <p className="text-sm text-muted-foreground text-center py-6">No se encontraron leads.</p>
                 )}
               </div>
             )}
@@ -353,125 +350,17 @@ export function AppointmentsView({
         </DialogContent>
       </Dialog>
 
-      {/* ── Appointment dialog (after lead selection) ── */}
+      {/* Nueva cita — paso 2 */}
       {selectedLead && (
         <AppointmentDialog
           open={showApptDialog}
-          onOpenChange={(v) => {
-            if (!v) { setShowApptDialog(false); setSelectedLead(null) }
-          }}
+          onOpenChange={(v) => { if (!v) { setShowApptDialog(false); setSelectedLead(null) } }}
           leadId={selectedLead.id}
           leadNombre={selectedLead.nombre}
           defaultModelo={selectedLead.modelo}
-          onCreated={() => {
-            setShowApptDialog(false)
-            setSelectedLead(null)
-            void refresh()
-          }}
+          onCreated={() => { setShowApptDialog(false); setSelectedLead(null); void refresh() }}
         />
       )}
-    </div>
-  )
-}
-
-// ── DaySection ─────────────────────────────────────────────────────
-
-function DaySection({
-  date, items, onApptClick,
-}: {
-  date:        Date
-  items:       ApptRow[]
-  onApptClick: (a: ApptRow) => void
-}) {
-  const isToday = isSameDay(date, new Date())
-
-  return (
-    <div>
-      {/* Day header */}
-      <div className="flex items-center gap-3 mb-3">
-        <div className={cn(
-          'flex flex-col items-center justify-center rounded-lg w-11 h-11 shrink-0 border select-none',
-          isToday
-            ? 'bg-primary text-primary-foreground border-primary'
-            : 'bg-muted/40 border-border',
-        )}>
-          <span className="text-[9px] font-semibold uppercase leading-none tracking-wider">
-            {format(date, 'EEE', { locale: es }).replace('.', '')}
-          </span>
-          <span className="text-xl font-bold leading-tight">{format(date, 'd')}</span>
-        </div>
-        <div>
-          <div className="text-sm font-semibold capitalize">
-            {format(date, "EEEE d 'de' MMMM", { locale: es })}
-          </div>
-          <div className="text-[11px] text-muted-foreground">
-            {items.length} cita{items.length !== 1 ? 's' : ''}
-          </div>
-        </div>
-      </div>
-
-      {/* Cards */}
-      <div className="ml-[56px] space-y-2">
-        {items.map((appt) => (
-          <ApptCard key={appt.id} appt={appt} onClick={() => onApptClick(appt)} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ── ApptCard ──────────────────────────────────────────────────────
-
-const CARD_ACCENT: Record<string, string> = {
-  programada:     'border-l-violet-400',
-  realizada:      'border-l-emerald-400',
-  no_se_presento: 'border-l-destructive/50',
-  reagendada:     'border-l-amber-400',
-  cancelada:      'border-l-muted-foreground/20',
-}
-
-function ApptCard({ appt, onClick }: { appt: ApptRow; onClick: () => void }) {
-  const apptDate = toBADate(appt.scheduled_at)
-  const dur      = appt.duration_min
-  const isPast   = appt.status === 'programada' && new Date(appt.scheduled_at).getTime() < Date.now()
-
-  return (
-    <div
-      onClick={onClick}
-      className={cn(
-        'relative rounded-lg border bg-card p-3 cursor-pointer',
-        'hover:shadow-md transition-shadow border-l-4',
-        isPast ? 'border-l-amber-400' : (CARD_ACCENT[appt.status] ?? 'border-l-primary/40'),
-        appt.status === 'cancelada' && 'opacity-50',
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold truncate">{appt.lead_nombre ?? 'Lead'}</span>
-            <span className="text-[11px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-medium shrink-0">
-              {APPOINTMENT_TIPO_LABEL[appt.tipo]}
-            </span>
-            {isPast && (
-              <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200/60 rounded-full px-1.5 py-0.5 font-medium shrink-0">
-                Pasada
-              </span>
-            )}
-          </div>
-          <div className="mt-0.5 text-xs text-muted-foreground">
-            {format(apptDate, 'HH:mm')}
-            {' · '}
-            {dur < 60 ? `${dur} min` : `${dur / 60} h`}
-            {appt.lugar && ` · ${appt.lugar}`}
-          </div>
-        </div>
-
-        {(appt.vendedor_alias || appt.vendedor_nombre) && (
-          <div className="text-[11px] text-muted-foreground shrink-0 text-right">
-            {appt.vendedor_alias || appt.vendedor_nombre}
-          </div>
-        )}
-      </div>
     </div>
   )
 }
