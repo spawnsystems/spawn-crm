@@ -504,85 +504,24 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
               </div>
             </SheetHeader>
 
-            {/* ── Next action card ── */}
-            <div className="pt-4">
-              <NextActionCard
-                lead={lead}
-                nextAppointment={nextAppointment}
-                onLeadUpdated={refreshAll}
-                onRegisterCall={() => setRegisterTarget({ leadId: lead.id })}
-              />
-            </div>
-
-            {/* ── Usado en parte de pago ── */}
-            {lead.tiene_usado && (
-              <div className="mx-6 mb-4 rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3">
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <div className="flex items-center gap-1.5">
-                    <Car className="size-4 text-amber-700 shrink-0" />
-                    <span className="text-sm font-semibold text-amber-800">Usado en parte de pago</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0 h-7 gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-100"
-                    onClick={() => setShowCotizador(true)}
-                  >
-                    <Calculator className="size-3.5" />
-                    {cotizaciones.length > 0 ? 'Nueva cotización' : 'Cotizar usado'}
-                  </Button>
-                </div>
-
-                {cotizaciones.length === 0 ? (
-                  <p className="text-xs text-amber-700/70">
-                    Todavía sin cotizar. Calculá el valor de toma con las reglas InfoAuto.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {cotizaciones.map((c, idx) => (
-                      <div
-                        key={c.id}
-                        className={cn(
-                          'rounded-lg border px-3 py-2 bg-white/70',
-                          c.rechazado ? 'border-rose-200' : 'border-emerald-200',
-                          idx > 0 && 'opacity-70',
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">
-                              {c.marca_modelo || 'Usado'}
-                              {c.anio ? <span className="text-muted-foreground font-normal"> · {c.anio}</span> : null}
-                              {typeof c.km === 'number' ? <span className="text-muted-foreground font-normal"> · {c.km.toLocaleString('es-AR')} km</span> : null}
-                            </div>
-                            <div className="text-[11px] text-muted-foreground">
-                              {idx === 0 ? 'Última cotización' : 'Anterior'} · {fmtDayMonthAR(c.created_at)}
-                            </div>
-                          </div>
-                          {c.rechazado ? (
-                            <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5">
-                              <AlertTriangle className="size-3" />Rechazado
-                            </span>
-                          ) : (
-                            <div className="shrink-0 text-right">
-                              <div className="text-[10px] text-muted-foreground leading-none">
-                                Valor de toma{c.descuento_pct ? ` · −${Number(c.descuento_pct)}%` : ''}
-                              </div>
-                              <div className="text-sm font-semibold text-emerald-700">
-                                {formatCurrencyARS(c.valor_final)}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        {c.rechazado && c.rechazo_motivo && (
-                          <p className="text-[11px] text-rose-700/70 mt-1">{c.rechazo_motivo}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {/* ── Acción principal + Usado (lado a lado si hay usado) ── */}
+            <div className={cn(
+              'px-6 pt-4 mb-4',
+              lead.tiene_usado && 'grid grid-cols-1 lg:grid-cols-2 gap-4 items-start',
+            )}>
+              {/* wrapper para que el fragment de NextActionCard sea un solo ítem del grid */}
+              <div>
+                <NextActionCard
+                  lead={lead}
+                  nextAppointment={nextAppointment}
+                  onLeadUpdated={refreshAll}
+                  onRegisterCall={() => setRegisterTarget({ leadId: lead.id })}
+                />
               </div>
-            )}
+              {lead.tiene_usado && (
+                <UsadoCard cotizaciones={cotizaciones} onCotizar={() => setShowCotizador(true)} />
+              )}
+            </div>
 
             {/* ── Edit form ── */}
             {editing && (
@@ -1046,6 +985,86 @@ function Section({ icon, title, children }: {
         {title}
       </div>
       {children}
+    </div>
+  )
+}
+
+// ── UsadoCard ─────────────────────────────────────────────────────
+// Resumen del usado en parte de pago + sus cotizaciones. El lápiz abre
+// el cotizador (nueva cotización). Pensada para ir al lado de la card de
+// acción principal en el grid del sheet.
+
+function UsadoCard({
+  cotizaciones, onCotizar,
+}: {
+  cotizaciones: NonNullable<DetailData>['cotizaciones']
+  onCotizar:    () => void
+}) {
+  return (
+    <div className="rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3 h-full">
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Car className="size-4 text-amber-700 shrink-0" />
+          <span className="text-sm font-semibold text-amber-800 truncate">Usado en parte de pago</span>
+        </div>
+        <button
+          onClick={onCotizar}
+          title={cotizaciones.length > 0 ? 'Nueva cotización' : 'Cotizar usado'}
+          aria-label={cotizaciones.length > 0 ? 'Nueva cotización' : 'Cotizar usado'}
+          className="shrink-0 p-1.5 rounded text-amber-700 hover:bg-amber-100 transition-colors"
+        >
+          <Pencil className="size-3.5" />
+        </button>
+      </div>
+
+      {cotizaciones.length === 0 ? (
+        <p className="text-xs text-amber-700/70">
+          Todavía sin cotizar. Tocá el lápiz para calcular el valor de toma.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {cotizaciones.map((c, idx) => (
+            <div
+              key={c.id}
+              className={cn(
+                'rounded-lg border px-3 py-2 bg-white/70',
+                c.rechazado ? 'border-rose-200' : 'border-emerald-200',
+                idx > 0 && 'opacity-70',
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate">
+                    {c.marca_modelo || 'Usado'}
+                    {c.anio ? <span className="text-muted-foreground font-normal"> · {c.anio}</span> : null}
+                    {typeof c.km === 'number' ? <span className="text-muted-foreground font-normal"> · {c.km.toLocaleString('es-AR')} km</span> : null}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {idx === 0 ? 'Última cotización' : 'Anterior'} · {fmtDayMonthAR(c.created_at)}
+                  </div>
+                </div>
+                {c.rechazado ? (
+                  <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5">
+                    <AlertTriangle className="size-3" />Rechazado
+                  </span>
+                ) : (
+                  <div className="shrink-0 text-right">
+                    <div className="text-[10px] text-muted-foreground leading-none">
+                      Valor de toma{c.descuento_pct ? ` · −${Number(c.descuento_pct)}%` : ''}
+                    </div>
+                    <div className="text-sm font-semibold text-emerald-700">
+                      {formatCurrencyARS(c.valor_final)}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {c.rechazado && c.rechazo_motivo && (
+                <p className="text-[11px] text-rose-700/70 mt-1">{c.rechazo_motivo}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -64,7 +64,7 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated, onRegiste
   // ── VENTA ─────────────────────────────────────────────────────
   if (lead.status === 'VENTA') {
     return (
-      <div className="mx-6 mb-4 flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-200/60 px-4 py-3">
+      <div className="flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-200/60 px-4 py-3">
         <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
         <div>
           <div className="text-sm font-semibold text-emerald-800">Venta concretada</div>
@@ -80,7 +80,7 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated, onRegiste
   if (isBaja(lead.status)) {
     const rescatable = isRescatable(lead.status)
     return (
-      <div className="mx-6 mb-4 rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3">
+      <div className="rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3">
         <div className="flex items-center gap-2 mb-1.5">
           <LifeBuoy className="size-4 text-amber-600 shrink-0" />
           <span className="text-sm font-semibold text-amber-800">
@@ -122,7 +122,7 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated, onRegiste
 
     return (
       <>
-        <div className="mx-6 mb-4 rounded-xl bg-violet-50 border border-violet-200/60 px-4 py-3">
+        <div className="rounded-xl bg-violet-50 border border-violet-200/60 px-4 py-3">
           {/* Header */}
           <div className="flex items-center gap-2 mb-2">
             <CalendarCheck className="size-4 text-violet-600 shrink-0" />
@@ -278,7 +278,7 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated, onRegiste
   if (lead.status === 'CIERRE') {
     return (
       <>
-        <div className="mx-6 mb-4 rounded-xl bg-emerald-50 border border-emerald-200/60 px-4 py-3">
+        <div className="rounded-xl bg-emerald-50 border border-emerald-200/60 px-4 py-3">
           <div className="flex items-center gap-2 mb-1.5">
             <Trophy className="size-4 text-emerald-600 shrink-0" />
             <span className="text-sm font-semibold text-emerald-900">En proceso de cierre</span>
@@ -358,7 +358,7 @@ function ContactadoCard({
   const isCitado = lead.status === 'ENTREVISTA PACTADA'
 
   return (
-    <div className="mx-6 mb-4 rounded-xl bg-blue-50 border border-blue-200/60 px-4 py-3">
+    <div className="rounded-xl bg-blue-50 border border-blue-200/60 px-4 py-3">
       <div className="flex items-center gap-2 mb-1.5">
         <CalendarCheck className="size-4 text-blue-600 shrink-0" />
         <span className="text-sm font-semibold text-blue-900">
