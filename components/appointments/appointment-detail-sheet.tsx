@@ -9,11 +9,14 @@ import {
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
+import { ResolveAppointmentDialog } from '@/components/leads/resolve-appointment-dialog'
+import { RegistrarVentaDialog } from '@/components/leads/registrar-venta-dialog'
+import { BajaDialog } from '@/components/leads/baja-dialog'
 import {
-  Loader2, CalendarIcon, MapPin, Clock, User, ExternalLink, CheckCircle2, X,
+  Loader2, CalendarIcon, MapPin, Clock, User, ExternalLink, ClipboardCheck, X,
 } from 'lucide-react'
 import { cn, toBADate } from '@/lib/utils'
-import { markAppointmentDone, cancelAppointment } from '@/app/actions/appointments'
+import { cancelAppointment } from '@/app/actions/appointments'
 import {
   APPOINTMENT_TIPO_LABEL,
   APPOINTMENT_STATUS_LABEL,
@@ -37,8 +40,11 @@ export function AppointmentDetailSheet({
   onClose,
   onUpdated,
 }: AppointmentDetailSheetProps) {
-  const [openLeadId, setOpenLeadId] = useState<string | null>(null)
-  const [isPending,  startTransition] = useTransition()
+  const [openLeadId,  setOpenLeadId]  = useState<string | null>(null)
+  const [showResolve, setShowResolve] = useState(false)
+  const [showVenta,   setShowVenta]   = useState(false)
+  const [showBaja,    setShowBaja]    = useState(false)
+  const [isPending,   startTransition] = useTransition()
 
   function run(
     fn:         () => Promise<{ success: boolean; error?: string }>,
@@ -148,15 +154,10 @@ export function AppointmentDetailSheet({
                       size="sm"
                       className="gap-1.5 w-full"
                       disabled={isPending}
-                      onClick={() => run(
-                        () => markAppointmentDone(appt.id),
-                        'Cita marcada como realizada',
-                      )}
+                      onClick={() => setShowResolve(true)}
                     >
-                      {isPending
-                        ? <Loader2 className="size-3.5 animate-spin" />
-                        : <CheckCircle2 className="size-3.5" />}
-                      Marcar como realizada
+                      <ClipboardCheck className="size-3.5" />
+                      Registrar resultado
                     </Button>
                     <Button
                       size="sm"
@@ -168,7 +169,7 @@ export function AppointmentDetailSheet({
                         'Cita cancelada',
                       )}
                     >
-                      <X className="size-3.5" />
+                      {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
                       Cancelar cita
                     </Button>
                   </div>
@@ -184,6 +185,39 @@ export function AppointmentDetailSheet({
         leadId={openLeadId}
         onClose={() => setOpenLeadId(null)}
       />
+
+      {/* Flujo de resultado de cita + sub-diálogos (venta / baja) */}
+      {appt && (
+        <>
+          <ResolveAppointmentDialog
+            open={showResolve}
+            onOpenChange={setShowResolve}
+            appointmentId={appt.id}
+            tipoActual={appt.tipo}
+            onResolved={({ openVenta, openBaja }) => {
+              onUpdated()
+              if (openVenta)      setShowVenta(true)
+              else if (openBaja)  setShowBaja(true)
+              else                onClose()
+            }}
+          />
+          <RegistrarVentaDialog
+            open={showVenta}
+            onOpenChange={setShowVenta}
+            leadId={appt.lead_id}
+            leadNombre={appt.lead_nombre ?? 'Lead'}
+            defaultModelo={appt.modelo_interes}
+            onDone={() => { setShowVenta(false); onUpdated(); onClose() }}
+          />
+          <BajaDialog
+            open={showBaja}
+            onOpenChange={setShowBaja}
+            leadId={appt.lead_id}
+            leadNombre={appt.lead_nombre ?? 'Lead'}
+            onDone={() => { setShowBaja(false); onUpdated(); onClose() }}
+          />
+        </>
+      )}
     </>
   )
 }

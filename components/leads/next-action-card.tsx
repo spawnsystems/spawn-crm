@@ -9,15 +9,16 @@ import { Button } from '@/components/ui/button'
 import { AppointmentDialog } from '@/components/leads/appointment-dialog'
 import {
   Phone, CalendarCheck, CheckCircle2, LifeBuoy, Plus, RotateCcw, Loader2,
-  Trophy, ThumbsDown, UserX,
+  Trophy, ClipboardCheck,
 } from 'lucide-react'
 import { reactivateFromRescue } from '@/app/actions/leads'
-import { markAppointmentDone, markAppointmentNoShow, cancelAppointment } from '@/app/actions/appointments'
+import { cancelAppointment } from '@/app/actions/appointments'
 import type { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { APPOINTMENT_TIPO_LABEL } from '@/lib/schemas/appointments'
 import { isBaja, isRescatable, statusLabel } from '@/lib/leads/constants'
 import { BajaDialog } from '@/components/leads/baja-dialog'
 import { RegistrarVentaDialog } from '@/components/leads/registrar-venta-dialog'
+import { ResolveAppointmentDialog } from '@/components/leads/resolve-appointment-dialog'
 import { useCurrentUser } from '@/lib/tenant/context'
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -43,10 +44,11 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated, onRegiste
   const currentUser = useCurrentUser()
   const canReactivate = currentUser.rol !== 'vendedor'
 
-  const [showDialog,          setShowDialog]          = useState(false)
-  const [showBajaNoInteresado, setShowBajaNoInteresado] = useState(false)
-  const [showVenta,           setShowVenta]           = useState(false)
-  const [isPending,            startTransition]        = useTransition()
+  const [showDialog,   setShowDialog]   = useState(false)
+  const [showBaja,     setShowBaja]     = useState(false)
+  const [showVenta,    setShowVenta]    = useState(false)
+  const [showResolve,  setShowResolve]  = useState(false)
+  const [isPending,    startTransition] = useTransition()
 
   /** Fire an action, show a toast, then refresh the parent */
   function run(
@@ -114,8 +116,10 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated, onRegiste
     )
   }
 
-  // ── ENTREVISTA PACTADA — con cita programada ──────────────────
-  if (lead.status === 'ENTREVISTA PACTADA' && nextAppointment) {
+  // ── Con cita programada (ENTREVISTA PACTADA o CIERRE) ─────────
+  // Mientras haya una cita viva (incluso una cita de cierre agendada estando
+  // ya en CIERRE), la acción principal es registrar su resultado.
+  if (nextAppointment && (lead.status === 'ENTREVISTA PACTADA' || lead.status === 'CIERRE')) {
     const apptDate = toBADate(nextAppointment.scheduled_at)
     const isPast   = new Date(nextAppointment.scheduled_at).getTime() < Date.now()
     const dur      = nextAppointment.duration_min
@@ -151,124 +155,61 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated, onRegiste
             )}
           </div>
 
-          {/* ── Panel de resolución (cita ya pasada) ── */}
-          {isPast ? (
-            <div className="space-y-3">
-              {/* Éxito */}
-              <div>
-                <p className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wide mb-1.5">
-                  Éxito
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
-                    onClick={() => run(
-                      () => markAppointmentDone(nextAppointment.id),
-                      'Cita realizada — en proceso de cierre',
-                    )}
-                    disabled={isPending}
-                  >
-                    {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-                    Cita realizada → Cierre
-                  </Button>
-                </div>
-                <p className="text-[10px] text-emerald-700/60 mt-1.5">
-                  La venta se registra desde el lead una vez en Cierre.
-                </p>
-              </div>
-
-              {/* Fallo */}
-              <div>
-                <p className="text-[11px] font-semibold text-rose-600 uppercase tracking-wide mb-1.5">
-                  No fue
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5 border-rose-300 text-rose-600 hover:bg-rose-50"
-                    onClick={() => run(
-                      () => markAppointmentNoShow(nextAppointment.id),
-                      'No-show registrado',
-                    )}
-                    disabled={isPending}
-                  >
-                    {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <UserX className="size-3.5" />}
-                    No vino
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5 border-rose-300 text-rose-600 hover:bg-rose-50"
-                    onClick={() => setShowBajaNoInteresado(true)}
-                    disabled={isPending}
-                  >
-                    <ThumbsDown className="size-3.5" />
-                    No interesado
-                  </Button>
-                </div>
-              </div>
-
-              {/* Reagendar / cancelar siempre disponibles */}
-              <div className="flex flex-wrap gap-2 pt-1 border-t border-violet-200/60">
-                <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" onClick={() => setShowDialog(true)}>
-                  <Plus className="size-3.5" />Reagendar
-                </Button>
-                <Button
-                  size="sm" variant="ghost"
-                  className="gap-1.5 text-muted-foreground"
-                  onClick={() => run(() => cancelAppointment(nextAppointment.id), 'Cita cancelada')}
-                  disabled={isPending}
-                >
-                  Cancelar cita
-                </Button>
-              </div>
-            </div>
-          ) : (
-            /* Cita futura — acciones simples */
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                className="gap-1.5"
-                onClick={() => run(() => markAppointmentDone(nextAppointment.id), 'Cita marcada como realizada')}
-                disabled={isPending}
-              >
-                {isPending ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
-                Marcar realizada
-              </Button>
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowDialog(true)}>
-                <Plus className="size-3.5" />Reagendar
-              </Button>
-              <Button
-                size="sm" variant="ghost"
-                className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => run(() => cancelAppointment(nextAppointment.id), 'Cita cancelada')}
-                disabled={isPending}
-              >
-                Cancelar cita
-              </Button>
-            </div>
+          {/* ── Acciones ── */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className={cn('gap-1.5', isPast && 'bg-violet-600 hover:bg-violet-700')}
+              onClick={() => setShowResolve(true)}
+              disabled={isPending}
+            >
+              <ClipboardCheck className="size-3.5" />
+              Registrar resultado
+            </Button>
+            <Button
+              size="sm" variant="ghost"
+              className="gap-1.5 text-muted-foreground"
+              onClick={() => run(() => cancelAppointment(nextAppointment.id), 'Cita cancelada')}
+              disabled={isPending}
+            >
+              Cancelar cita
+            </Button>
+          </div>
+          {!isPast && (
+            <p className="text-[10px] text-violet-700/60 mt-1.5">
+              Cuando la cita ocurra, registrá cómo resultó para definir el próximo paso.
+            </p>
           )}
-
-          <AppointmentDialog
-            open={showDialog}
-            onOpenChange={setShowDialog}
-            leadId={lead.id}
-            leadNombre={lead.nombre}
-            defaultModelo={lead.modelo}
-            onCreated={() => { setShowDialog(false); onLeadUpdated() }}
-          />
         </div>
 
-        {/* Dialog baja "No interesado" prefijado */}
-        <BajaDialog
-          open={showBajaNoInteresado}
-          onOpenChange={setShowBajaNoInteresado}
+        {/* Flujo unificado de resultado de cita */}
+        <ResolveAppointmentDialog
+          open={showResolve}
+          onOpenChange={setShowResolve}
+          appointmentId={nextAppointment.id}
+          tipoActual={nextAppointment.tipo}
+          onResolved={({ openVenta, openBaja }) => {
+            onLeadUpdated()
+            if (openVenta) setShowVenta(true)
+            if (openBaja)  setShowBaja(true)
+          }}
+        />
+
+        <RegistrarVentaDialog
+          open={showVenta}
+          onOpenChange={setShowVenta}
           leadId={lead.id}
           leadNombre={lead.nombre}
-          prefilledStatus="NO INTERESADO"
-          onDone={() => { setShowBajaNoInteresado(false); onLeadUpdated() }}
+          defaultModelo={lead.modelo}
+          onDone={onLeadUpdated}
+        />
+
+        <BajaDialog
+          open={showBaja}
+          onOpenChange={setShowBaja}
+          leadId={lead.id}
+          leadNombre={lead.nombre}
+          onDone={() => { setShowBaja(false); onLeadUpdated() }}
         />
       </>
     )

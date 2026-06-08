@@ -1,9 +1,10 @@
 'use server'
 
+import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, gte, lte, ne, sql, isNull } from 'drizzle-orm'
-import { requireTenant, appendTimeline, assertLeadAccess } from '@/lib/leads/server-helpers'
+import { requireTenant, appendTimeline, assertLeadAccess, cancelPendingCalls } from '@/lib/leads/server-helpers'
 import { isBaja } from '@/lib/leads/constants'
 import { advanceStatus } from '@/lib/leads/state-machine'
 import { getCurrentUserTeamScope, buildAppointmentScopeWhere } from '@/lib/tenant/teams'
@@ -12,6 +13,7 @@ import {
   createAppointmentSchema,
   updateAppointmentSchema,
   rescheduleAppointmentSchema,
+  appointmentTipoValues,
   APPOINTMENT_TIPO_LABEL,
 } from '@/lib/schemas/appointments'
 import type { ActionResult } from './auth'
@@ -521,6 +523,213 @@ export async function rescheduleAppointment(
   revalidatePath('/citas')
   revalidatePath('/leads')
   return { success: true, data: { newId: row.id } }
+}
+
+// ── resolveAppointment ───────────────────────────────────────
+// Flujo unificado de "resultado de cita" (análogo a registerCall). Una cita
+// ya realizada/pasada se resuelve eligiendo qué pasó; cada outcome define el
+// estado resultante del lead y el próximo paso:
+//
+//   avanzo       → cita realizada · lead → CIERRE · EXIGE próxima acción
+//                  (cita de cierre o llamada de seguimiento). Nunca queda "en
+//                  la nada": siempre sale con un próximo paso agendado.
+//   otra_reunion → cita realizada · se mantiene en ENTREVISTA PACTADA (todavía
+//                  en fase de entrevistas) · agenda una nueva cita.
+//   no_show      → cita no_se_presento · lead retrocede (HORARIO/GESTIÓN) ·
+//                  reintento de llamada opcional. No cuenta como contacto.
+//   venta        → cita realizada · lead → CIERRE · el cliente abre el diálogo
+//                  de Registrar venta (openVenta=true).
+//   no_prospero  → cita realizada (la entrevista se hizo) · el cliente abre el
+//                  diálogo de Dar de baja (openBaja=true).
+
+const resolveAppointmentSchema = z.object({
+  outcome: z.enum(['avanzo', 'otra_reunion', 'no_show', 'venta', 'no_prospero']),
+  notes:   z.string().max(2000).optional(),
+  // Próxima acción para 'avanzo' (cita o llamada) y 'otra_reunion' (cita).
+  nextAction: z.object({
+    kind:         z.enum(['cita', 'llamada']),
+    scheduled_at: z.string().datetime({ offset: true }),
+    tipo:         z.enum(appointmentTipoValues).optional(),
+    duration_min: z.number().int().min(15).max(240).optional(),
+    lugar:        z.string().max(200).optional(),
+    notas:        z.string().max(2000).optional(),
+  }).optional(),
+  // Reintento de llamada opcional para 'no_show'.
+  retryCallAt: z.string().datetime({ offset: true }).optional(),
+}).superRefine((val, ctx) => {
+  if ((val.outcome === 'avanzo' || val.outcome === 'otra_reunion') && !val.nextAction) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['nextAction'], message: 'Indicá la próxima acción.' })
+  }
+  if (val.outcome === 'otra_reunion' && val.nextAction && val.nextAction.kind !== 'cita') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['nextAction', 'kind'], message: 'Otra reunión requiere agendar una cita.' })
+  }
+  if (val.nextAction?.kind === 'cita' && !val.nextAction.tipo) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['nextAction', 'tipo'], message: 'Elegí el tipo de cita.' })
+  }
+})
+
+export async function resolveAppointment(
+  appointmentId: string,
+  input: unknown,
+): Promise<ActionResult<{ outcome: string; openVenta: boolean; openBaja: boolean }>> {
+  const { user, tenantId, q, forTenant } = await requireTenant()
+
+  const parsed = resolveAppointmentSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const { outcome, notes, nextAction, retryCallAt } = parsed.data
+
+  const rows = await dbAdmin
+    .select()
+    .from(schema.leadAppointments)
+    .where(and(
+      eq(schema.leadAppointments.id, appointmentId),
+      eq(schema.leadAppointments.tenant_id, tenantId),
+    ))
+    .limit(1)
+  const apptRow = rows[0]
+  if (!apptRow) return { success: false, error: 'Cita no encontrada' }
+
+  const leadRow = await assertLeadAccess(apptRow.lead_id, user.id, user.rol, tenantId)
+  if (!leadRow) return { success: false, error: 'No tenés acceso a esta cita' }
+
+  const leadId     = apptRow.lead_id
+  const apptStatus = outcome === 'no_show' ? 'no_se_presento' as const : 'realizada' as const
+
+  // 1) Marcar la cita resuelta
+  await dbAdmin.update(schema.leadAppointments)
+    .set({ status: apptStatus, outcome_notes: notes?.trim() ?? null, updated_at: new Date() })
+    .where(eq(schema.leadAppointments.id, appointmentId))
+
+  // Helpers de próxima acción (la cita resuelta ya dejó de estar 'programada',
+  // así que crear una nueva no viola el unique parcial uq_one_live_appt_per_lead).
+  async function createNextCita(a: NonNullable<typeof nextAction>) {
+    await dbAdmin.insert(schema.leadAppointments).values({
+      tenant_id:    tenantId,
+      lead_id:      leadId,
+      vendedor_id:  apptRow.vendedor_id,
+      equipo_id:    apptRow.equipo_id,
+      scheduled_at: new Date(a.scheduled_at),
+      duration_min: a.duration_min ?? 60,
+      tipo:         a.tipo!,
+      lugar:        a.lugar ?? null,
+      notas:        a.notas ?? null,
+      created_by:   user.id,
+    })
+    await appendTimeline(
+      tenantId, leadId, user.id,
+      'appointment_scheduled',
+      'Nueva cita agendada',
+      `${APPOINTMENT_TIPO_LABEL[a.tipo!]} · ${fmtApptDateBA(new Date(a.scheduled_at))}`,
+    )
+  }
+
+  async function scheduleFollowUpCall(whenISO: string, title: string) {
+    await cancelPendingCalls(tenantId, leadId, user.id)
+    await dbAdmin.insert(schema.leadCalls).values({
+      tenant_id:    tenantId,
+      lead_id:      leadId,
+      created_by:   user.id,
+      scheduled_at: new Date(whenISO),
+    })
+    await appendTimeline(
+      tenantId, leadId, user.id,
+      'call_scheduled',
+      `${title}: ${fmtApptDateBA(new Date(whenISO))}`,
+    )
+  }
+
+  let openVenta = false
+  let openBaja  = false
+
+  if (outcome === 'avanzo') {
+    const nextStatus = advanceStatus(leadRow.status, 'CIERRE')
+    await q.update(schema.leads).set({
+      status:                nextStatus,
+      last_contact_at:       new Date(),
+      last_contact_critical: false,
+      at_risk:               false,
+      updated_by:            user.id,
+    }).where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+    await appendTimeline(tenantId, leadId, user.id, 'appointment_done', 'Entrevista realizada — avanza al cierre', notes?.trim())
+    if (nextAction!.kind === 'cita') await createNextCita(nextAction!)
+    else await scheduleFollowUpCall(nextAction!.scheduled_at, 'Llamada de seguimiento agendada')
+
+  } else if (outcome === 'otra_reunion') {
+    // Se mantiene en ENTREVISTA PACTADA (no avanza a CIERRE): sigue en fase de
+    // entrevistas. advanceStatus al estado actual no degrada ni sube.
+    await q.update(schema.leads).set({
+      last_contact_at:       new Date(),
+      last_contact_critical: false,
+      at_risk:               false,
+      updated_by:            user.id,
+    }).where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+    await appendTimeline(tenantId, leadId, user.id, 'appointment_done', 'Entrevista realizada — se agenda otra reunión', notes?.trim())
+    await createNextCita(nextAction!)
+
+  } else if (outcome === 'no_show') {
+    let regressStatus: 'GESTION' | 'HORARIO ASIGNADO' | null = null
+    if (leadRow.status === 'ENTREVISTA PACTADA') {
+      const hasPendingCall = await dbAdmin
+        .select({ id: schema.leadCalls.id })
+        .from(schema.leadCalls)
+        .where(and(
+          eq(schema.leadCalls.lead_id, leadId),
+          isNull(schema.leadCalls.realizada_at),
+          isNull(schema.leadCalls.canceled_at),
+        ))
+        .limit(1)
+      regressStatus = hasPendingCall[0] ? 'HORARIO ASIGNADO' : 'GESTION'
+      await q.update(schema.leads)
+        .set({ status: regressStatus, updated_by: user.id })
+        .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+    }
+    await appendTimeline(
+      tenantId, leadId, user.id, 'appointment_no_show',
+      regressStatus === 'HORARIO ASIGNADO' ? 'No se presentó — vuelve a recoordinar'
+        : regressStatus === 'GESTION' ? 'No se presentó — vuelve a gestión activa'
+        : 'No se presentó a la cita',
+      notes?.trim(),
+    )
+    if (retryCallAt) await scheduleFollowUpCall(retryCallAt, 'Reintento de contacto agendado')
+
+  } else if (outcome === 'venta') {
+    const nextStatus = advanceStatus(leadRow.status, 'CIERRE')
+    await q.update(schema.leads).set({
+      status:                nextStatus,
+      last_contact_at:       new Date(),
+      last_contact_critical: false,
+      at_risk:               false,
+      updated_by:            user.id,
+    }).where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+    await appendTimeline(tenantId, leadId, user.id, 'appointment_done', 'Entrevista realizada — cierre de venta', notes?.trim())
+    openVenta = true
+
+  } else if (outcome === 'no_prospero') {
+    // La entrevista se hizo (cuenta como contacto) pero no prosperó; la baja
+    // con motivo la registra el diálogo del cliente. No tocamos el estado acá.
+    await q.update(schema.leads).set({
+      last_contact_at:       new Date(),
+      last_contact_critical: false,
+      at_risk:               false,
+      updated_by:            user.id,
+    }).where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+    await appendTimeline(tenantId, leadId, user.id, 'appointment_done', 'Entrevista realizada — sin avance', notes?.trim())
+    openBaja = true
+  }
+
+  void logAudit({
+    tenantId, actorId: user.id,
+    action: 'appointment.resolve', entity: 'appointment', entityId: appointmentId,
+    meta:   { outcome },
+    visibleToDueno: true,
+  })
+
+  revalidatePath('/citas')
+  revalidatePath('/leads')
+  revalidatePath('/pipeline')
+  revalidatePath('/all-leads')
+  revalidatePath('/dashboard')
+  return { success: true, data: { outcome, openVenta, openBaja } }
 }
 
 // ── getAppointmentsInRange ───────────────────────────────────
