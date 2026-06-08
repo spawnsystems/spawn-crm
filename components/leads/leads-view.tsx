@@ -360,6 +360,8 @@ function coerceBool(v: unknown): boolean {
 function UsadoBadge({ lead }: { lead: MyLead }) {
   const rechazado  = coerceBool(lead.usado_rechazado)
   const tieneValor = lead.usado_valor != null && !rechazado
+  const marca      = lead.usado_marca ?? null
+  const prefix     = marca ?? 'Usado'
 
   return (
     <span
@@ -375,10 +377,10 @@ function UsadoBadge({ lead }: { lead: MyLead }) {
     >
       <Car className="size-3 shrink-0" />
       {rechazado
-        ? 'Usado · rechazado'
+        ? `${prefix} · rechazado`
         : tieneValor
-        ? `Usado · ${formatCurrencyARS(lead.usado_valor as string)}`
-        : 'Usado · s/cotizar'}
+        ? `${prefix} · ${formatCurrencyARS(lead.usado_valor as string)}`
+        : `${prefix} · s/cotizar`}
     </span>
   )
 }
