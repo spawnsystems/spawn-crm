@@ -162,9 +162,11 @@ interface LeadDetailSheetProps {
   leadId:          string | null
   onClose:         () => void
   onStatusChange?: (leadId: string, status: string) => void
+  /** Llamado cuando una mutación cambia datos que el padre necesita refrescar (ej: cotización). */
+  onLeadsRefresh?: () => void
 }
 
-export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailSheetProps) {
+export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefresh }: LeadDetailSheetProps) {
   const currentUser = useCurrentUser()
   const [detail,          setDetail]          = useState<DetailData | null>(null)
   const [nextAppointment, setNextAppointment] = useState<Appointment>(null)
@@ -231,9 +233,6 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const tasks           = detail?.tasks           ?? []
   const calls           = detail?.calls           ?? []
   const cotizaciones    = detail?.cotizaciones    ?? []
-
-  // "Tiene usado" real: el flag del lead O la existencia de una cotización.
-  const hasUsado = !!lead?.tiene_usado || cotizaciones.length > 0
 
   // Agenda derivada: cita + llamadas pendientes + tareas, ordenada por fecha
   const agenda = buildAgenda(tasks, calls, nextAppointment)
@@ -508,11 +507,8 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
               </div>
             </SheetHeader>
 
-            {/* ── Acción principal + Usado (lado a lado si hay usado) ── */}
-            <div className={cn(
-              'px-6 pt-4 mb-4',
-              hasUsado && 'grid grid-cols-1 lg:grid-cols-2 gap-4 items-start',
-            )}>
+            {/* ── Acción principal + Usado (siempre lado a lado en pantallas grandes) ── */}
+            <div className="px-6 pt-4 mb-4 grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               {/* wrapper para que el fragment de NextActionCard sea un solo ítem del grid */}
               <div>
                 <NextActionCard
@@ -522,13 +518,12 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                   onRegisterCall={() => setRegisterTarget({ leadId: lead.id })}
                 />
               </div>
-              {hasUsado && (
-                <UsadoCard
-                  cotizaciones={cotizaciones}
-                  onNew={() => { setEditingCotizacion(null); setShowCotizador(true) }}
-                  onEdit={(c) => { setEditingCotizacion(c); setShowCotizador(true) }}
-                />
-              )}
+              {/* UsadoCard SIEMPRE visible — si no hay usado muestra botón de agregar */}
+              <UsadoCard
+                cotizaciones={cotizaciones}
+                onNew={() => { setEditingCotizacion(null); setShowCotizador(true) }}
+                onEdit={(c) => { setEditingCotizacion(c); setShowCotizador(true) }}
+              />
             </div>
 
             {/* ── Edit form ── */}
@@ -924,7 +919,13 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
               leadNombre={lead.nombre}
               provincia={lead.provincia ?? undefined}
               editing={editingCotizacion}
-              onCreated={() => { setShowCotizador(false); setEditingCotizacion(null); refreshAll() }}
+              onCreated={() => {
+                setShowCotizador(false)
+                setEditingCotizacion(null)
+                refreshAll()
+                // Refrescar la lista del padre para actualizar el badge de "Usado"
+                onLeadsRefresh?.()
+              }}
             />
 
             {/* ── Transfer dialog ── */}
@@ -999,10 +1000,13 @@ function Section({ icon, title, children }: {
 }
 
 // ── UsadoCard ─────────────────────────────────────────────────────
-// Resumen del usado en parte de pago + sus cotizaciones.
-// - Cada fila tiene su propio lápiz para EDITAR esa cotización.
-// - "+" en el header agrega una cotización para un auto diferente.
-// - Si no hay cotizaciones, el lápiz crea la primera.
+// Siempre visible. Si no hay cotizaciones, invita a agregar uno.
+// Cada cotización usa layout vertical (sin truncado):
+//   línea 1: marca/modelo
+//   línea 2: año · km · uso
+//   línea 3: valor de toma  (o badge "Rechazado")
+// Lápiz en top-right de cada fila edita esa cotización.
+// Botón "+" en header agrega una para otro auto.
 
 function UsadoCard({
   cotizaciones, onNew, onEdit,
@@ -1011,26 +1015,35 @@ function UsadoCard({
   onNew:        () => void
   onEdit:       (c: EditingCotizacion) => void
 }) {
+  const isEmpty = cotizaciones.length === 0
+
   return (
-    <div className="rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3 h-full">
+    <div className={cn(
+      'rounded-xl border px-4 py-3 h-full',
+      isEmpty ? 'bg-muted/30 border-dashed border-border' : 'bg-amber-50 border-amber-200/60',
+    )}>
+      {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <Car className="size-4 text-amber-700 shrink-0" />
-          <span className="text-sm font-semibold text-amber-800">Usado en parte de pago</span>
+        <div className="flex items-center gap-1.5">
+          <Car className={cn('size-4 shrink-0', isEmpty ? 'text-muted-foreground' : 'text-amber-700')} />
+          <span className={cn('text-sm font-semibold', isEmpty ? 'text-muted-foreground' : 'text-amber-800')}>
+            Usado en parte de pago
+          </span>
         </div>
 
-        {cotizaciones.length === 0 ? (
-          /* Sin cotizaciones → lápiz para crear la primera */
+        {isEmpty ? (
+          /* Sin cotizaciones → botón para iniciar */
           <button
             onClick={onNew}
-            title="Cotizar usado"
-            aria-label="Cotizar usado"
-            className="shrink-0 p-1.5 rounded text-amber-700 hover:bg-amber-100 transition-colors"
+            title="Agregar usado"
+            aria-label="Agregar usado"
+            className="shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
           >
-            <Pencil className="size-3.5" />
+            <Plus className="size-3.5" />
+            Agregar
           </button>
         ) : (
-          /* Con cotizaciones → "+" para agregar una de otro auto */
+          /* Con cotizaciones → "+" para otro auto */
           <button
             onClick={onNew}
             title="Nueva cotización (otro auto)"
@@ -1043,55 +1056,37 @@ function UsadoCard({
         )}
       </div>
 
-      {cotizaciones.length === 0 ? (
-        <p className="text-xs text-amber-700/70">
-          Todavía sin cotizar. Tocá el lápiz para calcular el valor de toma.
+      {isEmpty ? (
+        <p className="text-xs text-muted-foreground/70">
+          El cliente no tiene un usado por ahora. Si lo consigue, podés cotizarlo acá.
         </p>
       ) : (
         <div className="space-y-2">
-          {cotizaciones.map((c, idx) => (
-            <div
-              key={c.id}
-              className={cn(
-                'rounded-lg border px-3 py-2 bg-white/70',
-                c.rechazado ? 'border-rose-200' : 'border-emerald-200',
-                idx > 0 && 'opacity-70',
-              )}
-            >
-              <div className="flex items-start justify-between gap-2">
-                {/* Datos del vehículo — sin truncar, deja que wrappee */}
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium leading-snug">
-                    {c.marca_modelo || 'Usado'}
-                    {c.anio ? <span className="text-muted-foreground font-normal"> · {c.anio}</span> : null}
-                    {c.km != null ? (
-                      <span className="text-muted-foreground font-normal">
-                        {' '}· {Number(c.km).toLocaleString('es-AR')} km
-                      </span>
-                    ) : null}
+          {cotizaciones.map((c, idx) => {
+            const uso = c.uso === 'taxi_uber_transporte' ? 'Taxi/Uber' : 'Particular'
+            return (
+              <div
+                key={c.id}
+                className={cn(
+                  'rounded-lg border bg-white/80 overflow-hidden',
+                  c.rechazado ? 'border-rose-200' : 'border-emerald-200/80',
+                  idx > 0 && 'opacity-60',
+                )}
+              >
+                {/* Top bar: nombre + lápiz */}
+                <div className="flex items-start justify-between gap-2 px-3 pt-2.5 pb-1">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold leading-snug text-foreground">
+                      {c.marca_modelo || <span className="text-muted-foreground italic">Sin marca/modelo</span>}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {[
+                        c.anio ? String(c.anio) : null,
+                        c.km != null ? `${Number(c.km).toLocaleString('es-AR')} km` : null,
+                        uso,
+                      ].filter(Boolean).join(' · ')}
+                    </p>
                   </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {idx === 0 ? 'Última cotización' : 'Anterior'} · {fmtDayMonthAR(c.created_at)}
-                  </div>
-                </div>
-
-                {/* Valor / rechazado + lápiz de edición */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {c.rechazado ? (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5">
-                      <AlertTriangle className="size-3" />Rechazado
-                    </span>
-                  ) : (
-                    <div className="text-right">
-                      <div className="text-[10px] text-muted-foreground leading-none">
-                        Toma{c.descuento_pct ? ` · −${Number(c.descuento_pct)}%` : ''}
-                      </div>
-                      <div className="text-sm font-semibold text-emerald-700">
-                        {formatCurrencyARS(c.valor_final)}
-                      </div>
-                    </div>
-                  )}
-                  {/* Lápiz para editar esta cotización puntualmente */}
                   <button
                     onClick={() => onEdit({
                       id:            c.id,
@@ -1103,18 +1098,46 @@ function UsadoCard({
                     })}
                     title="Editar esta cotización"
                     aria-label="Editar cotización"
-                    className="p-1 rounded text-muted-foreground hover:text-amber-700 hover:bg-amber-100 transition-colors"
+                    className="shrink-0 p-1 rounded text-muted-foreground/50 hover:text-amber-700 hover:bg-amber-50 transition-colors"
                   >
                     <Pencil className="size-3" />
                   </button>
                 </div>
-              </div>
 
-              {c.rechazado && c.rechazo_motivo && (
-                <p className="text-[11px] text-rose-700/70 mt-1">{c.rechazo_motivo}</p>
-              )}
-            </div>
-          ))}
+                {/* Bottom bar: valor o rechazado */}
+                <div className={cn(
+                  'px-3 py-1.5 border-t',
+                  c.rechazado
+                    ? 'bg-rose-50/60 border-rose-100'
+                    : 'bg-emerald-50/60 border-emerald-100',
+                )}>
+                  {c.rechazado ? (
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="size-3 text-rose-600 shrink-0" />
+                      <span className="text-[11px] font-semibold text-rose-700">
+                        Rechazado
+                        {c.rechazo_motivo ? ` — ${c.rechazo_motivo}` : ''}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[10px] text-muted-foreground">
+                        Valor de toma{c.descuento_pct ? ` (−${Number(c.descuento_pct)}%)` : ''}
+                      </span>
+                      <span className="text-sm font-bold text-emerald-700">
+                        {formatCurrencyARS(c.valor_final)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Etiqueta de fecha */}
+                <div className="px-3 py-1 text-[10px] text-muted-foreground/60 bg-muted/10">
+                  {idx === 0 ? 'Última' : 'Anterior'} · {fmtDayMonthAR(c.created_at)}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

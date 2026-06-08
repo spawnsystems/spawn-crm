@@ -216,6 +216,7 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
         onStatusChange={(id, status) =>
           setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status: status as Lead['status'] } : l))
         }
+        onLeadsRefresh={refresh}
       />
 
       {/* New lead dialog */}
