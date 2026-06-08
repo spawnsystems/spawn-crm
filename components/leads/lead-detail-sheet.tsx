@@ -30,6 +30,7 @@ import {
   UserCircle, Plus, RotateCcw, UserPlus, UserCheck, ArrowRight,
   CalendarCheck, Trophy, LifeBuoy, AlertTriangle, CalendarX,
   ArrowRightLeft, PhoneCall, PhoneIncoming, PhoneOff, MinusCircle, Clock3, ChevronDown, Trash2, Calculator,
+  Video, Building2, Handshake,
 } from 'lucide-react'
 import {
   addNote, deleteNote, toggleTask, getLeadDetail,
@@ -1583,10 +1584,34 @@ const OUTCOME_BAJA: { value: CallOutcome; label: string; desc: string; icon: Rea
 
 type ApptTipo = 'videollamada' | 'visita_showroom' | 'cierre'
 
-const APPT_TIPO_OPTIONS: { value: ApptTipo; label: string }[] = [
-  { value: 'videollamada',    label: 'Videollamada'        },
-  { value: 'visita_showroom', label: 'Visita al showroom'  },
-  { value: 'cierre',          label: 'Cierre'              },
+const APPT_TIPO_OPTIONS: {
+  value:         ApptTipo
+  label:         string
+  desc:          string
+  icon:          React.ReactNode
+  selectedClass: string
+}[] = [
+  {
+    value:         'videollamada',
+    label:         'Videollamada',
+    desc:          'Reunión virtual',
+    icon:          <Video className="size-4" />,
+    selectedClass: 'border-sky-400 text-sky-700 bg-sky-50/60 ring-sky-400',
+  },
+  {
+    value:         'visita_showroom',
+    label:         'Showroom',
+    desc:          'El cliente viene',
+    icon:          <Building2 className="size-4" />,
+    selectedClass: 'border-violet-400 text-violet-700 bg-violet-50/60 ring-violet-400',
+  },
+  {
+    value:         'cierre',
+    label:         'Cierre',
+    desc:          'Confirmar venta',
+    icon:          <Handshake className="size-4" />,
+    selectedClass: 'border-emerald-400 text-emerald-700 bg-emerald-50/60 ring-emerald-400',
+  },
 ]
 
 const APPT_DURATIONS = [30, 60, 90, 120] as const
@@ -1866,18 +1891,31 @@ function RegisterCallDialog({
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 col-span-2">
                   <Label className="text-xs">Tipo *</Label>
-                  <Select value={apptTipo} onValueChange={(v) => setApptTipo(v as ApptTipo)}>
-                    <SelectTrigger className="h-9 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {APPT_TIPO_OPTIONS.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {APPT_TIPO_OPTIONS.map((t) => (
+                      <button
+                        key={t.value}
+                        type="button"
+                        onClick={() => setApptTipo(t.value)}
+                        className={cn(
+                          'flex flex-col items-center gap-1 rounded-lg border-2 px-1.5 py-2 text-center transition-all',
+                          apptTipo === t.value
+                            ? `${t.selectedClass} ring-2 ring-offset-1 ring-current`
+                            : 'border-border hover:border-muted-foreground/40',
+                        )}
+                      >
+                        <span className={apptTipo === t.value ? '' : 'text-muted-foreground'}>{t.icon}</span>
+                        <span className={cn('text-[11px] font-semibold leading-tight', apptTipo !== t.value && 'text-foreground')}>
+                          {t.label}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground leading-tight hidden sm:block">
+                          {t.desc}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">

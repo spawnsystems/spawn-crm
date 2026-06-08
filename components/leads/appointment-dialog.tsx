@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, type ReactNode } from 'react'
 import { format } from 'date-fns'
 import { toast } from 'sonner'
 import {
@@ -18,14 +18,43 @@ import {
 } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { cn } from '@/lib/utils'
-import { CalendarIcon, Loader2 } from 'lucide-react'
+import { CalendarIcon, Loader2, Video, Building2, Handshake } from 'lucide-react'
 import { createAppointment } from '@/app/actions/appointments'
 import {
-  appointmentTipoValues,
-  APPOINTMENT_TIPO_LABEL,
   DURATIONS_MIN,
   type AppointmentTipo,
 } from '@/lib/schemas/appointments'
+
+// ── Tipo tiles ────────────────────────────────────────────────────
+const TIPO_TILES: {
+  value:         AppointmentTipo
+  label:         string
+  desc:          string
+  icon:          ReactNode
+  selectedClass: string
+}[] = [
+  {
+    value:         'videollamada',
+    label:         'Videollamada',
+    desc:          'Reunión virtual con el cliente',
+    icon:          <Video className="size-5" />,
+    selectedClass: 'border-sky-400 text-sky-700 bg-sky-50/60 ring-sky-400',
+  },
+  {
+    value:         'visita_showroom',
+    label:         'Visita al showroom',
+    desc:          'El cliente viene a vernos',
+    icon:          <Building2 className="size-5" />,
+    selectedClass: 'border-violet-400 text-violet-700 bg-violet-50/60 ring-violet-400',
+  },
+  {
+    value:         'cierre',
+    label:         'Cierre',
+    desc:          'Confirmar la venta',
+    icon:          <Handshake className="size-5" />,
+    selectedClass: 'border-emerald-400 text-emerald-700 bg-emerald-50/60 ring-emerald-400',
+  },
+]
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -155,42 +184,52 @@ export function AppointmentDialog({
             </div>
           </div>
 
-          {/* Tipo + Duración */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Tipo de cita *</Label>
-              <Select value={tipo} onValueChange={(v) => setTipo(v as AppointmentTipo)}>
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {appointmentTipoValues.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {APPOINTMENT_TIPO_LABEL[t]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Tipo de cita */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tipo de cita *</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {TIPO_TILES.map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setTipo(t.value)}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 rounded-lg border-2 px-2 py-3 text-center transition-all',
+                    tipo === t.value
+                      ? `${t.selectedClass} ring-2 ring-offset-1 ring-current`
+                      : 'border-border hover:border-muted-foreground/40',
+                  )}
+                >
+                  <span className={tipo === t.value ? '' : 'text-muted-foreground'}>{t.icon}</span>
+                  <span className={cn('text-xs font-semibold leading-tight', tipo !== t.value && 'text-foreground')}>
+                    {t.label}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground leading-tight">
+                    {t.desc}
+                  </span>
+                </button>
+              ))}
             </div>
+          </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs">Duración</Label>
-              <Select
-                value={String(durationMin)}
-                onValueChange={(v) => setDurationMin(Number(v))}
-              >
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DURATIONS_MIN.map((d) => (
-                    <SelectItem key={d} value={String(d)}>
-                      {d < 60 ? `${d} min` : `${d / 60} h`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          {/* Duración */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Duración</Label>
+            <Select
+              value={String(durationMin)}
+              onValueChange={(v) => setDurationMin(Number(v))}
+            >
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DURATIONS_MIN.map((d) => (
+                  <SelectItem key={d} value={String(d)}>
+                    {d < 60 ? `${d} min` : `${d / 60} h`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Modelo */}
