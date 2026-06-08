@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { dbAdmin, schema } from '@/lib/db'
-import { eq, and, gte, lte, ne, sql } from 'drizzle-orm'
+import { eq, and, gte, lte, ne, sql, isNull } from 'drizzle-orm'
 import { requireTenant, appendTimeline, assertLeadAccess } from '@/lib/leads/server-helpers'
 import { isBaja } from '@/lib/leads/constants'
 import { advanceStatus } from '@/lib/leads/state-machine'
@@ -276,18 +276,33 @@ export async function cancelAppointment(
       eq(schema.leadAppointments.tenant_id, tenantId),
     ))
 
-  // Cancelar la cita retrocede el lead de ENTREVISTA PACTADA a HORARIO ASIGNADO.
-  // (Reagendar es otra acción que NO pasa por acá y mantiene la etapa.)
+  // Cancelar la cita retrocede el lead de ENTREVISTA PACTADA:
+  //  - con llamada pendiente → GESTION  (ya hay seguimiento coordinado, no hace falta
+  //    "recoordinar" llamada — el vendedor ya tiene una pactada)
+  //  - sin llamada pendiente → HORARIO ASIGNADO (tiene que recoordinar)
+  // Reagendar es otra acción que NO pasa por acá y mantiene la etapa.
+  let regressStatus: 'GESTION' | 'HORARIO ASIGNADO' | null = null
   if (leadRow.status === 'ENTREVISTA PACTADA') {
+    const hasPendingCall = await dbAdmin
+      .select({ id: schema.leadCalls.id })
+      .from(schema.leadCalls)
+      .where(and(
+        eq(schema.leadCalls.lead_id, appt[0].lead_id),
+        isNull(schema.leadCalls.realizada_at),
+      ))
+      .limit(1)
+    regressStatus = hasPendingCall[0] ? 'GESTION' : 'HORARIO ASIGNADO'
     await q.update(schema.leads)
-      .set({ status: 'HORARIO ASIGNADO', updated_by: user.id })
+      .set({ status: regressStatus, updated_by: user.id })
       .where(and(eq(schema.leads.id, appt[0].lead_id), forTenant(schema.leads)))
   }
 
   await appendTimeline(
     tenantId, appt[0].lead_id, user.id,
     'appointment_cancelled',
-    leadRow.status === 'ENTREVISTA PACTADA'
+    regressStatus === 'GESTION'
+      ? 'Cita cancelada — vuelve a gestión activa'
+      : regressStatus === 'HORARIO ASIGNADO'
       ? 'Cita cancelada — vuelve a recoordinar'
       : 'Cita cancelada',
     reason?.trim(),
@@ -400,18 +415,31 @@ export async function markAppointmentNoShow(
       eq(schema.leadAppointments.tenant_id, tenantId),
     ))
 
-  // Si el lead estaba en ENTREVISTA PACTADA, la cita falló: retrocede a
-  // HORARIO ASIGNADO para recoordinar. No tocamos otras etapas.
+  // Si el lead estaba en ENTREVISTA PACTADA, la cita falló. Retrocede:
+  //  - con llamada pendiente → GESTION  (ya hay seguimiento coordinado)
+  //  - sin llamada pendiente → HORARIO ASIGNADO (tiene que recoordinar)
+  let regressStatus: 'GESTION' | 'HORARIO ASIGNADO' | null = null
   if (leadRow.status === 'ENTREVISTA PACTADA') {
+    const hasPendingCall = await dbAdmin
+      .select({ id: schema.leadCalls.id })
+      .from(schema.leadCalls)
+      .where(and(
+        eq(schema.leadCalls.lead_id, appt[0].lead_id),
+        isNull(schema.leadCalls.realizada_at),
+      ))
+      .limit(1)
+    regressStatus = hasPendingCall[0] ? 'GESTION' : 'HORARIO ASIGNADO'
     await q.update(schema.leads)
-      .set({ status: 'HORARIO ASIGNADO', updated_by: user.id })
+      .set({ status: regressStatus, updated_by: user.id })
       .where(and(eq(schema.leads.id, appt[0].lead_id), forTenant(schema.leads)))
   }
 
   await appendTimeline(
     tenantId, appt[0].lead_id, user.id,
     'appointment_no_show',
-    leadRow.status === 'ENTREVISTA PACTADA'
+    regressStatus === 'GESTION'
+      ? 'No se presentó — vuelve a gestión activa'
+      : regressStatus === 'HORARIO ASIGNADO'
       ? 'No se presentó — vuelve a recoordinar'
       : 'No se presentó a la cita',
     notes?.trim(),
