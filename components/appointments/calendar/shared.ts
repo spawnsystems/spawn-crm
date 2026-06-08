@@ -75,6 +75,14 @@ export function isApptPast(appt: ApptRow): boolean {
   return appt.status === 'programada' && new Date(appt.scheduled_at).getTime() < Date.now()
 }
 
+// ── ¿Es una cita "terminada"? ─────────────────────────────────────
+// Cualquier estado distinto de 'programada' ya no está activo: se concretó
+// (realizada / no_se_presento) o se descartó (cancelada / reagendada).
+// Estas se muestran en gris y tachadas.
+export function isApptDone(appt: ApptRow): boolean {
+  return appt.status !== 'programada'
+}
+
 // ── Layout de solapamientos para grilla horaria ───────────────────
 // Reparte en "carriles" las citas que se pisan en el tiempo, para
 // mostrarlas lado a lado (interval partitioning).

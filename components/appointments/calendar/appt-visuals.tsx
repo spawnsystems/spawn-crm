@@ -4,7 +4,7 @@ import { cn, toBADate } from '@/lib/utils'
 import { APPOINTMENT_TIPO_LABEL, APPOINTMENT_STATUS_LABEL } from '@/lib/schemas/appointments'
 import { MapPin, Handshake } from 'lucide-react'
 import {
-  type ApptRow, TIPO_STYLE, fmtHM, formatApptRange, isApptPast,
+  type ApptRow, TIPO_STYLE, fmtHM, formatApptRange, isApptPast, isApptDone,
 } from './shared'
 
 // Nombres mostrados
@@ -20,7 +20,7 @@ export function clienteName(a: ApptRow): string {
 export function ApptChip({ appt, onClick }: { appt: ApptRow; onClick: () => void }) {
   const st       = TIPO_STYLE[appt.tipo]
   const start    = toBADate(appt.scheduled_at)
-  const cancel   = appt.status === 'cancelada'
+  const done     = isApptDone(appt)   // realizada / no_se_presento / cancelada / reagendada
   const past     = isApptPast(appt)
 
   return (
@@ -29,12 +29,13 @@ export function ApptChip({ appt, onClick }: { appt: ApptRow; onClick: () => void
       title={`${formatApptRange(appt.scheduled_at, appt.duration_min)} · ${APPOINTMENT_TIPO_LABEL[appt.tipo]} · ${vendedorName(appt)} 🤝 ${clienteName(appt)}`}
       className={cn(
         'w-full flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium border truncate transition-opacity',
-        st.chip,
-        cancel && 'opacity-40 line-through',
-        past && !cancel && 'ring-1 ring-amber-400',
+        done
+          ? 'bg-muted/60 text-muted-foreground border-border opacity-60 line-through'
+          : st.chip,
+        !done && past && 'ring-1 ring-amber-400',
       )}
     >
-      {!st.emphasis && <span className={cn('size-1.5 rounded-full shrink-0', st.dot)} />}
+      {!st.emphasis && <span className={cn('size-1.5 rounded-full shrink-0', done ? 'bg-muted-foreground/40' : st.dot)} />}
       <span className="tabular-nums shrink-0">{fmtHM(start)}</span>
       <span className="truncate">{clienteName(appt)}</span>
     </button>
@@ -52,7 +53,7 @@ export function ApptBlock({
   compact: boolean
 }) {
   const st     = TIPO_STYLE[appt.tipo]
-  const cancel = appt.status === 'cancelada'
+  const done   = isApptDone(appt)
   const past   = isApptPast(appt)
 
   return (
@@ -60,13 +61,14 @@ export function ApptBlock({
       onClick={(e) => { e.stopPropagation(); onClick() }}
       className={cn(
         'h-full w-full overflow-hidden rounded-md border px-1.5 py-1 text-left transition-shadow hover:shadow-md',
-        st.block,
-        cancel && 'opacity-50 line-through',
-        past && !cancel && 'ring-1 ring-amber-400',
+        done
+          ? 'bg-muted/60 text-muted-foreground border-border opacity-60 line-through'
+          : st.block,
+        !done && past && 'ring-1 ring-amber-400',
       )}
     >
       <div className={cn('text-[10px] font-semibold leading-tight tabular-nums',
-        st.emphasis ? 'text-white/90' : 'opacity-80')}>
+        done ? 'opacity-80' : st.emphasis ? 'text-white/90' : 'opacity-80')}>
         {formatApptRange(appt.scheduled_at, appt.duration_min)}
       </div>
       {!compact && (
@@ -76,7 +78,7 @@ export function ApptBlock({
       )}
       {!compact && (
         <div className={cn('text-[10px] leading-tight truncate',
-          st.emphasis ? 'text-white/80' : 'opacity-70')}>
+          done ? 'opacity-70' : st.emphasis ? 'text-white/80' : 'opacity-70')}>
           {APPOINTMENT_TIPO_LABEL[appt.tipo]} · {vendedorName(appt)}
         </div>
       )}
@@ -89,7 +91,7 @@ export function ApptBlock({
 
 export function ApptCard({ appt, onClick }: { appt: ApptRow; onClick: () => void }) {
   const st     = TIPO_STYLE[appt.tipo]
-  const cancel = appt.status === 'cancelada'
+  const done   = isApptDone(appt)
   const past   = isApptPast(appt)
 
   return (
@@ -97,12 +99,11 @@ export function ApptCard({ appt, onClick }: { appt: ApptRow; onClick: () => void
       onClick={onClick}
       className={cn(
         'w-full text-left rounded-lg border bg-card p-3 border-l-4 transition-shadow hover:shadow-md',
-        past ? 'border-l-amber-400' : st.accent,
-        cancel && 'opacity-50',
+        done ? 'border-l-border opacity-60' : past ? 'border-l-amber-400' : st.accent,
       )}
     >
       {/* vendedor 🤝 cliente */}
-      <div className="flex items-center gap-1.5 text-sm font-semibold min-w-0">
+      <div className={cn('flex items-center gap-1.5 text-sm font-semibold min-w-0', done && 'line-through')}>
         <span className="truncate">{vendedorName(appt)}</span>
         <Handshake className="size-3.5 text-muted-foreground shrink-0" />
         <span className="truncate">{clienteName(appt)}</span>
@@ -112,9 +113,9 @@ export function ApptCard({ appt, onClick }: { appt: ApptRow; onClick: () => void
       <div className="mt-1.5 flex items-center gap-2 flex-wrap">
         <span className={cn(
           'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold',
-          st.chip,
+          done ? 'bg-muted text-muted-foreground border-border' : st.chip,
         )}>
-          {st.emphasis && <span className="text-white">●</span>}
+          {!done && st.emphasis && <span className="text-white">●</span>}
           {APPOINTMENT_TIPO_LABEL[appt.tipo]}
         </span>
         <span className="text-xs font-medium text-foreground tabular-nums">
