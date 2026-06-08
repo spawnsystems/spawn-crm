@@ -46,6 +46,7 @@ interface TeamViewProps {
   miembros:             Miembro[]
   canManage:            boolean
   supervisorSinEquipo?: boolean
+  gerenteSinEquipo?:    boolean
   vendedorSinEquipo?:   boolean
   userRol?:             string
   currentUserId?:       string
@@ -66,7 +67,7 @@ const ROLES_LABEL: Record<string, string> = {
 
 export function TeamView({
   ranking, equipos: initialEquipos, miembros: initialMiembros,
-  canManage, supervisorSinEquipo, vendedorSinEquipo,
+  canManage, supervisorSinEquipo, gerenteSinEquipo, vendedorSinEquipo,
   userRol, currentUserId, teamName,
 }: TeamViewProps) {
   const router = useRouter()
@@ -155,7 +156,23 @@ export function TeamView({
         </div>
       )}
 
-      {tab === 'ranking' && !supervisorSinEquipo && <RankingTab ranking={ranking} userRol={userRol} />}
+      {/* Alerta: gerente sin equipos a cargo */}
+      {gerenteSinEquipo && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">No tenés equipos a cargo</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              El ranking se arma con los vendedores de tus equipos. Creá un equipo o pedí que
+              te asignen como gerente de uno en la pestaña “Gestión de equipos”.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {tab === 'ranking' && !supervisorSinEquipo && !gerenteSinEquipo && (
+        <RankingTab ranking={ranking} userRol={userRol} />
+      )}
 
       {tab === 'equipos' && canManage && (
         <EquiposTab equipos={equipos} miembros={miembros} onRefresh={refresh} />
@@ -186,7 +203,7 @@ function RankingTab({ ranking, userRol }: { ranking: RankingEntry[]; userRol?: s
         <span>{ranking.length} vendedor{ranking.length !== 1 ? 'es' : ''} activo{ranking.length !== 1 ? 's' : ''} {scopeLabel}</span>
       </div>
 
-      {ranking.length >= 2 && (
+      {ranking.length >= 1 && (
         <div className="flex items-end justify-center gap-4 mb-8">
           {ranking[1] && <PodiumCard seller={ranking[1]} position={2} />}
           {ranking[0] && <PodiumCard seller={ranking[0]} position={1} featured />}

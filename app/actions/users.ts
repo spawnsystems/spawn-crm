@@ -235,10 +235,35 @@ export async function updateMyProfile(input: {
 }
 
 // ── getVendedoresDelTenant ────────────────────────────────────
-// Lista vendedores activos para el selector de asignación en nuevo lead
+// Vendedores activos VISIBLES según el scope del que llama. Alimenta los
+// filtros por vendedor (all-leads, citas) y el selector de reasignación
+// (rescate). Respeta la jerarquía de equipos:
+//   dueño/admin → todos los vendedores del tenant
+//   gerente     → solo los de sus equipos
+//   supervisor  → solo los de su equipo
+//   vendedor    → solo él mismo (no lista a otros)
 
 export async function getVendedoresDelTenant() {
-  const { tenantId } = await requireTenant()
+  const { user, tenantId } = await requireTenant()
+  const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
+
+  const where = [
+    eq(schema.tenantMembers.tenant_id, tenantId),
+    eq(schema.tenantMembers.rol, 'vendedor'),
+    eq(schema.tenantMembers.activo, true),
+  ]
+
+  if (scope.type === 'team') {
+    where.push(eq(schema.tenantMembers.equipo_id, scope.equipoId))
+  } else if (scope.type === 'teams') {
+    if (scope.equipoIds.length === 0) return []
+    where.push(inArray(schema.tenantMembers.equipo_id, scope.equipoIds))
+  } else if (scope.type === 'self') {
+    where.push(eq(schema.tenantMembers.user_id, user.id))
+  } else if (scope.type === 'none') {
+    return []
+  }
+  // scope.type === 'all' → sin filtro de equipo (todo el tenant)
 
   return dbAdmin
     .select({
@@ -249,13 +274,7 @@ export async function getVendedoresDelTenant() {
     })
     .from(schema.tenantMembers)
     .leftJoin(schema.usuarios, eq(schema.tenantMembers.user_id, schema.usuarios.id))
-    .where(
-      and(
-        eq(schema.tenantMembers.tenant_id, tenantId),
-        eq(schema.tenantMembers.rol, 'vendedor'),
-        eq(schema.tenantMembers.activo, true),
-      ),
-    )
+    .where(and(...where))
     .orderBy(schema.usuarios.nombre)
 }
 

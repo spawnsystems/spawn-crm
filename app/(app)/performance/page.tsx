@@ -1,11 +1,12 @@
 import { requireAuth } from '@/lib/auth/require-role'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { dbAdmin, schema } from '@/lib/db'
-import { eq, and, count, sql } from 'drizzle-orm'
+import { eq, and, count, sql, inArray, type SQL } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { PerformanceView } from '@/components/performance/performance-view'
 import { isBaja } from '@/lib/leads/constants'
 import { getMyLeads } from '@/app/actions/leads'
+import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
 import { startOfCurrentMonthAR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
@@ -19,11 +20,35 @@ export default async function PerformancePage() {
 
   const startOfMonth = startOfCurrentMonthAR().toISOString()
 
+  // Scope del ranking: cada rol ve solo lo que le corresponde, no todo el tenant.
+  //   vendedor   → su equipo (o solo él si no tiene equipo)
+  //   supervisor → su equipo · gerente → sus equipos · dueño/admin → todo
+  const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
+  const rankingScope: SQL[] = []
+  if (scope.type === 'team') {
+    rankingScope.push(eq(schema.leads.equipo_id, scope.equipoId))
+  } else if (scope.type === 'teams') {
+    rankingScope.push(
+      scope.equipoIds.length > 0
+        ? inArray(schema.leads.equipo_id, scope.equipoIds)
+        : sql`false`,
+    )
+  } else if (scope.type === 'self') {
+    rankingScope.push(
+      scope.equipoId
+        ? eq(schema.leads.equipo_id, scope.equipoId)
+        : eq(schema.leads.assigned_to, user.id),
+    )
+  } else if (scope.type === 'none') {
+    rankingScope.push(sql`false`)
+  }
+  // scope.type === 'all' → sin filtro
+
   const [myLeads, teamRankRaw] = await Promise.all([
     // Mis leads (enriquecidos con el estado de atención del engine)
     getMyLeads(),
 
-    // Team ranking (all sellers in tenant)
+    // Ranking del equipo (scopeado por rol)
     dbAdmin
       .select({
         user_id: schema.leads.assigned_to,
@@ -39,6 +64,7 @@ export default async function PerformancePage() {
           eq(schema.leads.tenant_id, tenantId),
           sql`${schema.leads.assigned_to} IS NOT NULL`,
           sql`${schema.leads.created_at} >= ${startOfMonth}`,
+          ...rankingScope,
         ),
       )
       .groupBy(schema.leads.assigned_to, schema.usuarios.nombre, schema.usuarios.alias),

@@ -24,6 +24,7 @@ export default async function EquipoPage() {
   // Scope del usuario actual
   const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
   const supervisorSinEquipo = user.rol === 'supervisor' && scope.type === 'none'
+  const gerenteSinEquipo    = user.rol === 'gerente'    && scope.type === 'none'
 
   // Para vendedor: getCurrentUserTeamScope devuelve 'self', no el equipo.
   // Hay que buscarlo directamente en tenant_members.
@@ -65,7 +66,9 @@ export default async function EquipoPage() {
     scopeFilter.push(eq(schema.leads.equipo_id, vendedorEquipoId))
   }
 
-  const skipRanking = supervisorSinEquipo || vendedorSinEquipo
+  // Gerente sin equipos: scopeFilter quedaría vacío → el ranking traería TODO
+  // el tenant (fuga de scope). Lo saltamos igual que al supervisor sin equipo.
+  const skipRanking = supervisorSinEquipo || vendedorSinEquipo || gerenteSinEquipo
 
   // Equipos a incluir en el conteo de atención (scope ya verificado por rol).
   // null = todo el tenant (dueño/admin); [] vía skipRanking se evita más abajo.
@@ -125,6 +128,7 @@ export default async function EquipoPage() {
       miembros={miembros}
       canManage={canManage}
       supervisorSinEquipo={supervisorSinEquipo}
+      gerenteSinEquipo={gerenteSinEquipo}
       vendedorSinEquipo={vendedorSinEquipo}
       userRol={user.rol}
       currentUserId={user.id}
