@@ -16,7 +16,7 @@ export type TeamScope =
   | { type: 'all' }                              // dueno / platform_admin
   | { type: 'teams'; equipoIds: string[] }       // gerente (N equipos)
   | { type: 'team';  equipoId: string }          // supervisor (1 equipo)
-  | { type: 'self';  userId: string }            // vendedor (solo propios)
+  | { type: 'self';  userId: string; equipoId: string | null }  // vendedor (propios + sin-asignar del equipo)
   | { type: 'none' }                             // sin acceso
 
 /**
@@ -65,8 +65,18 @@ export async function getCurrentUserTeamScope(
       : { type: 'none' }
   }
 
-  // vendedor
-  return { type: 'self', userId }
+  // vendedor — averiguar su equipo para restringir la bandeja sin-asignar
+  const memberRow = await dbAdmin
+    .select({ equipo_id: schema.tenantMembers.equipo_id })
+    .from(schema.tenantMembers)
+    .where(
+      and(
+        eq(schema.tenantMembers.tenant_id, tenantId),
+        eq(schema.tenantMembers.user_id, userId),
+      ),
+    )
+    .limit(1)
+  return { type: 'self', userId, equipoId: memberRow[0]?.equipo_id ?? null }
 }
 
 /**
@@ -83,7 +93,7 @@ export async function getCurrentUserTeamScope(
  *   ))
  */
 export function buildScopeWhere(scope: TeamScope): SQL | null {
-  const { inArray, isNull, or, eq } = require('drizzle-orm')
+  const { inArray, isNull, or, and: andDrizzle, eq } = require('drizzle-orm')
 
   switch (scope.type) {
     case 'all':
@@ -98,10 +108,23 @@ export function buildScopeWhere(scope: TeamScope): SQL | null {
       return eq(schema.leads.equipo_id, scope.equipoId)
 
     case 'self':
-      // vendedor ve sus propios leads + los sin asignar (Bandeja General)
+      // vendedor ve sus propios leads + sin-asignar de su equipo.
+      // Si no tiene equipo, solo ve los sin-asignar que tampoco tienen equipo.
+      if (scope.equipoId) {
+        return or(
+          eq(schema.leads.assigned_to, scope.userId),
+          andDrizzle(
+            isNull(schema.leads.assigned_to),
+            eq(schema.leads.equipo_id, scope.equipoId),
+          ),
+        )!
+      }
       return or(
         eq(schema.leads.assigned_to, scope.userId),
-        isNull(schema.leads.assigned_to),
+        andDrizzle(
+          isNull(schema.leads.assigned_to),
+          isNull(schema.leads.equipo_id),
+        ),
       )!
 
     case 'none':

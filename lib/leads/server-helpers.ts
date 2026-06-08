@@ -171,7 +171,8 @@ export async function getTenantSlaConfig(tenantId: string): Promise<SlaConfig> {
  *   - all (dueño/admin)     → cualquier lead del tenant
  *   - teams (gerente)       → lead.equipo_id ∈ sus equipos
  *   - team (supervisor)     → lead.equipo_id === su equipo
- *   - self (vendedor)       → assigned_to === user.id  OR  assigned_to === null (bandeja)
+ *   - self (vendedor)       → assigned_to === user.id
+ *                            OR (assigned_to IS NULL AND equipo_id === vendor's equipo)
  *   - none                  → ninguno
  */
 export async function assertLeadAccess(
@@ -199,7 +200,16 @@ export async function assertLeadAccess(
     case 'team':
       return lead.equipo_id === scope.equipoId ? lead : null
     case 'self':
-      return lead.assigned_to === userId || lead.assigned_to === null ? lead : null
+      // Lead asignado al propio vendedor → ok siempre
+      if (lead.assigned_to === userId) return lead
+      // Lead asignado a otro → fuera de scope
+      if (lead.assigned_to !== null) return null
+      // Sin asignar: el vendedor solo accede si el lead es de su equipo
+      // (o si ambos carecen de equipo)
+      if (scope.equipoId) {
+        return lead.equipo_id === scope.equipoId ? lead : null
+      }
+      return lead.equipo_id === null ? lead : null
     case 'none':
     default:
       return null
