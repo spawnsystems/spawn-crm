@@ -21,19 +21,27 @@ import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
 // Correlacionadas con leads.id. Reutilizadas por los queries de leads y
 // por los conteos de atención por equipo. (No son server actions: este
 // archivo es server-only, no 'use server'.)
+//
+// IMPORTANTE: la correlación se escribe ${schema.leads}.${schema.leads.id}
+// (no ${schema.leads.id} a secas). Interpolar SOLO la columna la renderiza
+// como `"id"` sin calificar, y dentro del subquery `"id"` resuelve a la
+// columna `id` de la tabla interna (que también tiene `id`), comparando
+// `child.lead_id = child.id` → siempre falso → NULL. Calificando con la
+// tabla produce `"leads"."id"`, la correlación correcta con el lead externo.
+// (La tabla leads nunca se aliasa en estos queries, así que "leads" es válido.)
 
 /** Hora de la llamada pendiente (sin registrar) más próxima del lead. */
 export const pendingCallAtSql = sql<string | null>`(
   SELECT MIN(lc.scheduled_at)
   FROM ${schema.leadCalls} lc
-  WHERE lc.lead_id = ${schema.leads.id} AND lc.realizada_at IS NULL
+  WHERE lc.lead_id = ${schema.leads}.${schema.leads.id} AND lc.realizada_at IS NULL
 )`
 
 /** Hora de la cita 'programada' del lead (única por constraint). */
 export const openApptAtSql = sql<string | null>`(
   SELECT la.scheduled_at
   FROM ${schema.leadAppointments} la
-  WHERE la.lead_id = ${schema.leads.id} AND la.status = 'programada'
+  WHERE la.lead_id = ${schema.leads}.${schema.leads.id} AND la.status = 'programada'
   LIMIT 1
 )`
 
@@ -41,7 +49,7 @@ export const openApptAtSql = sql<string | null>`(
 export const openApptTipoSql = sql<string | null>`(
   SELECT la.tipo
   FROM ${schema.leadAppointments} la
-  WHERE la.lead_id = ${schema.leads.id} AND la.status = 'programada'
+  WHERE la.lead_id = ${schema.leads}.${schema.leads.id} AND la.status = 'programada'
   LIMIT 1
 )`
 
@@ -49,7 +57,7 @@ export const openApptTipoSql = sql<string | null>`(
 export const usadoValorSql = sql<string | null>`(
   SELECT c.valor_final
   FROM ${schema.cotizaciones} c
-  WHERE c.lead_id = ${schema.leads.id}
+  WHERE c.lead_id = ${schema.leads}.${schema.leads.id}
   ORDER BY c.created_at DESC
   LIMIT 1
 )`
@@ -58,7 +66,7 @@ export const usadoValorSql = sql<string | null>`(
 export const usadoRechazadoSql = sql<boolean | null>`(
   SELECT c.rechazado
   FROM ${schema.cotizaciones} c
-  WHERE c.lead_id = ${schema.leads.id}
+  WHERE c.lead_id = ${schema.leads}.${schema.leads.id}
   ORDER BY c.created_at DESC
   LIMIT 1
 )`

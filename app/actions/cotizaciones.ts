@@ -80,12 +80,41 @@ export async function createCotizacion(input: unknown): Promise<ActionResult<{ i
   }).returning({ id: schema.cotizaciones.id })
 
   // Si se asoció a un lead, marcarlo como "tiene usado" (la cotización es la
-  // verdad: aunque al crear el lead se haya dicho que no, ahora sí tiene).
+  // verdad: aunque al crear el lead se haya dicho que no, ahora sí tiene) y
+  // dejar registro en el historial del lead + auditoría.
   if (data.lead_id) {
     await dbAdmin
       .update(schema.leads)
       .set({ tiene_usado: true, updated_by: user.id })
       .where(and(eq(schema.leads.id, data.lead_id), eq(schema.leads.tenant_id, tenantId)))
+
+    const desc = result.rechazado
+      ? (result.rechazoMotivo ?? 'Usado rechazado')
+      : `${data.marca_modelo ?? 'Usado'} — valor de toma $${result.valorCalculado.toLocaleString('es-AR')}`
+    await appendTimeline(
+      tenantId, data.lead_id, user.id,
+      'cotizacion_created',
+      result.rechazado ? 'Usado cotizado — rechazado' : 'Usado cotizado',
+      desc,
+    )
+
+    void logAudit({
+      tenantId,
+      actorId:        user.id,
+      action:         'cotizacion.create',
+      entity:         'cotizacion',
+      entityId:       row.id,
+      meta: {
+        lead_id:      data.lead_id,
+        marca_modelo: data.marca_modelo,
+        anio:         data.anio,
+        km:           data.km,
+        uso:          data.uso,
+        valor_final:  result.valorCalculado,
+        rechazado:    result.rechazado,
+      },
+      visibleToDueno: true,
+    })
   }
 
   revalidatePath('/cotizador')
@@ -142,6 +171,38 @@ export async function updateCotizacion(input: unknown): Promise<ActionResult<{ r
       updated_at:      new Date(),
     })
     .where(eq(schema.cotizaciones.id, data.id))
+
+  // Historial del lead + auditoría del cambio
+  if (cot.lead_id) {
+    const desc = result.rechazado
+      ? (result.rechazoMotivo ?? 'Usado rechazado')
+      : `${data.marca_modelo ?? 'Usado'} — nuevo valor de toma $${result.valorCalculado.toLocaleString('es-AR')}`
+    await appendTimeline(
+      cot.tenant_id, cot.lead_id, user.id,
+      'cotizacion_updated',
+      result.rechazado ? 'Cotización actualizada — rechazado' : 'Cotización actualizada',
+      desc,
+    )
+
+    void logAudit({
+      tenantId,
+      actorId:        user.id,
+      action:         'cotizacion.update',
+      entity:         'cotizacion',
+      entityId:       data.id,
+      meta: {
+        lead_id:          cot.lead_id,
+        marca_modelo:     data.marca_modelo,
+        anio:             data.anio,
+        km:               data.km,
+        uso:              data.uso,
+        valor_final_prev: cot.valor_final,
+        valor_final:      result.valorCalculado,
+        rechazado:        result.rechazado,
+      },
+      visibleToDueno: true,
+    })
+  }
 
   revalidatePath('/cotizador')
   revalidatePath('/leads')

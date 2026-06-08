@@ -108,7 +108,7 @@ export async function createLead(
       uso:          u.uso,
       provincia:    data.provincia ?? undefined,
     })
-    await dbAdmin.insert(schema.cotizaciones).values({
+    const [cotRow] = await dbAdmin.insert(schema.cotizaciones).values({
       tenant_id:       tenantId,
       lead_id:         row.id,
       marca_modelo:    u.marca_modelo ?? null,
@@ -124,7 +124,7 @@ export async function createLead(
       rechazo_motivo:  result.rechazoMotivo ?? null,
       condiciones:     result.condiciones,
       created_by:      user.id,
-    })
+    }).returning({ id: schema.cotizaciones.id })
     await appendTimeline(
       tenantId, row.id, user.id,
       'cotizacion_created',
@@ -133,6 +133,24 @@ export async function createLead(
         ? (result.rechazoMotivo ?? undefined)
         : `Valor de toma estimado: $${result.valorCalculado.toLocaleString('es-AR')}`,
     )
+    void logAudit({
+      tenantId,
+      actorId:        user.id,
+      action:         'cotizacion.create',
+      entity:         'cotizacion',
+      entityId:       cotRow.id,
+      meta: {
+        lead_id:      row.id,
+        marca_modelo: u.marca_modelo,
+        anio:         u.anio,
+        km:           u.km,
+        uso:          u.uso,
+        valor_final:  result.valorCalculado,
+        rechazado:    result.rechazado,
+        origen:       'alta_lead',
+      },
+      visibleToDueno: true,
+    })
   }
 
   const assignedName = effectiveAssignedTo ? await getVendedorName(effectiveAssignedTo) : null

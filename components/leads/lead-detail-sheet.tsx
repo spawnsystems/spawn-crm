@@ -84,6 +84,7 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
   call_scheduled:          { bg: 'bg-sky-500',       Icon: PhoneCall        },
   call_registered:         { bg: 'bg-teal-500',      Icon: PhoneIncoming    },
   cotizacion_created:      { bg: 'bg-amber-500',     Icon: Calculator       },
+  cotizacion_updated:      { bg: 'bg-amber-400',     Icon: Calculator       },
   _default:                { bg: 'bg-muted-foreground', Icon: ArrowRight    },
 }
 
