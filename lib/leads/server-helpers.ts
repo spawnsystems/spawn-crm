@@ -76,6 +76,24 @@ export const usadoRechazadoSql = sql<boolean | null>`(
   LIMIT 1
 )`
 
+/** Marca/modelo del usado de la cotización más reciente del lead (o null). */
+export const usadoMarcaSql = sql<string | null>`(
+  SELECT c.marca_modelo
+  FROM ${schema.cotizaciones} c
+  WHERE c.lead_id = "leads"."id"
+  ORDER BY c.created_at DESC
+  LIMIT 1
+)`
+
+/** Fecha de registro de venta (de registro_ventas). Null si el lead no fue vendido. */
+export const ventaAtSql = sql<Date | null>`(
+  SELECT rv.vendida_at
+  FROM ${schema.registroVentas} rv
+  WHERE rv.lead_id = "leads"."id"
+  ORDER BY rv.vendida_at DESC
+  LIMIT 1
+)`
+
 /**
  * Carga el usuario actual + tenant y arma el helper de queries.
  * Tira error si falta cualquiera de los dos.

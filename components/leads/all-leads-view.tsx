@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
+import { format } from 'date-fns'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,7 +11,7 @@ import { NewLeadDialog } from '@/components/leads/new-lead-dialog'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { cn, formatRelative, getInitials, safeRefetch } from '@/lib/utils'
+import { cn, formatRelative, getInitials, safeRefetch, toBADate } from '@/lib/utils'
 import { Paginator } from '@/components/ui/paginator'
 import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, XCircle, AlertTriangle } from 'lucide-react'
 import { getAllLeads } from '@/app/actions/leads'
@@ -33,24 +34,38 @@ interface AllLeadsViewProps {
 const ALL       = '__all__'
 const PAGE_SIZE = 20
 
-type SortKey = 'last_contact_at' | 'vendedor' | 'status'
+type SortKey = 'last_contact_at' | 'vendedor' | 'status' | 'created_at' | 'cierre_at'
 type SortDir = 'asc' | 'desc'
 
+function fmtDate(d: Date | string | null | undefined): string {
+  if (!d) return '—'
+  return format(toBADate(new Date(d as Date)), 'dd/MM/yy')
+}
+
+function getCierreAt(lead: LeadRow): Date | null {
+  const raw = lead.baja_at ?? lead.venta_at ?? null
+  return raw ? new Date(raw) : null
+}
+
 export function AllLeadsView({ initialLeads, vendedores, modelos, customSources = [], canCreate }: AllLeadsViewProps) {
-  const [leads,        setLeads]        = useState<LeadRow[]>(initialLeads)
-  const [search,       setSearch]       = useState('')
-  const [filterVend,     setFilterVend]     = useState(ALL)
-  const [filterStatus,   setFilterStatus]   = useState(ALL)
-  const [filterSource,   setFilterSource]   = useState(ALL)
-  const [filterProvincia, setFilterProvincia] = useState(ALL)
-  const [filterUsado,    setFilterUsado]    = useState<'all' | 'yes' | 'no'>('all')
-  const [filterAtencion, setFilterAtencion] = useState<'all' | 'any' | AttentionType>('all')
-  const [openLeadId,     setOpenLeadId]     = useState<string | null>(null)
-  const [bajaLead,       setBajaLead]       = useState<LeadRow | null>(null)
-  const [showNewLead,    setShowNewLead]    = useState(false)
-  const [sortKey,      setSortKey]      = useState<SortKey>('last_contact_at')
-  const [sortDir,      setSortDir]      = useState<SortDir>('asc')
-  const [page,         setPage]         = useState(1)
+  const [leads,             setLeads]             = useState<LeadRow[]>(initialLeads)
+  const [search,            setSearch]            = useState('')
+  const [filterVend,        setFilterVend]        = useState(ALL)
+  const [filterStatus,      setFilterStatus]      = useState(ALL)
+  const [filterSource,      setFilterSource]      = useState(ALL)
+  const [filterProvincia,   setFilterProvincia]   = useState(ALL)
+  const [filterUsado,       setFilterUsado]       = useState<'all' | 'yes' | 'no'>('all')
+  const [filterAtencion,    setFilterAtencion]    = useState<'all' | 'any' | AttentionType>('all')
+  const [ingresoDesde,      setIngresoDesde]      = useState('')
+  const [ingresoHasta,      setIngresoHasta]      = useState('')
+  const [cierreDesde,       setCierreDesde]       = useState('')
+  const [cierreHasta,       setCierreHasta]       = useState('')
+  const [openLeadId,        setOpenLeadId]        = useState<string | null>(null)
+  const [bajaLead,          setBajaLead]          = useState<LeadRow | null>(null)
+  const [showNewLead,       setShowNewLead]       = useState(false)
+  const [sortKey,           setSortKey]           = useState<SortKey>('last_contact_at')
+  const [sortDir,           setSortDir]           = useState<SortDir>('asc')
+  const [page,              setPage]              = useState(1)
 
   function refresh() {
     void safeRefetch(() => getAllLeads(), 'No se pudieron actualizar los leads')
@@ -58,7 +73,9 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
   }
 
   const hasFilters = filterVend !== ALL || filterStatus !== ALL || filterSource !== ALL
-    || filterProvincia !== ALL || filterUsado !== 'all' || filterAtencion !== 'all' || search.trim() !== ''
+    || filterProvincia !== ALL || filterUsado !== 'all' || filterAtencion !== 'all'
+    || search.trim() !== '' || ingresoDesde !== '' || ingresoHasta !== ''
+    || cierreDesde !== '' || cierreHasta !== ''
 
   function clearFilters() {
     setSearch('')
@@ -68,6 +85,10 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
     setFilterProvincia(ALL)
     setFilterUsado('all')
     setFilterAtencion('all')
+    setIngresoDesde('')
+    setIngresoHasta('')
+    setCierreDesde('')
+    setCierreHasta('')
   }
 
   function toggleSort(key: SortKey) {
@@ -80,7 +101,10 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
   }
 
   // Reset a página 1 cuando cambia cualquier filtro o sort
-  useEffect(() => { setPage(1) }, [search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, filterAtencion, sortKey, sortDir])
+  useEffect(() => {
+    setPage(1)
+  }, [search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, filterAtencion,
+      ingresoDesde, ingresoHasta, cierreDesde, cierreHasta, sortKey, sortDir])
 
   // Provincias únicas con al menos un lead
   const provincias = useMemo(() => {
@@ -105,6 +129,31 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
       if (filterUsado === 'no'  &&  l.tiene_usado) return false
       if (filterAtencion === 'any' && !l.at_risk) return false
       if (filterAtencion !== 'all' && filterAtencion !== 'any' && l.attention_type !== filterAtencion) return false
+
+      // Filtro fecha de ingreso
+      if (ingresoDesde) {
+        const desde = new Date(ingresoDesde + 'T00:00:00')
+        if (new Date(l.created_at) < desde) return false
+      }
+      if (ingresoHasta) {
+        const hasta = new Date(ingresoHasta + 'T23:59:59')
+        if (new Date(l.created_at) > hasta) return false
+      }
+
+      // Filtro fecha de cierre
+      if (cierreDesde || cierreHasta) {
+        const cierreAt = getCierreAt(l)
+        if (!cierreAt) return false
+        if (cierreDesde) {
+          const desde = new Date(cierreDesde + 'T00:00:00')
+          if (cierreAt < desde) return false
+        }
+        if (cierreHasta) {
+          const hasta = new Date(cierreHasta + 'T23:59:59')
+          if (cierreAt > hasta) return false
+        }
+      }
+
       if (search.trim()) {
         const q = search.toLowerCase()
         const matches =
@@ -129,11 +178,25 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
       if (sortKey === 'vendedor') {
         const aName = (a.vendedor_alias || a.vendedor_nombre || '').toLowerCase()
         const bName = (b.vendedor_alias || b.vendedor_nombre || '').toLowerCase()
-        // Sin asignar siempre al final en ASC
         if (!aName && !bName) return 0
         if (!aName) return sortDir === 'asc' ? 1 : -1
         if (!bName) return sortDir === 'asc' ? -1 : 1
         const cmp = aName.localeCompare(bName, 'es')
+        return sortDir === 'asc' ? cmp : -cmp
+      }
+      if (sortKey === 'created_at') {
+        const aT = new Date(a.created_at).getTime()
+        const bT = new Date(b.created_at).getTime()
+        const cmp = aT - bT
+        return sortDir === 'asc' ? cmp : -cmp
+      }
+      if (sortKey === 'cierre_at') {
+        const aT = getCierreAt(a)?.getTime() ?? null
+        const bT = getCierreAt(b)?.getTime() ?? null
+        if (aT === null && bT === null) return 0
+        if (aT === null) return sortDir === 'asc' ? 1 : -1
+        if (bT === null) return sortDir === 'asc' ? -1 : 1
+        const cmp = aT - bT
         return sortDir === 'asc' ? cmp : -cmp
       }
       // last_contact_at: null (sin contactar) siempre primero en ASC
@@ -145,7 +208,8 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
       const cmp = aTime - bTime
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [leads, search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, filterAtencion, sortKey, sortDir])
+  }, [leads, search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, filterAtencion,
+      ingresoDesde, ingresoHasta, cierreDesde, cierreHasta, sortKey, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -170,7 +234,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
       </div>
 
       {/* Filters bar */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         {/* Search */}
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -267,12 +331,48 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
           </SelectContent>
         </Select>
 
-        {/* Clear */}
+        {/* Limpiar */}
         {hasFilters && (
           <Button size="sm" variant="ghost" onClick={clearFilters} className="h-9 gap-1.5 text-muted-foreground">
             <X className="size-3.5" />Limpiar
           </Button>
         )}
+      </div>
+
+      {/* Filtros de fecha */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium shrink-0">Ingreso:</span>
+          <input
+            type="date"
+            value={ingresoDesde}
+            onChange={(e) => setIngresoDesde(e.target.value)}
+            className="h-7 text-xs rounded-md border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <span className="shrink-0">—</span>
+          <input
+            type="date"
+            value={ingresoHasta}
+            onChange={(e) => setIngresoHasta(e.target.value)}
+            className="h-7 text-xs rounded-md border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium shrink-0">Cierre:</span>
+          <input
+            type="date"
+            value={cierreDesde}
+            onChange={(e) => setCierreDesde(e.target.value)}
+            className="h-7 text-xs rounded-md border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <span className="shrink-0">—</span>
+          <input
+            type="date"
+            value={cierreHasta}
+            onChange={(e) => setCierreHasta(e.target.value)}
+            className="h-7 text-xs rounded-md border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
       </div>
 
       <Paginator
@@ -287,7 +387,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
       {/* Table */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-sm">
+          <table className="w-full min-w-[900px] text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left text-xs text-muted-foreground border-b border-border">
                 <th className="px-4 py-3 font-medium">Lead</th>
@@ -296,6 +396,8 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                 <SortableTh label="Vendedor"        col="vendedor"        sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
                 <SortableTh label="Estado"          col="status"          sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
                 <SortableTh label="Último contacto" col="last_contact_at" sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+                <SortableTh label="Ingreso"         col="created_at"      sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+                <SortableTh label="Cierre"          col="cierre_at"       sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -305,6 +407,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                 const lastContact = l.last_contact_at
                   ? formatRelative(new Date(l.last_contact_at))
                   : 'Sin contactar'
+                const cierreAt = getCierreAt(l)
 
                 return (
                   <tr
@@ -366,6 +469,12 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                     )}>
                       {lastContact}
                     </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                      {fmtDate(l.created_at)}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                      {fmtDate(cierreAt)}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {!isBaja(l.status) && l.status !== 'VENTA' && (
@@ -387,7 +496,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     {hasFilters ? 'No hay leads que coincidan con los filtros.' : 'No se encontraron leads.'}
                   </td>
                 </tr>
@@ -468,4 +577,3 @@ function SortableTh({
     </th>
   )
 }
-

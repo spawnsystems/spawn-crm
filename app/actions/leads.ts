@@ -8,7 +8,7 @@ import { logAudit } from '@/lib/audit/log'
 import {
   requireTenant, appendTimeline, getTenantSlaConfig, assertLeadAccess,
   cancelPendingCalls, cancelActiveCita,
-  pendingCallAtSql, openApptAtSql, openApptTipoSql, usadoValorSql, usadoRechazadoSql,
+  pendingCallAtSql, openApptAtSql, openApptTipoSql, usadoValorSql, usadoRechazadoSql, usadoMarcaSql, ventaAtSql,
 } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
 import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
@@ -765,6 +765,7 @@ export async function getMyLeads() {
         open_appt_tipo:  openApptTipoSql,
         usado_valor:     usadoValorSql,
         usado_rechazado: usadoRechazadoSql,
+        usado_marca:     usadoMarcaSql,
       })
       .from(schema.leads)
       .where(
@@ -872,6 +873,7 @@ export async function getAllLeads() {
     vendedor_alias:        schema.usuarios.alias,
     pending_call_at:       pendingCallAtSql,
     open_appt_at:          openApptAtSql,
+    venta_at:              ventaAtSql,
   }
 
   const base = dbAdmin
@@ -1039,6 +1041,7 @@ export async function getHistorialLeads() {
     created_by:      schema.leads.created_by,
     created_at:      schema.leads.created_at,
     updated_at:      schema.leads.updated_at,
+    venta_at:        ventaAtSql,
     vendedor_nombre: schema.usuarios.nombre,
     vendedor_alias:  schema.usuarios.alias,
   }
