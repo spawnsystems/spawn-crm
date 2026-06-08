@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo } from 'react'
+import { useState, useTransition, useMemo, useEffect } from 'react'
 import { toast } from 'sonner'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -14,7 +14,18 @@ import {
 import { Loader2, Calculator, AlertTriangle, CheckCircle2, Info } from 'lucide-react'
 import { cn, formatCurrencyARS } from '@/lib/utils'
 import { calcularUsado, condicionesComerciales, type UsoVehiculo } from '@/lib/cotizador/calc'
-import { createCotizacion } from '@/app/actions/cotizaciones'
+import { createCotizacion, updateCotizacion } from '@/app/actions/cotizaciones'
+
+// Cotización existente a editar (modo edición). Si se pasa, el dialog
+// actualiza esa cotización en vez de crear una nueva.
+export interface EditingCotizacion {
+  id:            string
+  marca_modelo:  string | null
+  anio:          number | null
+  km:            number | null
+  uso:           string
+  base_infoauto: string | number
+}
 
 interface CotizadorDialogProps {
   open:          boolean
@@ -22,6 +33,7 @@ interface CotizadorDialogProps {
   leadId?:       string
   leadNombre?:   string
   provincia?:    string
+  editing?:      EditingCotizacion | null
   onCreated?:    () => void
 }
 
@@ -36,7 +48,7 @@ const EMPTY = {
 }
 
 export function CotizadorDialog({
-  open, onOpenChange, leadId, leadNombre, provincia, onCreated,
+  open, onOpenChange, leadId, leadNombre, provincia, editing, onCreated,
 }: CotizadorDialogProps) {
   const [form,      setForm]      = useState(EMPTY)
   const [isPending, startTransition] = useTransition()
@@ -46,6 +58,22 @@ export function CotizadorDialog({
   }
 
   function reset() { setForm(EMPTY) }
+
+  // Al abrir: si es edición, precargar los datos de la cotización; si no, limpiar.
+  useEffect(() => {
+    if (!open) return
+    if (editing) {
+      setForm({
+        marca_modelo:  editing.marca_modelo ?? '',
+        anio:          editing.anio != null ? String(editing.anio) : String(YEAR_NOW - 2),
+        km:            editing.km != null ? String(editing.km) : '',
+        uso:           (editing.uso as UsoVehiculo) || 'particular',
+        base_infoauto: editing.base_infoauto != null ? String(Math.round(Number(editing.base_infoauto))) : '',
+      })
+    } else {
+      setForm(EMPTY)
+    }
+  }, [open, editing])
 
   // ── Preview en vivo ───────────────────────────────────────────
   const preview = useMemo(() => {
@@ -68,22 +96,25 @@ export function CotizadorDialog({
     }
 
     startTransition(async () => {
-      const res = await createCotizacion({
-        lead_id:       leadId,
-        marca_modelo:  form.marca_modelo || undefined,
-        anio,
-        km,
-        uso:           form.uso,
-        base_infoauto: base,
-        provincia,
-      })
+      const res = editing
+        ? await updateCotizacion({
+            id:            editing.id,
+            marca_modelo:  form.marca_modelo || undefined,
+            anio, km, uso: form.uso, base_infoauto: base, provincia,
+          })
+        : await createCotizacion({
+            lead_id:       leadId,
+            marca_modelo:  form.marca_modelo || undefined,
+            anio, km, uso: form.uso, base_infoauto: base, provincia,
+          })
 
       if (!res.success) { toast.error(res.error); return }
 
+      const verb = editing ? 'actualizada' : 'guardada'
       if (res.data.result.rechazado) {
-        toast.warning('Cotización guardada — auto RECHAZADO')
+        toast.warning(`Cotización ${verb} — auto RECHAZADO`)
       } else {
-        toast.success('Cotización guardada')
+        toast.success(`Cotización ${verb}`)
       }
       reset()
       onOpenChange(false)
@@ -99,7 +130,7 @@ export function CotizadorDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Calculator className="size-4" />
-            Cotizador de usado
+            {editing ? 'Editar cotización' : 'Cotizador de usado'}
             {leadNombre && <span className="text-muted-foreground font-normal text-sm">— {leadNombre}</span>}
           </DialogTitle>
         </DialogHeader>
@@ -219,7 +250,7 @@ export function CotizadorDialog({
           </Button>
           <Button onClick={handleSubmit} disabled={!canSubmit} className="gap-1.5">
             {isPending ? <Loader2 className="size-4 animate-spin" /> : <Calculator className="size-4" />}
-            Guardar cotización
+            {editing ? 'Guardar cambios' : 'Guardar cotización'}
           </Button>
         </DialogFooter>
       </DialogContent>

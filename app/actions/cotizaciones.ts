@@ -21,6 +21,16 @@ const createCotizacionSchema = z.object({
   provincia:    z.string().optional(),
 })
 
+const updateCotizacionSchema = z.object({
+  id:           z.string().uuid(),
+  marca_modelo: z.string().max(150).optional(),
+  anio:         z.number().int().min(1900).max(new Date().getFullYear() + 1),
+  km:           z.number().int().min(0),
+  uso:          z.enum(['particular', 'taxi_uber_transporte']),
+  base_infoauto: z.number().positive('El valor InfoAuto debe ser mayor a 0'),
+  provincia:    z.string().optional(),
+})
+
 const registrarVentaSchema = z.object({
   lead_id:         z.string().uuid().optional(),
   modelo:          z.string().optional(),
@@ -69,10 +79,74 @@ export async function createCotizacion(input: unknown): Promise<ActionResult<{ i
     created_by:      user.id,
   }).returning({ id: schema.cotizaciones.id })
 
+  // Si se asoció a un lead, marcarlo como "tiene usado" (la cotización es la
+  // verdad: aunque al crear el lead se haya dicho que no, ahora sí tiene).
+  if (data.lead_id) {
+    await dbAdmin
+      .update(schema.leads)
+      .set({ tiene_usado: true, updated_by: user.id })
+      .where(and(eq(schema.leads.id, data.lead_id), eq(schema.leads.tenant_id, tenantId)))
+  }
+
   revalidatePath('/cotizador')
   revalidatePath('/leads')
   revalidatePath('/all-leads')
   return { success: true, data: { id: row.id, result } }
+}
+
+// ── updateCotizacion ──────────────────────────────────────────────────────────
+// Modifica una cotización existente en lugar de crear otra (editar el mismo auto).
+
+export async function updateCotizacion(input: unknown): Promise<ActionResult<{ result: ReturnType<typeof calcularUsado> }>> {
+  const { user, tenantId } = await requireTenant()
+
+  const parsed = updateCotizacionSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const data = parsed.data
+
+  // Cargar la cotización y validar tenant + acceso al lead
+  const rows = await dbAdmin
+    .select()
+    .from(schema.cotizaciones)
+    .where(and(eq(schema.cotizaciones.id, data.id), eq(schema.cotizaciones.tenant_id, tenantId)))
+    .limit(1)
+  const cot = rows[0]
+  if (!cot) return { success: false, error: 'Cotización no encontrada' }
+  if (cot.lead_id) {
+    const lead = await assertLeadAccess(cot.lead_id, user.id, user.rol, tenantId)
+    if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
+  }
+
+  const result = calcularUsado({
+    baseInfoauto: data.base_infoauto,
+    km:           data.km,
+    anio:         data.anio,
+    uso:          data.uso,
+    provincia:    data.provincia,
+  })
+
+  await dbAdmin
+    .update(schema.cotizaciones)
+    .set({
+      marca_modelo:    data.marca_modelo ?? null,
+      anio:            data.anio,
+      km:              data.km,
+      uso:             data.uso,
+      base_infoauto:   data.base_infoauto.toString(),
+      descuento_pct:   result.descuentoPct.toString(),
+      valor_calculado: result.valorCalculado.toString(),
+      valor_final:     result.valorCalculado.toString(),
+      rechazado:       result.rechazado,
+      rechazo_motivo:  result.rechazoMotivo ?? null,
+      condiciones:     result.condiciones,
+      updated_at:      new Date(),
+    })
+    .where(eq(schema.cotizaciones.id, data.id))
+
+  revalidatePath('/cotizador')
+  revalidatePath('/leads')
+  revalidatePath('/all-leads')
+  return { success: true, data: { result } }
 }
 
 // ── getCotizacionesForLead ────────────────────────────────────────────────────

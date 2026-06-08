@@ -38,7 +38,7 @@ import {
 import { requestTransfer } from '@/app/actions/transfers'
 import { scheduleCall, registerCall } from '@/app/actions/calls'
 import { BajaDialog } from '@/components/leads/baja-dialog'
-import { CotizadorDialog } from '@/components/cotizador/cotizador-dialog'
+import { CotizadorDialog, type EditingCotizacion } from '@/components/cotizador/cotizador-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadSourceValues } from '@/lib/schemas/leads'
@@ -176,9 +176,10 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const [dueCalendarOpen, setDueCalendarOpen] = useState(false)
   const [editing,         setEditing]         = useState(false)
   const [editForm,        setEditForm]        = useState<Partial<Lead>>({})
-  const [showBaja,        setShowBaja]        = useState(false)
-  const [showCotizador,   setShowCotizador]   = useState(false)
-  const [showTransfer,    setShowTransfer]    = useState(false)
+  const [showBaja,         setShowBaja]         = useState(false)
+  const [showCotizador,    setShowCotizador]    = useState(false)
+  const [editingCotizacion, setEditingCotizacion] = useState<EditingCotizacion | null>(null)
+  const [showTransfer,     setShowTransfer]     = useState(false)
   const [showScheduleCall, setShowScheduleCall] = useState(false)
   // Registro de llamada: { callId } para una agendada, { leadId } para ad-hoc.
   const [registerTarget,   setRegisterTarget]   = useState<{ callId?: string; leadId?: string } | null>(null)
@@ -230,6 +231,9 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
   const tasks           = detail?.tasks           ?? []
   const calls           = detail?.calls           ?? []
   const cotizaciones    = detail?.cotizaciones    ?? []
+
+  // "Tiene usado" real: el flag del lead O la existencia de una cotización.
+  const hasUsado = !!lead?.tiene_usado || cotizaciones.length > 0
 
   // Agenda derivada: cita + llamadas pendientes + tareas, ordenada por fecha
   const agenda = buildAgenda(tasks, calls, nextAppointment)
@@ -507,7 +511,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
             {/* ── Acción principal + Usado (lado a lado si hay usado) ── */}
             <div className={cn(
               'px-6 pt-4 mb-4',
-              lead.tiene_usado && 'grid grid-cols-1 lg:grid-cols-2 gap-4 items-start',
+              hasUsado && 'grid grid-cols-1 lg:grid-cols-2 gap-4 items-start',
             )}>
               {/* wrapper para que el fragment de NextActionCard sea un solo ítem del grid */}
               <div>
@@ -518,8 +522,12 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
                   onRegisterCall={() => setRegisterTarget({ leadId: lead.id })}
                 />
               </div>
-              {lead.tiene_usado && (
-                <UsadoCard cotizaciones={cotizaciones} onCotizar={() => setShowCotizador(true)} />
+              {hasUsado && (
+                <UsadoCard
+                  cotizaciones={cotizaciones}
+                  onNew={() => { setEditingCotizacion(null); setShowCotizador(true) }}
+                  onEdit={(c) => { setEditingCotizacion(c); setShowCotizador(true) }}
+                />
               )}
             </div>
 
@@ -911,11 +919,12 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange }: LeadDetailS
             {/* ── Cotizador dialog ── */}
             <CotizadorDialog
               open={showCotizador}
-              onOpenChange={setShowCotizador}
+              onOpenChange={(v) => { setShowCotizador(v); if (!v) setEditingCotizacion(null) }}
               leadId={lead.id}
               leadNombre={lead.nombre}
               provincia={lead.provincia ?? undefined}
-              onCreated={() => { setShowCotizador(false); refreshAll() }}
+              editing={editingCotizacion}
+              onCreated={() => { setShowCotizador(false); setEditingCotizacion(null); refreshAll() }}
             />
 
             {/* ── Transfer dialog ── */}
@@ -990,31 +999,48 @@ function Section({ icon, title, children }: {
 }
 
 // ── UsadoCard ─────────────────────────────────────────────────────
-// Resumen del usado en parte de pago + sus cotizaciones. El lápiz abre
-// el cotizador (nueva cotización). Pensada para ir al lado de la card de
-// acción principal en el grid del sheet.
+// Resumen del usado en parte de pago + sus cotizaciones.
+// - Cada fila tiene su propio lápiz para EDITAR esa cotización.
+// - "+" en el header agrega una cotización para un auto diferente.
+// - Si no hay cotizaciones, el lápiz crea la primera.
 
 function UsadoCard({
-  cotizaciones, onCotizar,
+  cotizaciones, onNew, onEdit,
 }: {
   cotizaciones: NonNullable<DetailData>['cotizaciones']
-  onCotizar:    () => void
+  onNew:        () => void
+  onEdit:       (c: EditingCotizacion) => void
 }) {
   return (
     <div className="rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-3 h-full">
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-1.5 min-w-0">
           <Car className="size-4 text-amber-700 shrink-0" />
-          <span className="text-sm font-semibold text-amber-800 truncate">Usado en parte de pago</span>
+          <span className="text-sm font-semibold text-amber-800">Usado en parte de pago</span>
         </div>
-        <button
-          onClick={onCotizar}
-          title={cotizaciones.length > 0 ? 'Nueva cotización' : 'Cotizar usado'}
-          aria-label={cotizaciones.length > 0 ? 'Nueva cotización' : 'Cotizar usado'}
-          className="shrink-0 p-1.5 rounded text-amber-700 hover:bg-amber-100 transition-colors"
-        >
-          <Pencil className="size-3.5" />
-        </button>
+
+        {cotizaciones.length === 0 ? (
+          /* Sin cotizaciones → lápiz para crear la primera */
+          <button
+            onClick={onNew}
+            title="Cotizar usado"
+            aria-label="Cotizar usado"
+            className="shrink-0 p-1.5 rounded text-amber-700 hover:bg-amber-100 transition-colors"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+        ) : (
+          /* Con cotizaciones → "+" para agregar una de otro auto */
+          <button
+            onClick={onNew}
+            title="Nueva cotización (otro auto)"
+            aria-label="Nueva cotización"
+            className="shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+          >
+            <Plus className="size-3.5" />
+            Nuevo
+          </button>
+        )}
       </div>
 
       {cotizaciones.length === 0 ? (
@@ -1032,32 +1058,58 @@ function UsadoCard({
                 idx > 0 && 'opacity-70',
               )}
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium truncate">
+              <div className="flex items-start justify-between gap-2">
+                {/* Datos del vehículo — sin truncar, deja que wrappee */}
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium leading-snug">
                     {c.marca_modelo || 'Usado'}
                     {c.anio ? <span className="text-muted-foreground font-normal"> · {c.anio}</span> : null}
-                    {typeof c.km === 'number' ? <span className="text-muted-foreground font-normal"> · {c.km.toLocaleString('es-AR')} km</span> : null}
+                    {c.km != null ? (
+                      <span className="text-muted-foreground font-normal">
+                        {' '}· {Number(c.km).toLocaleString('es-AR')} km
+                      </span>
+                    ) : null}
                   </div>
                   <div className="text-[11px] text-muted-foreground">
                     {idx === 0 ? 'Última cotización' : 'Anterior'} · {fmtDayMonthAR(c.created_at)}
                   </div>
                 </div>
-                {c.rechazado ? (
-                  <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5">
-                    <AlertTriangle className="size-3" />Rechazado
-                  </span>
-                ) : (
-                  <div className="shrink-0 text-right">
-                    <div className="text-[10px] text-muted-foreground leading-none">
-                      Valor de toma{c.descuento_pct ? ` · −${Number(c.descuento_pct)}%` : ''}
+
+                {/* Valor / rechazado + lápiz de edición */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {c.rechazado ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-0.5">
+                      <AlertTriangle className="size-3" />Rechazado
+                    </span>
+                  ) : (
+                    <div className="text-right">
+                      <div className="text-[10px] text-muted-foreground leading-none">
+                        Toma{c.descuento_pct ? ` · −${Number(c.descuento_pct)}%` : ''}
+                      </div>
+                      <div className="text-sm font-semibold text-emerald-700">
+                        {formatCurrencyARS(c.valor_final)}
+                      </div>
                     </div>
-                    <div className="text-sm font-semibold text-emerald-700">
-                      {formatCurrencyARS(c.valor_final)}
-                    </div>
-                  </div>
-                )}
+                  )}
+                  {/* Lápiz para editar esta cotización puntualmente */}
+                  <button
+                    onClick={() => onEdit({
+                      id:            c.id,
+                      marca_modelo:  c.marca_modelo,
+                      anio:          c.anio,
+                      km:            c.km != null ? Number(c.km) : null,
+                      uso:           c.uso ?? 'particular',
+                      base_infoauto: c.base_infoauto ?? 0,
+                    })}
+                    title="Editar esta cotización"
+                    aria-label="Editar cotización"
+                    className="p-1 rounded text-muted-foreground hover:text-amber-700 hover:bg-amber-100 transition-colors"
+                  >
+                    <Pencil className="size-3" />
+                  </button>
+                </div>
               </div>
+
               {c.rechazado && c.rechazo_motivo && (
                 <p className="text-[11px] text-rose-700/70 mt-1">{c.rechazo_motivo}</p>
               )}

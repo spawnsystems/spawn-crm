@@ -350,9 +350,15 @@ function fmtNextStepWhen(d: Date): string {
 // Muestra el valor de toma si ya se cotizó, "rechazado" si fue rechazado,
 // o "s/cotizar" si tiene usado pero todavía no hay cotización.
 
+// El subquery puede devolver el booleano como string ("true"/"false"/"t"/"f")
+// según el driver; normalizamos para no romper la lógica del badge.
+function coerceBool(v: unknown): boolean {
+  return v === true || v === 'true' || v === 't'
+}
+
 function UsadoBadge({ lead }: { lead: MyLead }) {
-  const tieneValor = lead.usado_valor != null && !lead.usado_rechazado
-  const rechazado  = lead.usado_rechazado === true
+  const rechazado  = coerceBool(lead.usado_rechazado)
+  const tieneValor = lead.usado_valor != null && !rechazado
 
   return (
     <span
@@ -426,7 +432,7 @@ function LeadCard({ lead, onOpen }: { lead: MyLead; onOpen: () => void }) {
               <span className="mx-2">·</span>
               <span>{lead.source}</span>
             </span>
-            {lead.tiene_usado && <UsadoBadge lead={lead} />}
+            {(lead.tiene_usado || lead.usado_valor != null) && <UsadoBadge lead={lead} />}
           </div>
           <div className="mt-2.5 flex items-center gap-2.5 flex-wrap text-xs">
             <span className={cn('inline-flex items-center gap-1', lead.last_contact_critical ? 'text-destructive font-medium' : 'text-muted-foreground')}>
