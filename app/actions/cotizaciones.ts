@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, desc } from 'drizzle-orm'
-import { requireTenant, assertLeadAccess, appendTimeline, cancelPendingCalls } from '@/lib/leads/server-helpers'
+import { requireTenant, assertLeadAccess, appendTimeline, cancelPendingCalls, cancelActiveCita } from '@/lib/leads/server-helpers'
 import { calcularUsado, condicionesComerciales } from '@/lib/cotizador/calc'
 import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
@@ -272,9 +272,10 @@ export async function registrarVenta(input: unknown): Promise<ActionResult<{ id:
       .set({ status: 'VENTA', abandoned_at: null, updated_by: user.id })
       .where(and(eq(schema.leads.id, data.lead_id), forTenant(schema.leads)))
 
-    // Cancelar llamadas pendientes: la venta cierra el ciclo, no tiene sentido
-    // que queden llamadas en el aire.
+    // Cancelar llamadas pendientes y cita activa: la venta cierra el ciclo,
+    // no tiene sentido que queden en el aire.
     void cancelPendingCalls(tenantId, data.lead_id, user.id)
+    void cancelActiveCita(tenantId, data.lead_id, user.id)
 
     await appendTimeline(
       tenantId, data.lead_id, user.id,

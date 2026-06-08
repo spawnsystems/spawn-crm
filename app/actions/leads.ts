@@ -7,7 +7,7 @@ import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/le
 import { logAudit } from '@/lib/audit/log'
 import {
   requireTenant, appendTimeline, getTenantSlaConfig, assertLeadAccess,
-  cancelPendingCalls,
+  cancelPendingCalls, cancelActiveCita,
   pendingCallAtSql, openApptAtSql, openApptTipoSql, usadoValorSql, usadoRechazadoSql,
 } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
@@ -472,9 +472,10 @@ export async function darDeBaja(input: unknown): Promise<ActionResult<void>> {
     })
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
 
-  // Cancelar llamadas pendientes: no tiene sentido que queden vivas
-  // si el lead ya está dado de baja.
+  // Cancelar llamadas pendientes y cita activa: no tiene sentido que queden
+  // vivas si el lead ya está dado de baja.
   void cancelPendingCalls(tenantId, leadId, user.id)
+  void cancelActiveCita(tenantId, leadId, user.id)
 
   await appendTimeline(
     tenantId, leadId, user.id,

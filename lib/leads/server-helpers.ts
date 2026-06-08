@@ -241,6 +241,40 @@ export async function appendTimeline(
 }
 
 /**
+ * Cancela la cita ACTIVA (status='programada') de un lead, si existe.
+ * No hace regresión de estado del lead (se usa cuando el lead ya está
+ * cambiando a un estado terminal y la regresión no aplica).
+ * Registra evento en el timeline si hubo cancelación.
+ *
+ * Reutilizado por leads.ts (darDeBaja) y cotizaciones.ts (registrarVenta).
+ */
+export async function cancelActiveCita(
+  tenantId: string,
+  leadId:   string,
+  actorId:  string,
+  reason?:  string,
+): Promise<void> {
+  const canceled = await dbAdmin
+    .update(schema.leadAppointments)
+    .set({ status: 'cancelada', outcome_notes: reason ?? null, updated_at: new Date() })
+    .where(and(
+      eq(schema.leadAppointments.lead_id, leadId),
+      eq(schema.leadAppointments.tenant_id, tenantId),
+      eq(schema.leadAppointments.status, 'programada'),
+    ))
+    .returning({ id: schema.leadAppointments.id })
+
+  if (canceled.length > 0) {
+    await appendTimeline(
+      tenantId, leadId, actorId,
+      'appointment_cancelled',
+      'Cita cancelada',
+      reason,
+    )
+  }
+}
+
+/**
  * Cancela todas las llamadas PENDIENTES (sin registrar ni cancelar ya) de un
  * lead, opcionalmente excluyendo una por id (útil para no cancelar la que acaba
  * de ser agendada). Registra evento en el timeline si hubo cancelaciones.
