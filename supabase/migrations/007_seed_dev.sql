@@ -41,18 +41,18 @@ VALUES
 -- ── Nota para el seed de usuarios ─────────────────────────────
 -- Una vez que tengas los UUIDs reales de auth.users, ejecutá:
 --
--- INSERT INTO usuarios (id, email, nombre, rol, is_platform_admin) VALUES
---   ('<uuid-del-admin>', 'spawn.hq.main@gmail.com', 'Spawn Admin', 'platform_admin', TRUE),
---   ('<uuid-del-dueno>', 'dueno@chevroletcentro.com', 'Carlos Méndez', 'dueno', FALSE),
---   ('<uuid-gerente>',   'gerente@chevroletcentro.com', 'Laura Vega', 'gerente', FALSE),
---   ('<uuid-supervisor1>', 'super1@chevroletcentro.com', 'Marcos Ruiz', 'supervisor', FALSE),
---   ('<uuid-vendedor1>',  'vendor1@chevroletcentro.com', 'Ana Torres', 'vendedor', FALSE),
---   ('<uuid-vendedor2>',  'vendor2@chevroletcentro.com', 'Diego Soto', 'vendedor', FALSE);
---
+INSERT INTO usuarios (id, email, nombre, rol, is_platform_admin) VALUES
+   ('61125135-8d6e-48e2-a62f-5f6f1ef1583c', 'spawn.hq.main@gmail.com', 'Spawn Admin', 'platform_admin', TRUE),
+   ('46072d1c-954a-4ad9-ba1b-13a4bf4bb472', 'dueno@luxmar.com', 'Carlos Méndez', 'dueno', FALSE),
+   ('d6c29152-2a29-4d9e-88cf-087610367056',   'gerente@luxmar.com', 'Laura Vega', 'gerente', FALSE),
+   ('37b30880-5bcd-46e0-889a-48c36630258d', 'super1@luxmar.com', 'Marcos Ruiz', 'supervisor', FALSE),
+   ('bb559bf4-0bf7-4501-957d-c492c7912add',  'vendor1@luxmar.com', 'Ana Torres', 'vendedor', FALSE),
+   ('ea83dd26-3c32-4478-9c07-11ac243f46c4',  'vendor2@luxmar.com', 'Diego Soto', 'vendedor', FALSE);
+
 -- Luego los memberships:
--- INSERT INTO tenant_members (tenant_id, user_id, rol, invitation_status) VALUES
---   ('aaaaaaaa-0000-0000-0000-000000000001', '<uuid-del-dueno>',    'dueno',    'accepted'),
---   ('aaaaaaaa-0000-0000-0000-000000000001', '<uuid-gerente>',      'gerente',  'accepted'),
---   ('aaaaaaaa-0000-0000-0000-000000000001', '<uuid-supervisor1>',  'supervisor','accepted'),
---   ('aaaaaaaa-0000-0000-0000-000000000001', '<uuid-vendedor1>',    'vendedor', 'accepted'),
---   ('aaaaaaaa-0000-0000-0000-000000000001', '<uuid-vendedor2>',    'vendedor', 'accepted');
+ INSERT INTO tenant_members (tenant_id, user_id, rol, invitation_status) VALUES
+   ('aaaaaaaa-0000-0000-0000-000000000001', '46072d1c-954a-4ad9-ba1b-13a4bf4bb472',    'dueno',    'accepted'),
+   ('aaaaaaaa-0000-0000-0000-000000000001', 'd6c29152-2a29-4d9e-88cf-087610367056',      'gerente',  'accepted'),
+   ('aaaaaaaa-0000-0000-0000-000000000001', '37b30880-5bcd-46e0-889a-48c36630258d',  'supervisor','accepted'),
+   ('aaaaaaaa-0000-0000-0000-000000000001', 'bb559bf4-0bf7-4501-957d-c492c7912add',    'vendedor', 'accepted'),
+   ('aaaaaaaa-0000-0000-0000-000000000001', 'ea83dd26-3c32-4478-9c07-11ac243f46c4',    'vendedor', 'accepted');

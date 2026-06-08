@@ -238,6 +238,18 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
   // Agenda derivada: cita + llamadas pendientes + tareas, ordenada por fecha
   const agenda = buildAgenda(tasks, calls, nextAppointment)
 
+  // Racha de "no contestó" sin interrupción (intentos ya realizados, más
+  // recientes primero). El diálogo de registro la usa para sugerir un reintento
+  // (si está dentro de los intentos) o, ya pasados, sugerir dar de baja.
+  const unansweredStreak = (() => {
+    const done = calls
+      .filter((c) => c.realizada_at)
+      .sort((a, b) => new Date(b.realizada_at!).getTime() - new Date(a.realizada_at!).getTime())
+    let n = 0
+    for (const c of done) { if (c.outcome === 'no_contesto') n++; else break }
+    return n
+  })()
+
   /** Re-fetch everything (called after mutations in NextActionCard) */
   async function refreshAll() {
     if (!leadId) return
@@ -891,6 +903,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               open={!!registerTarget}
               callId={registerTarget?.callId}
               leadId={registerTarget?.leadId}
+              unansweredSoFar={unansweredStreak}
               onOpenChange={(v) => { if (!v) setRegisterTarget(null) }}
               onDone={(outcome, unansweredStreak) => {
                 setRegisterTarget(null)
@@ -1579,16 +1592,24 @@ const APPT_TIPO_OPTIONS: { value: ApptTipo; label: string }[] = [
 
 const APPT_DURATIONS = [30, 60, 90, 120] as const
 
+// Intentos de "no contestó" antes de sugerir dar de baja como "NO CONTESTA".
+const MAX_UNANSWERED = 3
+
 function RegisterCallDialog({
-  open, callId, leadId, onOpenChange, onDone,
+  open, callId, leadId, unansweredSoFar = 0, onOpenChange, onDone,
 }: {
-  open:         boolean
-  callId?:      string          // registrar una llamada YA agendada
-  leadId?:      string          // registrar una llamada ad-hoc (la crea)
-  onOpenChange: (v: boolean) => void
-  onDone:       (outcome: CallOutcome, unansweredStreak?: number) => void
+  open:            boolean
+  callId?:         string          // registrar una llamada YA agendada
+  leadId?:         string          // registrar una llamada ad-hoc (la crea)
+  unansweredSoFar?: number         // racha de "no contestó" previa de este lead
+  onOpenChange:    (v: boolean) => void
+  onDone:          (outcome: CallOutcome, unansweredStreak?: number) => void
 }) {
   const isAdHoc = !callId && !!leadId
+  // Número de intento que representaría esta llamada si es "no contestó", y si
+  // todavía estamos dentro de los intentos sugeridos (≤ MAX) o ya conviene baja.
+  const attemptNumber  = unansweredSoFar + 1
+  const withinAttempts = attemptNumber < MAX_UNANSWERED
   const [outcome,    setOutcome]    = useState<CallOutcome | null>(null)
   const [notas,      setNotas]      = useState('')
   const [nextCallAt, setNextCallAt] = useState('')
@@ -1622,6 +1643,20 @@ function RegisterCallDialog({
   function reset() {
     setOutcome(null); setNotas(''); setNextCallAt(''); setRetryAt('')
     setApptAt(''); setApptTipo('videollamada'); setApptDur(60); setApptLugar('')
+  }
+
+  // Al elegir el resultado: si es "no contestó" y todavía estamos dentro de los
+  // intentos, sugerimos un reintento pre-cargando una fecha (mañana 10:00). El
+  // vendedor puede quitarla. Pasados los intentos no lo pre-cargamos (la idea
+  // ahí es dar de baja, no insistir).
+  function handleSelectOutcome(v: CallOutcome) {
+    setOutcome(v)
+    if (v === 'no_contesto' && withinAttempts && !retryAt) {
+      const d = new Date()
+      d.setDate(d.getDate() + 1)
+      d.setHours(10, 0, 0, 0)
+      setRetryAt(d.toISOString().slice(0, 16))
+    }
   }
 
   // Validez del submit según outcome. no_contesto y sin_avance no exigen campos.
@@ -1704,7 +1739,7 @@ function RegisterCallDialog({
                 <button
                   key={o.value}
                   type="button"
-                  onClick={() => setOutcome(o.value)}
+                  onClick={() => handleSelectOutcome(o.value)}
                   className={cn(
                     'flex flex-col items-center gap-1.5 rounded-lg border-2 px-3 py-3 text-center transition-all',
                     outcome === o.value
@@ -1725,7 +1760,7 @@ function RegisterCallDialog({
             {/* Salida: dar de baja (separada de los resultados activos) */}
             <button
               type="button"
-              onClick={() => setOutcome(OUTCOME_BAJA.value)}
+              onClick={() => handleSelectOutcome(OUTCOME_BAJA.value)}
               className={cn(
                 'flex w-full items-center justify-center gap-2 rounded-lg border-2 px-3 py-2 text-center transition-all',
                 outcome === OUTCOME_BAJA.value
@@ -1741,38 +1776,51 @@ function RegisterCallDialog({
             </button>
           </div>
 
-          {/* No contestó — reintento opcional */}
+          {/* No contestó — dentro de los intentos: sugerir reintento.
+              Pasados los intentos: avisar que conviene dar de baja. */}
           {outcome === 'no_contesto' && (
             <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/50 p-3">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
                 <PhoneOff className="size-3.5" />
-                No atendió
+                No atendió — intento {attemptNumber}
               </div>
-              <p className="text-[11px] text-amber-700/80 leading-snug">
-                Se registra el intento. El lead sigue en su etapa y queda contando como demorado
-                hasta que lo contactes. Podés programar un reintento (opcional).
-              </p>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Reintentar llamada (opcional)</Label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="datetime-local"
-                    value={retryAt}
-                    onChange={(e) => setRetryAt(e.target.value)}
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  />
-                  {retryAt && (
-                    <button
-                      type="button"
-                      onClick={() => setRetryAt('')}
-                      className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
-                      title="Quitar reintento"
-                    >
-                      <X className="size-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
+
+              {withinAttempts ? (
+                <>
+                  <p className="text-[11px] text-amber-700/80 leading-snug">
+                    Se registra el intento. El lead sigue en su etapa y cuenta como demorado hasta
+                    que lo contactes. Te sugerimos <b>programar un reintento</b> ahora.
+                  </p>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Reintentar llamada</Label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="datetime-local"
+                        value={retryAt}
+                        onChange={(e) => setRetryAt(e.target.value)}
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                      {retryAt && (
+                        <button
+                          type="button"
+                          onClick={() => setRetryAt('')}
+                          className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                          title="Quitar reintento"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-amber-700/60">Opcional — podés quitarlo si preferís no reagendar.</p>
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-amber-800 leading-snug">
+                  Van {attemptNumber} intentos sin respuesta. Registrá este y, si seguís sin
+                  llegar, conviene <b>darlo de baja como “NO CONTESTA”</b> (se puede rescatar luego).
+                  Te lo vamos a sugerir al confirmar.
+                </p>
+              )}
             </div>
           )}
 

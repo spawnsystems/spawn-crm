@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo } from 'react'
+import { useState, useTransition, useMemo, useEffect } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import {
@@ -18,6 +18,7 @@ import {
   UserCircle, Loader2, Car, Plus, X, Clock, Calculator, AlertTriangle, CheckCircle2,
 } from 'lucide-react'
 import { createLead } from '@/app/actions/leads'
+import { getAsignablesParaLead } from '@/app/actions/users'
 import { leadSourceValues } from '@/lib/schemas/leads'
 import { getInitials, formatCurrencyARS } from '@/lib/utils'
 import { useCurrentUser } from '@/lib/tenant/context'
@@ -40,6 +41,16 @@ interface Vendedor {
   equipo_id?: string | null
 }
 
+type Asignables = Awaited<ReturnType<typeof getAsignablesParaLead>>
+
+// Valor combinado del selector de asignación:
+//   'unassigned'    → bandeja (sin vendedor ni equipo explícito)
+//   'team:<uuid>'   → asignar al equipo (sin vendedor)
+//   'vendedor:<uuid>' → asignar directo al vendedor
+const ASSIGN_UNASSIGNED = 'unassigned'
+const ASSIGN_TEAM_PREFIX = 'team:'
+const ASSIGN_VEND_PREFIX = 'vendedor:'
+
 interface NewLeadDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -54,7 +65,7 @@ const EMPTY = {
   source: '' as string, sourceCustom: '',
   localidad: '', provincia: PROVINCIA_DEFAULT as string,
   horarios: [] as HorarioRange[],
-  tiene_usado: false, observaciones: '', assigned_to: '',
+  tiene_usado: false, observaciones: '', assign: '',
   // Usado en parte de pago (cotizador inline)
   usadoMarca: '', usadoAnio: String(YEAR_NOW - 2),
   usadoKm: '', usadoUso: 'particular' as UsoVehiculo, usadoBase: '',
@@ -69,6 +80,21 @@ export function NewLeadDialog({
   const [form,       setForm]       = useState(EMPTY)
   const [emailError, setEmailError] = useState<string | null>(null)
   const [isPending,  startTransition] = useTransition()
+  const [asignables, setAsignables] = useState<Asignables | null>(null)
+
+  // Cargar equipos/vendedores asignables al abrir (solo para jefes; el vendedor
+  // se auto-asigna y no necesita selector).
+  useEffect(() => {
+    if (!open || isVendedor || asignables) return
+    let cancel = false
+    getAsignablesParaLead()
+      .then((r) => { if (!cancel) setAsignables(r) })
+      .catch(() => { /* silencioso: el selector queda vacío */ })
+    return () => { cancel = true }
+  }, [open, isVendedor, asignables])
+
+  // gerente/dueño manejan varios equipos → deben elegir explícitamente.
+  const multiTeam = currentUser.rol === 'gerente' || currentUser.rol === 'dueno' || currentUser.rol === 'platform_admin'
 
   function reset() { setForm(EMPTY); setEmailError(null) }
 
@@ -153,6 +179,16 @@ export function NewLeadDialog({
         }
       : undefined
 
+    // Parsear el destino de asignación.
+    let assignedTo: string | undefined
+    let equipoId:   string | undefined
+    if (form.assign.startsWith(ASSIGN_VEND_PREFIX)) {
+      assignedTo = form.assign.slice(ASSIGN_VEND_PREFIX.length)
+    } else if (form.assign.startsWith(ASSIGN_TEAM_PREFIX)) {
+      equipoId = form.assign.slice(ASSIGN_TEAM_PREFIX.length)
+    }
+    // ASSIGN_UNASSIGNED / '' → sin asignar (el server decide la bandeja)
+
     startTransition(async () => {
       const res = await createLead({
         nombre:              form.nombre,
@@ -167,7 +203,8 @@ export function NewLeadDialog({
         tiene_usado:         form.tiene_usado,
         usado:               usadoPayload,
         observaciones:       form.observaciones || undefined,
-        assigned_to:         form.assigned_to   || undefined,
+        assigned_to:         assignedTo,
+        equipo_id:           equipoId,
       })
 
       if (res.success) {
@@ -184,6 +221,10 @@ export function NewLeadDialog({
   // Origen válido: algo seleccionado; si es "escribir", el texto debe tener al menos 2 chars
   const sourceOk = !!form.source && (form.source !== OTRO_SOURCE || form.sourceCustom.trim().length >= 2)
 
+  // gerente/dueño deben elegir un destino explícito (equipo o vendedor); si no,
+  // el lead podría quedar sin visibilidad para ellos. Supervisor/vendedor no.
+  const assignOk = isVendedor || !multiTeam || form.assign !== ''
+
   const canSubmit =
     !!form.nombre.trim() &&
     form.telefono.trim().length >= 6 &&
@@ -191,6 +232,7 @@ export function NewLeadDialog({
     form.provincia.trim().length >= 2 &&
     !!modeloFinal &&
     sourceOk &&
+    assignOk &&
     !emailError &&
     !isPending
 
@@ -552,28 +594,60 @@ export function NewLeadDialog({
                 </div>
               ) : (
               <div className="space-y-1.5">
-                <Label>Asignar vendedor</Label>
+                <Label>
+                  {multiTeam ? 'Asignar a equipo o vendedor' : 'Asignar vendedor'}
+                  {multiTeam && <span className="text-destructive ml-0.5">*</span>}
+                </Label>
                 <Select
-                  value={form.assigned_to}
-                  onValueChange={(v) => set('assigned_to', v)}
+                  value={form.assign}
+                  onValueChange={(v) => set('assign', v)}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Sin asignar..." />
+                    <SelectValue placeholder={multiTeam ? 'Elegí equipo o vendedor...' : 'Sin asignar...'} />
                   </SelectTrigger>
-                  <SelectContent>
-                    {vendedores.map((v) => {
-                      const name = v.alias || v.nombre || v.user_id
-                      return (
-                        <SelectItem key={v.user_id} value={v.user_id}>
-                          <div className="flex items-center gap-2">
-                            <div className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-primary text-[9px] font-semibold">
-                              {getInitials(name)}
-                            </div>
-                            <span>{name}</span>
-                          </div>
-                        </SelectItem>
-                      )
-                    })}
+                  <SelectContent className="max-h-80">
+                    {/* Bandeja sin asignar:
+                        - supervisor → queda en su equipo (lo deriva luego)
+                        - dueño/admin → bandeja general del tenant */}
+                    {(!multiTeam || currentUser.rol === 'dueno' || currentUser.rol === 'platform_admin') && (
+                      <SelectItem value={ASSIGN_UNASSIGNED}>
+                        <span className="text-muted-foreground">
+                          {multiTeam ? 'Bandeja general (sin equipo)' : 'Sin asignar (queda en el equipo)'}
+                        </span>
+                      </SelectItem>
+                    )}
+
+                    {(asignables?.equipos ?? []).map((eq) => (
+                      <SelectGroup key={eq.id}>
+                        <SelectLabel className="text-[11px] uppercase tracking-wide">{eq.nombre}</SelectLabel>
+                        {/* Asignar al equipo (sin vendedor) — solo para gerente/dueño */}
+                        {multiTeam && (
+                          <SelectItem value={`${ASSIGN_TEAM_PREFIX}${eq.id}`}>
+                            <span className="flex items-center gap-2">
+                              <UserCircle className="size-4 text-muted-foreground" />
+                              <span>Dejar en el equipo (lo deriva el supervisor)</span>
+                            </span>
+                          </SelectItem>
+                        )}
+                        {eq.vendedores.length === 0 ? (
+                          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">Sin vendedores</div>
+                        ) : (
+                          eq.vendedores.map((v) => {
+                            const name = v.alias || v.nombre || v.user_id
+                            return (
+                              <SelectItem key={v.user_id} value={`${ASSIGN_VEND_PREFIX}${v.user_id}`}>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-primary text-[9px] font-semibold">
+                                    {getInitials(name)}
+                                  </div>
+                                  <span>{name}</span>
+                                </div>
+                              </SelectItem>
+                            )
+                          })
+                        )}
+                      </SelectGroup>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

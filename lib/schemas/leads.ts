@@ -53,6 +53,10 @@ export const createLeadSchema = z.object({
   est_value:            z.number().positive().optional(),
   next_action:          z.string().optional(),
   assigned_to:          z.string().uuid().optional(),
+  // Asignación a un equipo sin vendedor (gerente/dueño): el lead queda en la
+  // bandeja de ese equipo para que el supervisor lo derive luego. Se ignora si
+  // viene assigned_to (el vendedor manda).
+  equipo_id:            z.string().uuid().optional(),
 })
 
 export const updateLeadSchema = z.object({

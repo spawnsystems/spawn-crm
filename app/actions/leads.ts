@@ -53,14 +53,15 @@ export async function createLead(
   // Vendedor siempre se auto-asigna — no puede elegir otro destinatario
   const effectiveAssignedTo = user.rol === 'vendedor' ? user.id : (data.assigned_to ?? null)
 
-  // Supervisor/gerente DEBEN tener un equipo. Sin equipo, su scope de visibilidad
-  // es 'none': el lead que crean no caería en ninguna vista suya ni la podrían
-  // gestionar (quedaría huérfano para ellos). Bloqueamos la creación con un
-  // mensaje claro en vez de generar un lead invisible para su creador.
+  // Scope del creador (para validar asignaciones a equipos/vendedores ajenos).
+  // Para vendedor no hace falta (se auto-asigna).
   let creatorScope: Awaited<ReturnType<typeof getCurrentUserTeamScope>> | null = null
-  if (user.rol === 'supervisor' || user.rol === 'gerente') {
+  if (user.rol !== 'vendedor') {
     creatorScope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
-    if (creatorScope.type === 'none') {
+    // Supervisor/gerente DEBEN tener un equipo. Sin equipo su scope es 'none':
+    // el lead que crean no caería en ninguna vista suya (quedaría huérfano para
+    // su propio creador). Lo bloqueamos con un mensaje claro. (El dueño es 'all'.)
+    if ((user.rol === 'supervisor' || user.rol === 'gerente') && creatorScope.type === 'none') {
       return {
         success: false,
         error:
@@ -69,9 +70,21 @@ export async function createLead(
     }
   }
 
-  // Buscar equipo_id del asignado
+  // ¿El equipo objetivo está dentro del alcance del creador?
+  const equipoEnScope = (equipoId: string): boolean => {
+    if (!creatorScope) return false
+    switch (creatorScope.type) {
+      case 'all':   return true
+      case 'teams': return creatorScope.equipoIds.includes(equipoId)
+      case 'team':  return creatorScope.equipoId === equipoId
+      default:      return false
+    }
+  }
+
+  // Resolver el equipo del lead.
   let equipoId: string | null = null
   if (effectiveAssignedTo) {
+    // Asignado a un vendedor → equipo = el del vendedor.
     const member = await dbAdmin
       .select({ equipo_id: schema.tenantMembers.equipo_id })
       .from(schema.tenantMembers)
@@ -83,18 +96,37 @@ export async function createLead(
       )
       .limit(1)
     equipoId = member[0]?.equipo_id ?? null
+    // Un jefe no puede asignar a un vendedor fuera de su alcance.
+    if (creatorScope && equipoId && !equipoEnScope(equipoId)) {
+      return { success: false, error: 'No podés asignar el lead a un vendedor fuera de tus equipos.' }
+    }
+  } else if (data.equipo_id) {
+    // Asignado a un EQUIPO sin vendedor (gerente/dueño) → queda en la bandeja
+    // de ese equipo para que el supervisor lo derive luego.
+    if (creatorScope && !equipoEnScope(data.equipo_id)) {
+      return { success: false, error: 'No podés asignar el lead a un equipo fuera de tu alcance.' }
+    }
+    const teamRow = await dbAdmin
+      .select({ id: schema.equipos.id })
+      .from(schema.equipos)
+      .where(and(
+        eq(schema.equipos.id, data.equipo_id),
+        eq(schema.equipos.tenant_id, tenantId),
+        eq(schema.equipos.activo, true),
+      ))
+      .limit(1)
+    if (!teamRow[0]) return { success: false, error: 'Equipo no encontrado' }
+    equipoId = data.equipo_id
   } else if (creatorScope) {
-    // Lead SIN asignar creado por supervisor/gerente: lo etiquetamos con su
-    // equipo para que aparezca en la bandeja de ese equipo y el creador pueda
-    // verlo/gestionarlo. (No restringe a los vendedores: la bandeja general
-    // sigue siendo tenant-wide para leads sin asignar.)
+    // Sin asignar: etiquetamos con el equipo del creador (supervisor o gerente
+    // de un solo equipo) para que caiga en su bandeja. No restringe a los
+    // vendedores: la bandeja general sigue siendo tenant-wide para leads sin
+    // asignar. Dueño/gerente con varios equipos → null (bandeja general).
     if (creatorScope.type === 'team') {
       equipoId = creatorScope.equipoId
     } else if (creatorScope.type === 'teams' && creatorScope.equipoIds.length === 1) {
       equipoId = creatorScope.equipoIds[0]
     }
-    // gerente con varios equipos + sin asignar → equipo ambiguo: queda null
-    // (el lead va a la bandeja general; el gerente lo verá al asignarlo).
   }
 
   const [row] = await q.insert(schema.leads).values({

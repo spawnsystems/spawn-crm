@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth/get-current-user'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { dbAdmin, schema } from '@/lib/db'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
+import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { logAudit } from '@/lib/audit/log'
 import type { ActionResult } from './auth'
@@ -256,6 +257,73 @@ export async function getVendedoresDelTenant() {
       ),
     )
     .orderBy(schema.usuarios.nombre)
+}
+
+// ── getAsignablesParaLead ─────────────────────────────────────
+// Opciones de asignación para el alta de lead, según el scope del usuario:
+//  - dueño/admin → todos los equipos del tenant + sus vendedores
+//  - gerente     → solo sus equipos + sus vendedores
+//  - supervisor  → solo su equipo + sus vendedores
+//  - vendedor    → ninguno (se auto-asigna)
+// Permite que un gerente/dueño asigne a un equipo (sin vendedor) para que el
+// supervisor lo derive luego, o directo a un vendedor.
+
+export async function getAsignablesParaLead(): Promise<{
+  scope: 'all' | 'teams' | 'team' | 'self' | 'none'
+  equipos: {
+    id:     string
+    nombre: string
+    vendedores: { user_id: string; nombre: string | null; alias: string | null }[]
+  }[]
+}> {
+  const { user, tenantId } = await requireTenant()
+  const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
+
+  if (scope.type === 'self' || scope.type === 'none') {
+    return { scope: scope.type, equipos: [] }
+  }
+
+  // Equipos en alcance
+  const teamWhere = [
+    eq(schema.equipos.tenant_id, tenantId),
+    eq(schema.equipos.activo, true),
+  ]
+  if (scope.type === 'team')  teamWhere.push(eq(schema.equipos.id, scope.equipoId))
+  if (scope.type === 'teams') teamWhere.push(inArray(schema.equipos.id, scope.equipoIds))
+
+  const teamRows = await dbAdmin
+    .select({ id: schema.equipos.id, nombre: schema.equipos.nombre })
+    .from(schema.equipos)
+    .where(and(...teamWhere))
+    .orderBy(schema.equipos.nombre)
+
+  // Vendedores activos del tenant (los filtramos por equipo abajo)
+  const vendedores = await dbAdmin
+    .select({
+      user_id:   schema.tenantMembers.user_id,
+      equipo_id: schema.tenantMembers.equipo_id,
+      nombre:    schema.usuarios.nombre,
+      alias:     schema.usuarios.alias,
+    })
+    .from(schema.tenantMembers)
+    .leftJoin(schema.usuarios, eq(schema.tenantMembers.user_id, schema.usuarios.id))
+    .where(and(
+      eq(schema.tenantMembers.tenant_id, tenantId),
+      eq(schema.tenantMembers.rol, 'vendedor'),
+      eq(schema.tenantMembers.activo, true),
+    ))
+    .orderBy(schema.usuarios.nombre)
+
+  return {
+    scope: scope.type,
+    equipos: teamRows.map((t) => ({
+      id:     t.id,
+      nombre: t.nombre,
+      vendedores: vendedores
+        .filter((v) => v.equipo_id === t.id)
+        .map((v) => ({ user_id: v.user_id, nombre: v.nombre, alias: v.alias })),
+    })),
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────
