@@ -8,7 +8,7 @@ import { logAudit } from '@/lib/audit/log'
 import {
   requireTenant, appendTimeline, getTenantSlaConfig, assertLeadAccess,
   cancelPendingCalls, cancelActiveCita,
-  pendingCallAtSql, openApptAtSql, openApptTipoSql, usadoValorSql, usadoRechazadoSql, usadoMarcaSql, ventaAtSql,
+  pendingCallAtSql, openApptAtSql, openApptTipoSql, usadoValorSql, usadoRechazadoSql, usadoMarcaSql, ventaAtSql, creatorNombreSql,
 } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
 import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
@@ -874,6 +874,7 @@ export async function getAllLeads() {
     pending_call_at:       pendingCallAtSql,
     open_appt_at:          openApptAtSql,
     venta_at:              ventaAtSql,
+    creator_nombre:        creatorNombreSql,
   }
 
   const base = dbAdmin
@@ -1042,6 +1043,7 @@ export async function getHistorialLeads() {
     created_at:      schema.leads.created_at,
     updated_at:      schema.leads.updated_at,
     venta_at:        ventaAtSql,
+    creator_nombre:  creatorNombreSql,
     vendedor_nombre: schema.usuarios.nombre,
     vendedor_alias:  schema.usuarios.alias,
   }

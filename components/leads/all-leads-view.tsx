@@ -24,18 +24,26 @@ import { BajaDialog } from '@/components/leads/baja-dialog'
 type LeadRow = Awaited<ReturnType<typeof getAllLeads>>[number]
 
 interface AllLeadsViewProps {
-  initialLeads: LeadRow[]
-  vendedores: Awaited<ReturnType<typeof getVendedoresDelTenant>>
-  modelos: string[]
+  initialLeads:  LeadRow[]
+  vendedores:    Awaited<ReturnType<typeof getVendedoresDelTenant>>
+  modelos:       string[]
   customSources?: string[]
-  canCreate: boolean
+  canCreate:     boolean
 }
 
 const ALL       = '__all__'
 const PAGE_SIZE = 20
 
-type SortKey = 'last_contact_at' | 'vendedor' | 'status' | 'created_at' | 'cierre_at'
-type SortDir = 'asc' | 'desc'
+const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+const NOW      = new Date()
+const CUR_MES  = NOW.getMonth() + 1
+const CUR_ANIO = NOW.getFullYear()
+const YEARS    = Array.from({ length: 5 }, (_, i) => CUR_ANIO - i)
+
+type SortKey   = 'last_contact_at' | 'vendedor' | 'status' | 'created_at' | 'cierre_at'
+type SortDir   = 'asc' | 'desc'
+type FechaTipo = 'ingreso' | 'cierre'
 
 function fmtDate(d: Date | string | null | undefined): string {
   if (!d) return '—'
@@ -48,24 +56,24 @@ function getCierreAt(lead: LeadRow): Date | null {
 }
 
 export function AllLeadsView({ initialLeads, vendedores, modelos, customSources = [], canCreate }: AllLeadsViewProps) {
-  const [leads,             setLeads]             = useState<LeadRow[]>(initialLeads)
-  const [search,            setSearch]            = useState('')
-  const [filterVend,        setFilterVend]        = useState(ALL)
-  const [filterStatus,      setFilterStatus]      = useState(ALL)
-  const [filterSource,      setFilterSource]      = useState(ALL)
-  const [filterProvincia,   setFilterProvincia]   = useState(ALL)
-  const [filterUsado,       setFilterUsado]       = useState<'all' | 'yes' | 'no'>('all')
-  const [filterAtencion,    setFilterAtencion]    = useState<'all' | 'any' | AttentionType>('all')
-  const [ingresoDesde,      setIngresoDesde]      = useState('')
-  const [ingresoHasta,      setIngresoHasta]      = useState('')
-  const [cierreDesde,       setCierreDesde]       = useState('')
-  const [cierreHasta,       setCierreHasta]       = useState('')
-  const [openLeadId,        setOpenLeadId]        = useState<string | null>(null)
-  const [bajaLead,          setBajaLead]          = useState<LeadRow | null>(null)
-  const [showNewLead,       setShowNewLead]       = useState(false)
-  const [sortKey,           setSortKey]           = useState<SortKey>('last_contact_at')
-  const [sortDir,           setSortDir]           = useState<SortDir>('asc')
-  const [page,              setPage]              = useState(1)
+  const [leads,           setLeads]           = useState<LeadRow[]>(initialLeads)
+  const [search,          setSearch]          = useState('')
+  const [filterVend,      setFilterVend]      = useState(ALL)
+  const [filterStatus,    setFilterStatus]    = useState(ALL)
+  const [filterSource,    setFilterSource]    = useState(ALL)
+  const [filterProvincia, setFilterProvincia] = useState(ALL)
+  const [filterUsado,     setFilterUsado]     = useState<'all' | 'yes' | 'no'>('all')
+  const [filterAtencion,  setFilterAtencion]  = useState<'all' | 'any' | AttentionType>('all')
+  // Filtro de período — default: mes actual, por ingreso
+  const [filterMes,       setFilterMes]       = useState<number | null>(CUR_MES)
+  const [filterAnio,      setFilterAnio]      = useState<number>(CUR_ANIO)
+  const [fechaTipo,       setFechaTipo]       = useState<FechaTipo>('ingreso')
+  const [openLeadId,      setOpenLeadId]      = useState<string | null>(null)
+  const [bajaLead,        setBajaLead]        = useState<LeadRow | null>(null)
+  const [showNewLead,     setShowNewLead]     = useState(false)
+  const [sortKey,         setSortKey]         = useState<SortKey>('last_contact_at')
+  const [sortDir,         setSortDir]         = useState<SortDir>('asc')
+  const [page,            setPage]            = useState(1)
 
   function refresh() {
     void safeRefetch(() => getAllLeads(), 'No se pudieron actualizar los leads')
@@ -74,39 +82,24 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
 
   const hasFilters = filterVend !== ALL || filterStatus !== ALL || filterSource !== ALL
     || filterProvincia !== ALL || filterUsado !== 'all' || filterAtencion !== 'all'
-    || search.trim() !== '' || ingresoDesde !== '' || ingresoHasta !== ''
-    || cierreDesde !== '' || cierreHasta !== ''
+    || search.trim() !== ''
 
   function clearFilters() {
-    setSearch('')
-    setFilterVend(ALL)
-    setFilterStatus(ALL)
-    setFilterSource(ALL)
-    setFilterProvincia(ALL)
-    setFilterUsado('all')
-    setFilterAtencion('all')
-    setIngresoDesde('')
-    setIngresoHasta('')
-    setCierreDesde('')
-    setCierreHasta('')
+    setSearch(''); setFilterVend(ALL); setFilterStatus(ALL)
+    setFilterSource(ALL); setFilterProvincia(ALL)
+    setFilterUsado('all'); setFilterAtencion('all')
   }
 
   function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
+    if (sortKey === key) setSortDir((d) => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
   }
 
-  // Reset a página 1 cuando cambia cualquier filtro o sort
   useEffect(() => {
     setPage(1)
-  }, [search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, filterAtencion,
-      ingresoDesde, ingresoHasta, cierreDesde, cierreHasta, sortKey, sortDir])
+  }, [search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado,
+      filterAtencion, filterMes, filterAnio, fechaTipo, sortKey, sortDir])
 
-  // Provincias únicas con al menos un lead
   const provincias = useMemo(() => {
     const set = new Set<string>()
     leads.forEach((l) => { if (l.provincia?.trim()) set.add(l.provincia.trim()) })
@@ -116,11 +109,8 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
   const filtered = useMemo(() => {
     const result = leads.filter((l) => {
       if (filterVend !== ALL) {
-        if (filterVend === '__unassigned__') {
-          if (l.assigned_to !== null) return false
-        } else {
-          if (l.assigned_to !== filterVend) return false
-        }
+        if (filterVend === '__unassigned__') { if (l.assigned_to !== null) return false }
+        else { if (l.assigned_to !== filterVend) return false }
       }
       if (filterStatus !== ALL && l.status !== filterStatus) return false
       if (filterSource !== ALL && l.source !== filterSource) return false
@@ -130,28 +120,11 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
       if (filterAtencion === 'any' && !l.at_risk) return false
       if (filterAtencion !== 'all' && filterAtencion !== 'any' && l.attention_type !== filterAtencion) return false
 
-      // Filtro fecha de ingreso
-      if (ingresoDesde) {
-        const desde = new Date(ingresoDesde + 'T00:00:00')
-        if (new Date(l.created_at) < desde) return false
-      }
-      if (ingresoHasta) {
-        const hasta = new Date(ingresoHasta + 'T23:59:59')
-        if (new Date(l.created_at) > hasta) return false
-      }
-
-      // Filtro fecha de cierre
-      if (cierreDesde || cierreHasta) {
-        const cierreAt = getCierreAt(l)
-        if (!cierreAt) return false
-        if (cierreDesde) {
-          const desde = new Date(cierreDesde + 'T00:00:00')
-          if (cierreAt < desde) return false
-        }
-        if (cierreHasta) {
-          const hasta = new Date(cierreHasta + 'T23:59:59')
-          if (cierreAt > hasta) return false
-        }
+      // Filtro de período
+      if (filterMes !== null) {
+        const d = fechaTipo === 'ingreso' ? new Date(l.created_at) : getCierreAt(l)
+        if (!d) return false
+        if (d.getMonth() + 1 !== filterMes || d.getFullYear() !== filterAnio) return false
       }
 
       if (search.trim()) {
@@ -164,7 +137,8 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
           (l.telefono ?? '').includes(q) ||
           (l.localidad ?? '').toLowerCase().includes(q) ||
           (l.provincia ?? '').toLowerCase().includes(q) ||
-          (l.source_custom ?? '').toLowerCase().includes(q)
+          (l.source_custom ?? '').toLowerCase().includes(q) ||
+          (l.creator_nombre ?? '').toLowerCase().includes(q)
         if (!matches) return false
       }
       return true
@@ -176,30 +150,28 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
         return sortDir === 'asc' ? cmp : -cmp
       }
       if (sortKey === 'vendedor') {
-        const aName = (a.vendedor_alias || a.vendedor_nombre || '').toLowerCase()
-        const bName = (b.vendedor_alias || b.vendedor_nombre || '').toLowerCase()
-        if (!aName && !bName) return 0
-        if (!aName) return sortDir === 'asc' ? 1 : -1
-        if (!bName) return sortDir === 'asc' ? -1 : 1
-        const cmp = aName.localeCompare(bName, 'es')
+        const an = (a.vendedor_alias || a.vendedor_nombre || '').toLowerCase()
+        const bn = (b.vendedor_alias || b.vendedor_nombre || '').toLowerCase()
+        if (!an && !bn) return 0
+        if (!an) return sortDir === 'asc' ? 1 : -1
+        if (!bn) return sortDir === 'asc' ? -1 : 1
+        const cmp = an.localeCompare(bn, 'es')
         return sortDir === 'asc' ? cmp : -cmp
       }
       if (sortKey === 'created_at') {
-        const aT = new Date(a.created_at).getTime()
-        const bT = new Date(b.created_at).getTime()
-        const cmp = aT - bT
+        const cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         return sortDir === 'asc' ? cmp : -cmp
       }
       if (sortKey === 'cierre_at') {
-        const aT = getCierreAt(a)?.getTime() ?? null
-        const bT = getCierreAt(b)?.getTime() ?? null
-        if (aT === null && bT === null) return 0
-        if (aT === null) return sortDir === 'asc' ? 1 : -1
-        if (bT === null) return sortDir === 'asc' ? -1 : 1
-        const cmp = aT - bT
+        const at = getCierreAt(a)?.getTime() ?? null
+        const bt = getCierreAt(b)?.getTime() ?? null
+        if (at === null && bt === null) return 0
+        if (at === null) return sortDir === 'asc' ? 1 : -1
+        if (bt === null) return sortDir === 'asc' ? -1 : 1
+        const cmp = at - bt
         return sortDir === 'asc' ? cmp : -cmp
       }
-      // last_contact_at: null (sin contactar) siempre primero en ASC
+      // last_contact_at
       const aTime = a.last_contact_at ? new Date(a.last_contact_at).getTime() : null
       const bTime = b.last_contact_at ? new Date(b.last_contact_at).getTime() : null
       if (aTime === null && bTime === null) return 0
@@ -208,8 +180,8 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
       const cmp = aTime - bTime
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [leads, search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado, filterAtencion,
-      ingresoDesde, ingresoHasta, cierreDesde, cierreHasta, sortKey, sortDir])
+  }, [leads, search, filterVend, filterStatus, filterSource, filterProvincia, filterUsado,
+      filterAtencion, filterMes, filterAnio, fechaTipo, sortKey, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -221,9 +193,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Todos los Leads</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {filtered.length !== leads.length
-              ? `${filtered.length} de ${leads.length} leads`
-              : `${leads.length} leads`}
+            {filtered.length !== leads.length ? `${filtered.length} de ${leads.length} leads` : `${leads.length} leads`}
           </p>
         </div>
         {canCreate && (
@@ -233,9 +203,66 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
         )}
       </div>
 
-      {/* Filters bar */}
+      {/* ── Filtro de período ───────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        {/* Search */}
+        {/* Toggle ingreso / cierre */}
+        <div className="flex h-9 rounded-md border border-input text-xs overflow-hidden shrink-0">
+          <button
+            onClick={() => setFechaTipo('ingreso')}
+            className={cn(
+              'px-3 transition-colors',
+              fechaTipo === 'ingreso'
+                ? 'bg-primary text-primary-foreground font-medium'
+                : 'text-muted-foreground hover:bg-muted',
+            )}
+          >Ingreso</button>
+          <button
+            onClick={() => setFechaTipo('cierre')}
+            className={cn(
+              'px-3 border-l border-input transition-colors',
+              fechaTipo === 'cierre'
+                ? 'bg-primary text-primary-foreground font-medium'
+                : 'text-muted-foreground hover:bg-muted',
+            )}
+          >Cierre</button>
+        </div>
+
+        {/* Mes */}
+        <Select
+          value={filterMes?.toString() ?? 'all'}
+          onValueChange={(v) => setFilterMes(v === 'all' ? null : Number(v))}
+        >
+          <SelectTrigger className="h-9 w-40 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los meses</SelectItem>
+            {MONTHS.map((m, i) => (
+              <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Año */}
+        {filterMes !== null && (
+          <Select
+            value={filterAnio.toString()}
+            onValueChange={(v) => setFilterAnio(Number(v))}
+          >
+            <SelectTrigger className="h-9 w-24 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {YEARS.map((y) => (
+                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
+      {/* ── Filtros de texto / tipo ─────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           <Input
@@ -246,7 +273,6 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
           />
         </div>
 
-        {/* Vendedor */}
         {vendedores.length > 0 && (
           <Select value={filterVend} onValueChange={setFilterVend}>
             <SelectTrigger className={cn('h-9 w-44 text-sm', filterVend !== ALL && 'border-primary text-primary')}>
@@ -256,41 +282,32 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
               <SelectItem value={ALL}>Todos los vendedores</SelectItem>
               <SelectItem value="__unassigned__">Sin asignar</SelectItem>
               {vendedores.map((v) => (
-                <SelectItem key={v.user_id} value={v.user_id}>
-                  {v.alias || v.nombre || v.user_id}
-                </SelectItem>
+                <SelectItem key={v.user_id} value={v.user_id}>{v.alias || v.nombre || v.user_id}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
 
-        {/* Estado */}
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className={cn('h-9 w-40 text-sm', filterStatus !== ALL && 'border-primary text-primary')}>
             <SelectValue placeholder="Estado" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>Todos los estados</SelectItem>
-            {leadStatusValues.map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
-            ))}
+            {leadStatusValues.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
 
-        {/* Origen */}
         <Select value={filterSource} onValueChange={setFilterSource}>
           <SelectTrigger className={cn('h-9 w-40 text-sm', filterSource !== ALL && 'border-primary text-primary')}>
             <SelectValue placeholder="Origen" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>Todos los orígenes</SelectItem>
-            {leadSourceValues.map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
-            ))}
+            {leadSourceValues.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
 
-        {/* Atención */}
         <Select value={filterAtencion} onValueChange={(v) => setFilterAtencion(v as typeof filterAtencion)}>
           <SelectTrigger className={cn('h-9 w-44 text-sm', filterAtencion !== 'all' && 'border-amber-500 text-amber-700')}>
             <SelectValue placeholder="Atención" />
@@ -304,7 +321,6 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
           </SelectContent>
         </Select>
 
-        {/* Provincia */}
         {provincias.length > 0 && (
           <Select value={filterProvincia} onValueChange={setFilterProvincia}>
             <SelectTrigger className={cn('h-9 w-40 text-sm', filterProvincia !== ALL && 'border-primary text-primary')}>
@@ -312,14 +328,11 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL}>Todas las provincias</SelectItem>
-              {provincias.map((p) => (
-                <SelectItem key={p} value={p}>{p}</SelectItem>
-              ))}
+              {provincias.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
             </SelectContent>
           </Select>
         )}
 
-        {/* Tiene usado */}
         <Select value={filterUsado} onValueChange={(v) => setFilterUsado(v as 'all' | 'yes' | 'no')}>
           <SelectTrigger className={cn('h-9 w-36 text-sm', filterUsado !== 'all' && 'border-primary text-primary')}>
             <SelectValue placeholder="Tiene usado" />
@@ -331,7 +344,6 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
           </SelectContent>
         </Select>
 
-        {/* Limpiar */}
         {hasFilters && (
           <Button size="sm" variant="ghost" onClick={clearFilters} className="h-9 gap-1.5 text-muted-foreground">
             <X className="size-3.5" />Limpiar
@@ -339,61 +351,18 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
         )}
       </div>
 
-      {/* Filtros de fecha */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 text-xs text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <span className="font-medium shrink-0">Ingreso:</span>
-          <input
-            type="date"
-            value={ingresoDesde}
-            onChange={(e) => setIngresoDesde(e.target.value)}
-            className="h-7 text-xs rounded-md border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          <span className="shrink-0">—</span>
-          <input
-            type="date"
-            value={ingresoHasta}
-            onChange={(e) => setIngresoHasta(e.target.value)}
-            className="h-7 text-xs rounded-md border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="font-medium shrink-0">Cierre:</span>
-          <input
-            type="date"
-            value={cierreDesde}
-            onChange={(e) => setCierreDesde(e.target.value)}
-            className="h-7 text-xs rounded-md border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          <span className="shrink-0">—</span>
-          <input
-            type="date"
-            value={cierreHasta}
-            onChange={(e) => setCierreHasta(e.target.value)}
-            className="h-7 text-xs rounded-md border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-        </div>
-      </div>
+      <Paginator page={page} totalPages={totalPages} totalItems={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} className="mb-3" />
 
-      <Paginator
-        page={page}
-        totalPages={totalPages}
-        totalItems={filtered.length}
-        pageSize={PAGE_SIZE}
-        onPageChange={setPage}
-        className="mb-3"
-      />
-
-      {/* Table */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[950px] text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left text-xs text-muted-foreground border-b border-border">
                 <th className="px-4 py-3 font-medium">Lead</th>
                 <th className="px-4 py-3 font-medium">Modelo</th>
                 <th className="px-4 py-3 font-medium">Origen</th>
                 <SortableTh label="Vendedor"        col="vendedor"        sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
+                <th className="px-4 py-3 font-medium hidden lg:table-cell">Originado por</th>
                 <SortableTh label="Estado"          col="status"          sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
                 <SortableTh label="Último contacto" col="last_contact_at" sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
                 <SortableTh label="Ingreso"         col="created_at"      sortKey={sortKey} sortDir={sortDir} onToggle={toggleSort} />
@@ -404,34 +373,21 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
             <tbody>
               {paginated.map((l) => {
                 const vendorName = l.vendedor_alias || l.vendedor_nombre
-                const lastContact = l.last_contact_at
-                  ? formatRelative(new Date(l.last_contact_at))
-                  : 'Sin contactar'
+                const lastContact = l.last_contact_at ? formatRelative(new Date(l.last_contact_at)) : 'Sin contactar'
                 const cierreAt = getCierreAt(l)
-
                 return (
-                  <tr
-                    key={l.id}
-                    className="group border-b border-border/50 last:border-0 hover:bg-muted/30 cursor-pointer"
-                    onClick={() => setOpenLeadId(l.id)}
-                  >
+                  <tr key={l.id} className="group border-b border-border/50 last:border-0 hover:bg-muted/30 cursor-pointer" onClick={() => setOpenLeadId(l.id)}>
                     <td className="px-4 py-3">
                       <div className="font-medium">{l.nombre}</div>
                       {(l.localidad || l.provincia) && (
-                        <div className="text-[11px] text-muted-foreground/70 mt-0.5">
-                          {[l.localidad, l.provincia].filter(Boolean).join(', ')}
-                        </div>
+                        <div className="text-[11px] text-muted-foreground/70 mt-0.5">{[l.localidad, l.provincia].filter(Boolean).join(', ')}</div>
                       )}
                       {l.tiene_usado && (
-                        <span className="inline-flex items-center text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200/60 rounded px-1.5 py-0.5 mt-0.5">
-                          Tiene usado
-                        </span>
+                        <span className="inline-flex items-center text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200/60 rounded px-1.5 py-0.5 mt-0.5">Tiene usado</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{l.modelo ?? '—'}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {l.source_custom || l.source}
-                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{l.source_custom || l.source}</td>
                     <td className="px-4 py-3">
                       {vendorName ? (
                         <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -444,6 +400,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                         <span className="text-xs text-muted-foreground/50 italic">Sin asignar</span>
                       )}
                     </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground hidden lg:table-cell">{l.creator_nombre ?? '—'}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col items-start gap-1">
                         <StatusBadge status={l.status} />
@@ -457,34 +414,21 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                             )}
                             title={l.attention_detail ?? undefined}
                           >
-                            <AlertTriangle className="size-2.5" />
-                            {l.attention_reason}
+                            <AlertTriangle className="size-2.5" />{l.attention_reason}
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className={cn(
-                      'px-4 py-3 text-xs',
-                      l.last_contact_critical ? 'text-destructive font-medium' : 'text-muted-foreground',
-                    )}>
+                    <td className={cn('px-4 py-3 text-xs', l.last_contact_critical ? 'text-destructive font-medium' : 'text-muted-foreground')}>
                       {lastContact}
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                      {fmtDate(l.created_at)}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                      {fmtDate(cierreAt)}
-                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(l.created_at)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(cierreAt)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {!isBaja(l.status) && l.status !== 'VENTA' && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100"
-                            onClick={(e) => { e.stopPropagation(); setBajaLead(l) }}
-                            title="Dar de baja"
-                          >
+                          <Button size="sm" variant="ghost" className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100"
+                            onClick={(e) => { e.stopPropagation(); setBajaLead(l) }} title="Dar de baja">
                             <XCircle className="size-3.5" />
                           </Button>
                         )}
@@ -495,84 +439,48 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                 )
               })}
               {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                    {hasFilters ? 'No hay leads que coincidan con los filtros.' : 'No se encontraron leads.'}
-                  </td>
-                </tr>
+                <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  {hasFilters ? 'No hay leads que coincidan con los filtros.' : 'No se encontraron leads.'}
+                </td></tr>
               )}
             </tbody>
           </table>
         </div>
       </Card>
 
-      <Paginator
-        page={page}
-        totalPages={totalPages}
-        totalItems={filtered.length}
-        pageSize={PAGE_SIZE}
-        onPageChange={setPage}
-        className="mt-4"
-      />
+      <Paginator page={page} totalPages={totalPages} totalItems={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} className="mt-4" />
 
       <LeadDetailSheet
         leadId={openLeadId}
         onClose={() => { setOpenLeadId(null); refresh() }}
         onStatusChange={(id, status) =>
-          setLeads((prev) =>
-            prev.map((l) => l.id === id ? { ...l, status: status as LeadRow['status'] } : l),
-          )
+          setLeads((prev) => prev.map((l) => l.id === id ? { ...l, status: status as LeadRow['status'] } : l))
         }
       />
 
       {bajaLead && (
-        <BajaDialog
-          open={!!bajaLead}
-          onOpenChange={(v) => { if (!v) setBajaLead(null) }}
-          leadId={bajaLead.id}
-          leadNombre={bajaLead.nombre}
-          onDone={() => { setBajaLead(null); refresh() }}
-        />
+        <BajaDialog open={!!bajaLead} onOpenChange={(v) => { if (!v) setBajaLead(null) }}
+          leadId={bajaLead.id} leadNombre={bajaLead.nombre}
+          onDone={() => { setBajaLead(null); refresh() }} />
       )}
 
-      <NewLeadDialog
-        open={showNewLead}
-        onOpenChange={setShowNewLead}
-        vendedores={vendedores}
-        modelos={modelos}
-        customSources={customSources}
-        onCreated={refresh}
-      />
+      <NewLeadDialog open={showNewLead} onOpenChange={setShowNewLead}
+        vendedores={vendedores} modelos={modelos} customSources={customSources} onCreated={refresh} />
     </div>
   )
 }
 
-// ── SortableTh ────────────────────────────────────────────────
-
-function SortableTh({
-  label, col, sortKey, sortDir, onToggle,
-}: {
-  label:    string
-  col:      SortKey
-  sortKey:  SortKey
-  sortDir:  SortDir
-  onToggle: (col: SortKey) => void
+function SortableTh({ label, col, sortKey, sortDir, onToggle }: {
+  label: string; col: SortKey; sortKey: SortKey; sortDir: SortDir; onToggle: (col: SortKey) => void
 }) {
   const active = sortKey === col
   return (
-    <th
-      className="px-4 py-3 font-medium cursor-pointer select-none whitespace-nowrap group"
-      onClick={() => onToggle(col)}
-    >
+    <th className="px-4 py-3 font-medium cursor-pointer select-none whitespace-nowrap group" onClick={() => onToggle(col)}>
       <span className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
         {label}
-        {active ? (
-          sortDir === 'asc'
-            ? <ArrowUp   className="size-3 text-primary" />
-            : <ArrowDown className="size-3 text-primary" />
-        ) : (
-          <ArrowUpDown className="size-3 opacity-0 group-hover:opacity-40 transition-opacity" />
-        )}
+        {active
+          ? sortDir === 'asc' ? <ArrowUp className="size-3 text-primary" /> : <ArrowDown className="size-3 text-primary" />
+          : <ArrowUpDown className="size-3 opacity-0 group-hover:opacity-40 transition-opacity" />}
       </span>
     </th>
   )

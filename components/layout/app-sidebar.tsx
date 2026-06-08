@@ -70,11 +70,12 @@ const NAV_ITEMS: NavItem[] = [
     roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor'],
     section: 'leads',
   },
+  // Mis Leads para supervisor/vendedor: va arriba (antes de Rescate)
   {
     href:    '/leads',
     label:   'Mis Leads',
     icon:    <Users className="size-4" />,
-    roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
+    roles:   ['supervisor', 'vendedor'],
     section: 'leads',
   },
   {
@@ -98,6 +99,14 @@ const NAV_ITEMS: NavItem[] = [
     roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
     section: 'leads',
     badge:   true,
+  },
+  // Mis Leads para dueño/gerente/admin: va después de Bandeja
+  {
+    href:    '/leads',
+    label:   'Mis Leads',
+    icon:    <Users className="size-4" />,
+    roles:   ['platform_admin', 'dueno', 'gerente'],
+    section: 'leads',
   },
   // ── Actividad ────────────────────────────────────────────────
   {

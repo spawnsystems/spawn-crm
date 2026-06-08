@@ -85,6 +85,14 @@ export const usadoMarcaSql = sql<string | null>`(
   LIMIT 1
 )`
 
+/** Nombre/alias de quien creó el lead (de usuarios). */
+export const creatorNombreSql = sql<string | null>`(
+  SELECT COALESCE(u.alias, u.nombre)
+  FROM ${schema.usuarios} u
+  WHERE u.id = "leads"."created_by"
+  LIMIT 1
+)`
+
 /** Fecha de registro de venta (de registro_ventas). Null si el lead no fue vendido. */
 export const ventaAtSql = sql<Date | null>`(
   SELECT rv.vendida_at
