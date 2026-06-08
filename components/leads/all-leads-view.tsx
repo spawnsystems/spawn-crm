@@ -203,8 +203,8 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
         )}
       </div>
 
-      {/* ── Filtro de período ───────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
+      {/* ── Filtros (período + texto + tipo) en una sola fila ─────── */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         {/* Toggle ingreso / cierre */}
         <div className="flex h-9 rounded-md border border-input text-xs overflow-hidden shrink-0">
           <button
@@ -232,9 +232,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
           value={filterMes?.toString() ?? 'all'}
           onValueChange={(v) => setFilterMes(v === 'all' ? null : Number(v))}
         >
-          <SelectTrigger className="h-9 w-40 text-sm">
-            <SelectValue />
-          </SelectTrigger>
+          <SelectTrigger className="h-9 w-36 text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los meses</SelectItem>
             {MONTHS.map((m, i) => (
@@ -245,13 +243,8 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
 
         {/* Año */}
         {filterMes !== null && (
-          <Select
-            value={filterAnio.toString()}
-            onValueChange={(v) => setFilterAnio(Number(v))}
-          >
-            <SelectTrigger className="h-9 w-24 text-sm">
-              <SelectValue />
-            </SelectTrigger>
+          <Select value={filterAnio.toString()} onValueChange={(v) => setFilterAnio(Number(v))}>
+            <SelectTrigger className="h-9 w-24 text-sm"><SelectValue /></SelectTrigger>
             <SelectContent>
               {YEARS.map((y) => (
                 <SelectItem key={y} value={String(y)}>{y}</SelectItem>
@@ -259,10 +252,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
             </SelectContent>
           </Select>
         )}
-      </div>
 
-      {/* ── Filtros de texto / tipo ─────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           <Input

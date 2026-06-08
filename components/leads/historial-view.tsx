@@ -186,8 +186,8 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
         </div>
       </div>
 
-      {/* ── Filtro de período ───────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
+      {/* ── Filtros (período + texto + tipo) en una sola fila ─────── */}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
         {/* Toggle ingreso / cierre */}
         <div className="flex h-8 rounded-md border border-input text-xs overflow-hidden shrink-0">
           <button
@@ -215,9 +215,7 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
           value={filterMes?.toString() ?? 'all'}
           onValueChange={(v) => { setFilterMes(v === 'all' ? null : Number(v)); setPage(1) }}
         >
-          <SelectTrigger className="h-8 w-40 text-xs">
-            <SelectValue />
-          </SelectTrigger>
+          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los meses</SelectItem>
             {MONTHS.map((m, i) => (
@@ -226,15 +224,13 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
           </SelectContent>
         </Select>
 
-        {/* Año — solo cuando hay un mes seleccionado */}
+        {/* Año — solo cuando hay mes seleccionado */}
         {filterMes !== null && (
           <Select
             value={filterAnio.toString()}
             onValueChange={(v) => { setFilterAnio(Number(v)); setPage(1) }}
           >
-            <SelectTrigger className="h-8 w-24 text-xs">
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               {YEARS.map((y) => (
                 <SelectItem key={y} value={String(y)}>{y}</SelectItem>
@@ -242,11 +238,9 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
             </SelectContent>
           </Select>
         )}
-      </div>
 
-      {/* ── Filtros de texto / tipo ─────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 mb-5">
-        <div className="relative flex-1 min-w-[180px] max-w-xs">
+        {/* Búsqueda */}
+        <div className="relative flex-1 min-w-[160px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           <Input
             placeholder="Buscar nombre, modelo, originado..."
@@ -257,7 +251,7 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
         </div>
 
         <Select value={tipo} onValueChange={(v) => { setTipo(v as TipoFiltro); setFiltroBaja('todos'); setPage(1) }}>
-          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos</SelectItem>
             <SelectItem value="ventas">Solo ventas</SelectItem>
@@ -279,7 +273,7 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
 
         {canSeeVendedor && vendedores.length > 0 && (
           <Select value={filtroVendedor} onValueChange={(v) => { setFiltroVendedor(v); setPage(1) }}>
-            <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Todos los vendedores" /></SelectTrigger>
+            <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Todos los vendedores" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Todos los vendedores</SelectItem>
               {vendedores.map((v) => (
