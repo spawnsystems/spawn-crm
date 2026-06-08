@@ -92,7 +92,6 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
 // ── Preview limits ────────────────────────────────────────────────
 // Cuántos ítems mostrar en cada sección antes de colapsar.
 // "Ver más" expande el resto inline; el sheet no scrollea por defecto.
-const PREVIEW_AGENDA   = 1
 const PREVIEW_CALLS    = 1
 const PREVIEW_NOTES    = 1
 const PREVIEW_TIMELINE = 6
@@ -188,7 +187,6 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
   // Registro de llamada: { callId } para una agendada, { leadId } para ad-hoc.
   const [registerTarget,   setRegisterTarget]   = useState<{ callId?: string; leadId?: string } | null>(null)
   const [showTimelineDialog, setShowTimelineDialog] = useState(false)
-  const [showAllAgenda,   setShowAllAgenda]   = useState(false)
   const [showAllCalls,    setShowAllCalls]    = useState(false)
   const [showAllNotes,    setShowAllNotes]    = useState(false)
   const [isPending,       startTransition]    = useTransition()
@@ -197,8 +195,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
   // `cancelled` flag prevents stale updates on quick open/close.
   useEffect(() => {
     if (!leadId) { setDetail(null); setNextAppointment(null); setEditing(false); return }
-    // Colapsar todas las secciones cuando se abre un lead nuevo
-    setShowAllAgenda(false)
+    // Colapsar secciones cuando se abre un lead nuevo
     setShowAllCalls(false)
     setShowAllNotes(false)
     setLoading(true)
@@ -280,13 +277,10 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
   function handleToggleTask(taskId: string, done: boolean) {
     startTransition(async () => {
       const res = await toggleTask(taskId, done)
-      if (res.success) {
-        setDetail((d) => d
-          ? { ...d, tasks: d.tasks.map((t) => t.id === taskId ? { ...t, done } : t) }
-          : d)
-      } else {
-        toast.error(res.error)
-      }
+      if (!res.success) { toast.error(res.error); return }
+      // refreshAll en vez de optimistic: así el timeline también se actualiza
+      // en tiempo real (la tarea desaparece de la agenda Y aparece en el historial).
+      await refreshAll()
     })
   }
 
@@ -642,34 +636,19 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                       cita; también podés sumar una manual.
                     </p>
                   )}
-                  {agenda.length > 0 && (() => {
-                    const visible     = showAllAgenda ? agenda : agenda.slice(0, PREVIEW_AGENDA)
-                    const hiddenCount = agenda.length - PREVIEW_AGENDA
-                    return (
-                      <div className="mb-3">
-                        <div className="space-y-2">
-                          {visible.map((item) => (
-                            <AgendaRow
-                              key={`${item.kind}-${item.id}`}
-                              item={item}
-                              isPending={isPending}
-                              onRegisterCall={() => setRegisterTarget({ callId: item.id })}
-                              onCompleteTask={() => handleToggleTask(item.id, true)}
-                            />
-                          ))}
-                        </div>
-                        {agenda.length > PREVIEW_AGENDA && (
-                          <button
-                            onClick={() => setShowAllAgenda((v) => !v)}
-                            className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
-                          >
-                            <ChevronDown className={cn('size-3 transition-transform', showAllAgenda && 'rotate-180')} />
-                            {showAllAgenda ? 'Ver menos' : `Ver ${hiddenCount} más`}
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })()}
+                  {agenda.length > 0 && (
+                    <div className="mb-3 space-y-1.5">
+                      {agenda.map((item) => (
+                        <AgendaRow
+                          key={`${item.kind}-${item.id}`}
+                          item={item}
+                          isPending={isPending}
+                          onRegisterCall={() => setRegisterTarget({ callId: item.id })}
+                          onCompleteTask={() => handleToggleTask(item.id, true)}
+                        />
+                      ))}
+                    </div>
+                  )}
 
                   {/* Agregar acción manual — con fecha/hora opcional */}
                   <div className="space-y-2">
@@ -1198,24 +1177,21 @@ function AgendaRow({
   if (item.kind === 'appointment') {
     return (
       <div className={cn(
-        'rounded-lg border p-3',
+        'rounded-lg border px-2.5 py-1.5 flex items-center gap-2',
         item.overdue ? 'border-amber-300 bg-amber-50/60' : 'border-violet-200 bg-violet-50/50',
       )}>
-        <div className="flex items-center gap-1.5">
-          <CalendarCheck className={cn('size-3.5 shrink-0', item.overdue ? 'text-amber-600' : 'text-violet-600')} />
-          <span className={cn('text-xs font-semibold', item.overdue ? 'text-amber-800' : 'text-violet-800')}>
-            Cita · {APPOINTMENT_TIPO_LABEL[item.tipo]}
+        <CalendarCheck className={cn('size-3 shrink-0', item.overdue ? 'text-amber-600' : 'text-violet-600')} />
+        <span className={cn('text-[11px] font-semibold', item.overdue ? 'text-amber-800' : 'text-violet-800')}>
+          Cita · {APPOINTMENT_TIPO_LABEL[item.tipo]}
+        </span>
+        <span className={cn('text-[11px] ml-auto shrink-0', item.overdue ? 'text-amber-700/80' : 'text-violet-700/80')}>
+          {fmtAgendaWhen(item.date)}{item.lugar ? ` · ${item.lugar}` : ''}
+        </span>
+        {item.overdue && (
+          <span className="text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200/60 rounded-full px-1.5 py-0.5 shrink-0">
+            Vencida
           </span>
-          {item.overdue && (
-            <span className="text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200/60 rounded-full px-1.5 py-0.5">
-              Ya pasó — resolvé arriba
-            </span>
-          )}
-        </div>
-        <div className={cn('text-xs mt-1 pl-5', item.overdue ? 'text-amber-700/80' : 'text-violet-700/80')}>
-          {fmtAgendaWhen(item.date)}
-          {item.lugar && ` · ${item.lugar}`}
-        </div>
+        )}
       </div>
     )
   }
@@ -1224,47 +1200,41 @@ function AgendaRow({
   if (item.kind === 'call') {
     return (
       <div className={cn(
-        'rounded-lg border p-3',
+        'rounded-lg border px-2.5 py-1.5 flex items-center gap-2',
         item.overdue ? 'border-destructive/40 bg-destructive-soft' : 'border-sky-200 bg-sky-50/50',
       )}>
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {item.overdue
-              ? <AlertTriangle className="size-3.5 text-destructive shrink-0" />
-              : <Clock3 className="size-3.5 text-sky-600 shrink-0" />}
-            <span className={cn('text-xs font-semibold truncate',
-              item.overdue ? 'text-destructive' : 'text-sky-700')}>
-              {item.overdue ? 'Llamada vencida' : 'Llamada agendada'} · {fmtAgendaWhen(item.date)}
-            </span>
-          </div>
-          <Button
-            size="sm" variant="outline"
-            className={cn('h-6 px-2 text-[11px] gap-1 shrink-0',
-              item.overdue ? 'text-destructive border-destructive/40 hover:bg-destructive/10'
-                : 'text-sky-700 border-sky-300 hover:bg-sky-100')}
-            onClick={onRegisterCall}
-            disabled={isPending}
-          >
-            <PhoneCall className="size-3" />Registrar
-          </Button>
-        </div>
-        {item.notas && (
-          <p className="text-xs text-muted-foreground pl-5 mt-1">{item.notas}</p>
-        )}
+        {item.overdue
+          ? <AlertTriangle className="size-3 text-destructive shrink-0" />
+          : <Clock3 className="size-3 text-sky-600 shrink-0" />}
+        <span className={cn('text-[11px] font-semibold truncate',
+          item.overdue ? 'text-destructive' : 'text-sky-700')}>
+          {item.overdue ? 'Llamada vencida' : 'Llamada'} · {fmtAgendaWhen(item.date)}
+          {item.notas ? ` — ${item.notas}` : ''}
+        </span>
+        <Button
+          size="sm" variant="outline"
+          className={cn('h-5 px-2 text-[10px] gap-1 shrink-0 ml-auto',
+            item.overdue ? 'text-destructive border-destructive/40 hover:bg-destructive/10'
+              : 'text-sky-700 border-sky-300 hover:bg-sky-100')}
+          onClick={onRegisterCall}
+          disabled={isPending}
+        >
+          <PhoneCall className="size-2.5" />Registrar
+        </Button>
       </div>
     )
   }
 
   // ── Tarea manual ──
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+    <div className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5">
       <button onClick={onCompleteTask} className="shrink-0" disabled={isPending} title="Marcar como hecha">
-        <Circle className="size-4 text-muted-foreground hover:text-primary transition-colors" />
+        <Circle className="size-3.5 text-muted-foreground hover:text-primary transition-colors" />
       </button>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm">{item.texto}</div>
+      <div className="flex-1 min-w-0 flex items-baseline gap-2">
+        <div className="text-[11px]">{item.texto}</div>
         {item.date && (
-          <div className="text-[11px] text-muted-foreground mt-0.5">{fmtAgendaWhen(item.date)}</div>
+          <div className="text-[10px] text-muted-foreground shrink-0">{fmtAgendaWhen(item.date)}</div>
         )}
       </div>
       <Button
