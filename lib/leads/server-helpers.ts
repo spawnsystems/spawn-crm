@@ -8,7 +8,7 @@
 
 import 'server-only'
 
-import { eq, and, sql, inArray, isNotNull } from 'drizzle-orm'
+import { eq, and, sql, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
 import { getCurrentUser, type AppRole } from '@/lib/auth/get-current-user'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { db, dbAdmin, schema } from '@/lib/db'
@@ -238,4 +238,45 @@ export async function appendTimeline(
     title,
     description: description ?? null,
   })
+}
+
+/**
+ * Cancela todas las llamadas PENDIENTES (sin registrar ni cancelar ya) de un
+ * lead, opcionalmente excluyendo una por id (útil para no cancelar la que acaba
+ * de ser agendada). Registra evento en el timeline si hubo cancelaciones.
+ *
+ * Retorna el número de llamadas canceladas.
+ * Reutilizado por calls.ts (reemplazo al agendar), leads.ts (darDeBaja) y
+ * cotizaciones.ts (registrarVenta).
+ */
+export async function cancelPendingCalls(
+  tenantId: string,
+  leadId:   string,
+  actorId:  string,
+  exceptId?: string,
+): Promise<number> {
+  const conds = [
+    eq(schema.leadCalls.lead_id, leadId),
+    eq(schema.leadCalls.tenant_id, tenantId),
+    isNull(schema.leadCalls.realizada_at),
+    isNull(schema.leadCalls.canceled_at),
+  ]
+  if (exceptId) conds.push(ne(schema.leadCalls.id, exceptId))
+
+  const canceled = await dbAdmin
+    .update(schema.leadCalls)
+    .set({ canceled_at: new Date() })
+    .where(and(...conds))
+    .returning({ id: schema.leadCalls.id })
+
+  if (canceled.length > 0) {
+    await appendTimeline(
+      tenantId, leadId, actorId,
+      'call_canceled',
+      canceled.length === 1
+        ? 'Se canceló la llamada pendiente'
+        : `Se cancelaron ${canceled.length} llamadas pendientes`,
+    )
+  }
+  return canceled.length
 }

@@ -2,11 +2,11 @@
 
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
-import { eq, and, desc, isNull, isNotNull, ne } from 'drizzle-orm'
+import { eq, and, desc, isNotNull } from 'drizzle-orm'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { dbAdmin, schema } from '@/lib/db'
-import { requireTenant, appendTimeline, assertLeadAccess } from '@/lib/leads/server-helpers'
+import { requireTenant, appendTimeline, assertLeadAccess, cancelPendingCalls } from '@/lib/leads/server-helpers'
 import { advanceStatus, isTerminal, terminalBlockReason } from '@/lib/leads/state-machine'
 import { isBaja } from '@/lib/leads/constants'
 import { appointmentTipoValues, APPOINTMENT_TIPO_LABEL } from '@/lib/schemas/appointments'
@@ -88,45 +88,6 @@ const registerCallSchema = z.object({
     })
   }
 })
-
-// ── cancelPendingCalls ─────────────────────────────────────────────────────────
-// Modelo: una sola llamada PENDIENTE por lead (espeja el constraint de citas).
-// Cuando se va a crear una nueva pendiente (agendar manual, o el side-effect de
-// próxima llamada / reintento), primero se cancelan las pendientes previas para
-// no violar el unique index parcial uq_one_pending_call_per_lead.
-// Devuelve cuántas llamadas se cancelaron (para que la UI avise al usuario).
-async function cancelPendingCalls(
-  tenantId: string,
-  leadId:   string,
-  actorId:  string,
-  exceptId?: string,
-): Promise<number> {
-  const conds = [
-    eq(schema.leadCalls.lead_id, leadId),
-    eq(schema.leadCalls.tenant_id, tenantId),
-    isNull(schema.leadCalls.realizada_at),
-    isNull(schema.leadCalls.canceled_at),
-  ]
-  if (exceptId) conds.push(ne(schema.leadCalls.id, exceptId))
-
-  const canceled = await dbAdmin
-    .update(schema.leadCalls)
-    .set({ canceled_at: new Date() })
-    .where(and(...conds))
-    .returning({ id: schema.leadCalls.id })
-
-  if (canceled.length > 0) {
-    await appendTimeline(
-      tenantId, leadId, actorId,
-      'call_canceled',
-      canceled.length === 1
-        ? 'Se canceló la llamada pendiente anterior'
-        : `Se cancelaron ${canceled.length} llamadas pendientes anteriores`,
-      'Reemplazada por una nueva agenda',
-    )
-  }
-  return canceled.length
-}
 
 // ── scheduleCall ──────────────────────────────────────────────────────────────
 
