@@ -4,7 +4,7 @@ import { dbAdmin, schema } from '@/lib/db'
 import { eq, and, count, sql } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { PerformanceView } from '@/components/performance/performance-view'
-import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
+import { isBaja } from '@/lib/leads/constants'
 import { getMyLeads } from '@/app/actions/leads'
 import { startOfCurrentMonthAR } from '@/lib/utils'
 
@@ -51,19 +51,21 @@ export default async function PerformancePage() {
   const myCloseRate = myMonthTotal > 0 ? Math.round((myClosedM / myMonthTotal) * 100) : 0
   const myAtRisk    = myLeads.filter((l) => l.at_risk).length
 
-  // Funnel — leads no dados de baja que alcanzaron al menos cada etapa del pipeline
-  const activeForFunnel = myLeads.filter((l) => !isBaja(l.status))
-  const reached = (minOrder: number) =>
-    activeForFunnel.filter((l) => (STATUS_ORDER[l.status] ?? -1) >= minOrder).length
+  // Funnel — distribución de leads por su etapa ACTUAL. Cada lead cuenta UNA
+  // sola vez (en la etapa donde está hoy), así la suma = total de leads no
+  // dados de baja. El % es la porción del total que está en cada etapa.
+  const nonBaja     = myLeads.filter((l) => !isBaja(l.status))
+  const funnelTotal = nonBaja.length
+  const inStage = (status: string) => nonBaja.filter((l) => l.status === status).length
   const funnel = [
-    { stage: 'En gestión',         count: reached(0) },
-    { stage: 'Horario asignado',   count: reached(1) },
-    { stage: 'Entrevista pactada', count: reached(2) },
-    { stage: 'En cierre',          count: reached(3) },
-    { stage: 'Ventas',             count: reached(4) },
+    { stage: 'En gestión',         count: inStage('GESTION') },
+    { stage: 'Horario asignado',   count: inStage('HORARIO ASIGNADO') },
+    { stage: 'Entrevista pactada', count: inStage('ENTREVISTA PACTADA') },
+    { stage: 'En cierre',          count: inStage('CIERRE') },
+    { stage: 'Ventas',             count: inStage('VENTA') },
   ].map((f) => ({
     ...f,
-    pct: myLeads.length > 0 ? Math.round((f.count / myLeads.length) * 100) : 0,
+    pct: funnelTotal > 0 ? Math.round((f.count / funnelTotal) * 100) : 0,
   }))
 
   // Team ranking
