@@ -277,9 +277,8 @@ export async function cancelAppointment(
     ))
 
   // Cancelar la cita retrocede el lead de ENTREVISTA PACTADA:
-  //  - con llamada pendiente → GESTION  (ya hay seguimiento coordinado, no hace falta
-  //    "recoordinar" llamada — el vendedor ya tiene una pactada)
-  //  - sin llamada pendiente → HORARIO ASIGNADO (tiene que recoordinar)
+  //  - con llamada pendiente → HORARIO ASIGNADO (hay un horario coordinado: la llamada)
+  //  - sin llamada pendiente → GESTION (nada pactado, vuelve a gestión activa)
   // Reagendar es otra acción que NO pasa por acá y mantiene la etapa.
   let regressStatus: 'GESTION' | 'HORARIO ASIGNADO' | null = null
   if (leadRow.status === 'ENTREVISTA PACTADA') {
@@ -291,7 +290,7 @@ export async function cancelAppointment(
         isNull(schema.leadCalls.realizada_at),
       ))
       .limit(1)
-    regressStatus = hasPendingCall[0] ? 'GESTION' : 'HORARIO ASIGNADO'
+    regressStatus = hasPendingCall[0] ? 'HORARIO ASIGNADO' : 'GESTION'
     await q.update(schema.leads)
       .set({ status: regressStatus, updated_by: user.id })
       .where(and(eq(schema.leads.id, appt[0].lead_id), forTenant(schema.leads)))
@@ -300,10 +299,10 @@ export async function cancelAppointment(
   await appendTimeline(
     tenantId, appt[0].lead_id, user.id,
     'appointment_cancelled',
-    regressStatus === 'GESTION'
-      ? 'Cita cancelada — vuelve a gestión activa'
-      : regressStatus === 'HORARIO ASIGNADO'
+    regressStatus === 'HORARIO ASIGNADO'
       ? 'Cita cancelada — vuelve a recoordinar'
+      : regressStatus === 'GESTION'
+      ? 'Cita cancelada — vuelve a gestión activa'
       : 'Cita cancelada',
     reason?.trim(),
   )
@@ -416,8 +415,8 @@ export async function markAppointmentNoShow(
     ))
 
   // Si el lead estaba en ENTREVISTA PACTADA, la cita falló. Retrocede:
-  //  - con llamada pendiente → GESTION  (ya hay seguimiento coordinado)
-  //  - sin llamada pendiente → HORARIO ASIGNADO (tiene que recoordinar)
+  //  - con llamada pendiente → HORARIO ASIGNADO (hay un horario coordinado: la llamada)
+  //  - sin llamada pendiente → GESTION (nada pactado, vuelve a gestión activa)
   let regressStatus: 'GESTION' | 'HORARIO ASIGNADO' | null = null
   if (leadRow.status === 'ENTREVISTA PACTADA') {
     const hasPendingCall = await dbAdmin
@@ -428,7 +427,7 @@ export async function markAppointmentNoShow(
         isNull(schema.leadCalls.realizada_at),
       ))
       .limit(1)
-    regressStatus = hasPendingCall[0] ? 'GESTION' : 'HORARIO ASIGNADO'
+    regressStatus = hasPendingCall[0] ? 'HORARIO ASIGNADO' : 'GESTION'
     await q.update(schema.leads)
       .set({ status: regressStatus, updated_by: user.id })
       .where(and(eq(schema.leads.id, appt[0].lead_id), forTenant(schema.leads)))
@@ -437,10 +436,10 @@ export async function markAppointmentNoShow(
   await appendTimeline(
     tenantId, appt[0].lead_id, user.id,
     'appointment_no_show',
-    regressStatus === 'GESTION'
-      ? 'No se presentó — vuelve a gestión activa'
-      : regressStatus === 'HORARIO ASIGNADO'
+    regressStatus === 'HORARIO ASIGNADO'
       ? 'No se presentó — vuelve a recoordinar'
+      : regressStatus === 'GESTION'
+      ? 'No se presentó — vuelve a gestión activa'
       : 'No se presentó a la cita',
     notes?.trim(),
   )
