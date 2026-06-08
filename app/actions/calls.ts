@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
-import { eq, and, desc, isNotNull } from 'drizzle-orm'
+import { eq, and, desc, isNull, isNotNull, ne } from 'drizzle-orm'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { dbAdmin, schema } from '@/lib/db'
@@ -89,11 +89,50 @@ const registerCallSchema = z.object({
   }
 })
 
+// ── cancelPendingCalls ─────────────────────────────────────────────────────────
+// Modelo: una sola llamada PENDIENTE por lead (espeja el constraint de citas).
+// Cuando se va a crear una nueva pendiente (agendar manual, o el side-effect de
+// próxima llamada / reintento), primero se cancelan las pendientes previas para
+// no violar el unique index parcial uq_one_pending_call_per_lead.
+// Devuelve cuántas llamadas se cancelaron (para que la UI avise al usuario).
+async function cancelPendingCalls(
+  tenantId: string,
+  leadId:   string,
+  actorId:  string,
+  exceptId?: string,
+): Promise<number> {
+  const conds = [
+    eq(schema.leadCalls.lead_id, leadId),
+    eq(schema.leadCalls.tenant_id, tenantId),
+    isNull(schema.leadCalls.realizada_at),
+    isNull(schema.leadCalls.canceled_at),
+  ]
+  if (exceptId) conds.push(ne(schema.leadCalls.id, exceptId))
+
+  const canceled = await dbAdmin
+    .update(schema.leadCalls)
+    .set({ canceled_at: new Date() })
+    .where(and(...conds))
+    .returning({ id: schema.leadCalls.id })
+
+  if (canceled.length > 0) {
+    await appendTimeline(
+      tenantId, leadId, actorId,
+      'call_canceled',
+      canceled.length === 1
+        ? 'Se canceló la llamada pendiente anterior'
+        : `Se cancelaron ${canceled.length} llamadas pendientes anteriores`,
+      'Reemplazada por una nueva agenda',
+    )
+  }
+  return canceled.length
+}
+
 // ── scheduleCall ──────────────────────────────────────────────────────────────
 
 export async function scheduleCall(
   input: unknown,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; replacedPending: number }>> {
   const { user, tenantId } = await requireTenant()
 
   const parsed = scheduleCallSchema.safeParse(input)
@@ -107,6 +146,10 @@ export async function scheduleCall(
   if (isTerminal(lead.status)) {
     return { success: false, error: terminalBlockReason(lead.status) ?? 'El lead no admite cambios' }
   }
+
+  // Una sola llamada pendiente por lead: si ya había una agendada, se cancela
+  // (la nueva agenda la reemplaza) y se avisa al usuario vía replacedPending.
+  const replacedPending = await cancelPendingCalls(tenantId, leadId, user.id)
 
   const [row] = await dbAdmin
     .insert(schema.leadCalls)
@@ -139,14 +182,14 @@ export async function scheduleCall(
   revalidatePath('/leads')
   revalidatePath('/pipeline')
   revalidatePath('/all-leads')
-  return { success: true, data: { id: row.id } }
+  return { success: true, data: { id: row.id, replacedPending } }
 }
 
 // ── registerCall ──────────────────────────────────────────────────────────────
 
 export async function registerCall(
   input: unknown,
-): Promise<ActionResult<{ outcome: string; unansweredStreak: number }>> {
+): Promise<ActionResult<{ outcome: string; unansweredStreak: number; replacedPending: number }>> {
   const { user, tenantId } = await requireTenant()
 
   const parsed = registerCallSchema.safeParse(input)
@@ -254,8 +297,14 @@ export async function registerCall(
     notasResultado ?? undefined,
   )
 
+  // 6) Side-effect según outcome
+  let unansweredStreak = 0
+  let replacedPending  = 0
+
   // Helper: crea una llamada agendada (pendiente) + evento en el historial.
+  // Antes cancela cualquier OTRA pendiente del lead (una sola viva por lead).
   async function scheduleNextCall(whenISO: string, titlePrefix: string) {
+    replacedPending += await cancelPendingCalls(tenantId, leadId, user.id, callId)
     await dbAdmin.insert(schema.leadCalls).values({
       tenant_id:    tenantId,
       lead_id:      leadId,
@@ -270,11 +319,11 @@ export async function registerCall(
     )
   }
 
-  // 6) Side-effect según outcome
-  let unansweredStreak = 0
-
   if (outcome === 'cita' && appointment && apptScheduledAt) {
     // 6a) Crear la cita atómicamente — mismo flujo que createAppointment.
+    // La cita pasa a ser la próxima interacción: cancelamos cualquier llamada
+    // pendiente para que no quede huérfana mostrándose en la ficha.
+    replacedPending += await cancelPendingCalls(tenantId, leadId, user.id, callId)
     const [apptRow] = await dbAdmin.insert(schema.leadAppointments).values({
       tenant_id:      tenantId,
       lead_id:        leadId,
@@ -391,7 +440,7 @@ export async function registerCall(
   revalidatePath('/pipeline')
   revalidatePath('/all-leads')
   revalidatePath('/citas')
-  return { success: true, data: { outcome, unansweredStreak } }
+  return { success: true, data: { outcome, unansweredStreak, replacedPending } }
 }
 
 // ── getCallsForLead ───────────────────────────────────────────────────────────

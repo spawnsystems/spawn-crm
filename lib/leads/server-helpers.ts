@@ -37,7 +37,9 @@ import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
 export const pendingCallAtSql = sql<string | null>`(
   SELECT MIN(lc.scheduled_at)
   FROM ${schema.leadCalls} lc
-  WHERE lc.lead_id = "leads"."id" AND lc.realizada_at IS NULL
+  WHERE lc.lead_id = "leads"."id"
+    AND lc.realizada_at IS NULL
+    AND lc.canceled_at IS NULL
 )`
 
 /** Hora de la cita 'programada' del lead (única por constraint). */

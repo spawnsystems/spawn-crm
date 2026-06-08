@@ -288,6 +288,7 @@ export async function cancelAppointment(
       .where(and(
         eq(schema.leadCalls.lead_id, appt[0].lead_id),
         isNull(schema.leadCalls.realizada_at),
+        isNull(schema.leadCalls.canceled_at),
       ))
       .limit(1)
     regressStatus = hasPendingCall[0] ? 'HORARIO ASIGNADO' : 'GESTION'
@@ -425,6 +426,7 @@ export async function markAppointmentNoShow(
       .where(and(
         eq(schema.leadCalls.lead_id, appt[0].lead_id),
         isNull(schema.leadCalls.realizada_at),
+        isNull(schema.leadCalls.canceled_at),
       ))
       .limit(1)
     regressStatus = hasPendingCall[0] ? 'HORARIO ASIGNADO' : 'GESTION'

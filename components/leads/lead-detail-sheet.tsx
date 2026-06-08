@@ -83,6 +83,7 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
   transfer_cancelled:      { bg: 'bg-slate-400',     Icon: ArrowRightLeft   },
   call_scheduled:          { bg: 'bg-sky-500',       Icon: PhoneCall        },
   call_registered:         { bg: 'bg-teal-500',      Icon: PhoneIncoming    },
+  call_canceled:           { bg: 'bg-slate-400',     Icon: PhoneOff         },
   cotizacion_created:      { bg: 'bg-amber-500',     Icon: Calculator       },
   cotizacion_updated:      { bg: 'bg-amber-400',     Icon: Calculator       },
   _default:                { bg: 'bg-muted-foreground', Icon: ArrowRight    },
@@ -249,6 +250,10 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
     for (const c of done) { if (c.outcome === 'no_contesto') n++; else break }
     return n
   })()
+
+  // ¿Hay una llamada pendiente viva? (sin registrar ni cancelar). Solo puede
+  // haber una por lead; agendar otra reemplaza (cancela) la anterior.
+  const hasPendingCall = calls.some((c) => !c.realizada_at && !c.canceled_at)
 
   /** Re-fetch everything (called after mutations in NextActionCard) */
   async function refreshAll() {
@@ -728,10 +733,13 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                 {/* Llamadas */}
                 <Section icon={<PhoneCall className="size-4" />} title="Llamadas">
                   {calls.length > 0 && (() => {
-                    // Pendientes (sin registrar) primero
-                    const sorted = [...calls].sort((a, b) =>
-                      Number(!!a.realizada_at) - Number(!!b.realizada_at)
-                    )
+                    // Pendientes vivas (sin registrar ni cancelar) primero;
+                    // realizadas y canceladas después (orden del server: recientes primero).
+                    const sorted = [...calls].sort((a, b) => {
+                      const aLive = !a.realizada_at && !a.canceled_at ? 0 : 1
+                      const bLive = !b.realizada_at && !b.canceled_at ? 0 : 1
+                      return aLive - bLive
+                    })
                     const visible = showAllCalls ? sorted : sorted.slice(0, PREVIEW_CALLS)
                     const hiddenCount = sorted.length - PREVIEW_CALLS
                     return (
@@ -766,8 +774,14 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                       className="w-full gap-1.5 text-sky-600 hover:text-sky-700 hover:bg-sky-50 border-sky-200"
                       onClick={() => setShowScheduleCall(true)}
                     >
-                      <PhoneCall className="size-3.5" />Agendar llamada
+                      <PhoneCall className="size-3.5" />
+                      {hasPendingCall ? 'Reagendar llamada' : 'Agendar llamada'}
                     </Button>
+                  )}
+                  {hasPendingCall && (
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      Ya hay una llamada pendiente. Si agendás otra, esta se cancela.
+                    </p>
                   )}
                 </Section>
 
@@ -1381,6 +1395,7 @@ type LeadCall = {
   scheduled_at:    string | Date
   notas_previas:   string | null
   realizada_at:    string | Date | null
+  canceled_at:     string | Date | null
   outcome:         string | null
   notas_resultado: string | null
 }
@@ -1394,7 +1409,8 @@ const OUTCOME_LABEL: Record<string, { label: string; color: string }> = {
 }
 
 function CallCard({ call, onRegister }: { call: LeadCall; onRegister: () => void }) {
-  const isPending = !call.realizada_at
+  const isCanceled = !!call.canceled_at
+  const isPending  = !call.realizada_at && !isCanceled
   const fecha = format(new Date(call.scheduled_at), 'dd/MM HH:mm')
   // Pendiente y su hora ya pasó → vencida, hay que registrarla.
   const isOverdue = isPending && new Date(call.scheduled_at).getTime() < Date.now()
@@ -1402,20 +1418,29 @@ function CallCard({ call, onRegister }: { call: LeadCall; onRegister: () => void
   return (
     <div className={cn(
       'rounded-lg border p-3 space-y-1',
-      isOverdue ? 'border-destructive/40 bg-destructive-soft'
+      isCanceled ? 'border-border bg-muted/10 opacity-60'
+        : isOverdue ? 'border-destructive/40 bg-destructive-soft'
         : isPending ? 'border-sky-200 bg-sky-50/50'
         : 'border-border bg-muted/20',
     )}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          {isOverdue
+          {isCanceled
+            ? <PhoneOff className="size-3.5 text-muted-foreground shrink-0" />
+            : isOverdue
             ? <AlertTriangle className="size-3.5 text-destructive shrink-0" />
             : isPending
             ? <Clock3 className="size-3.5 text-sky-600 shrink-0" />
             : <PhoneIncoming className="size-3.5 text-teal-600 shrink-0" />}
           <span className={cn('text-xs font-medium',
-            isOverdue ? 'text-destructive' : isPending ? 'text-sky-700' : 'text-muted-foreground')}>
-            {isOverdue ? `Vencida · ${fecha}` : isPending ? `Pendiente · ${fecha}` : `Realizada · ${fecha}`}
+            isCanceled ? 'text-muted-foreground line-through'
+              : isOverdue ? 'text-destructive'
+              : isPending ? 'text-sky-700'
+              : 'text-muted-foreground')}>
+            {isCanceled ? `Cancelada · ${fecha}`
+              : isOverdue ? `Vencida · ${fecha}`
+              : isPending ? `Pendiente · ${fecha}`
+              : `Realizada · ${fecha}`}
           </span>
         </div>
         {isPending && (
@@ -1484,7 +1509,11 @@ function ScheduleCallDialog({
         notasPrevias: notas.trim() || undefined,
       })
       if (!res.success) { toast.error(res.error); return }
-      toast.success('Llamada agendada')
+      toast.success(
+        res.data.replacedPending > 0
+          ? 'Llamada reagendada — se canceló la anterior pendiente'
+          : 'Llamada agendada',
+      )
       reset()
       onDone()
     })
@@ -1710,6 +1739,9 @@ function RegisterCallDialog({
         descartado:      'Llamada registrada',
       }
       toast.success(labels[outcome])
+      if (res.data.replacedPending > 0) {
+        toast.info('Se canceló la llamada pendiente anterior')
+      }
       reset()
       onDone(outcome, res.data.unansweredStreak)
     })
