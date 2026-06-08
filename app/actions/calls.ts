@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
-import { eq, and, desc } from 'drizzle-orm'
+import { eq, and, desc, isNotNull } from 'drizzle-orm'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { dbAdmin, schema } from '@/lib/db'
@@ -43,8 +43,16 @@ const registerCallSchema = z.object({
   //            con resultado obligatorio y deriva en una acción siguiente.
   callId:           z.string().uuid().optional(),
   leadId:           z.string().uuid().optional(),
-  outcome:          z.enum(['proxima_llamada', 'cita', 'descartado']),
+  // Resultados posibles de una llamada:
+  //  - no_contesto:     no atendió. No es baja; registra el intento.
+  //  - sin_avance:      atendió pero sin paso concreto. Sigue en gestión.
+  //  - proxima_llamada: quedaron en otra llamada con fecha. → HORARIO ASIGNADO.
+  //  - cita:            se pactó una cita. → ENTREVISTA PACTADA.
+  //  - descartado:      cierre negativo genuino → abre baja con motivo.
+  outcome:          z.enum(['no_contesto', 'sin_avance', 'proxima_llamada', 'cita', 'descartado']),
   notasResultado:   z.string().max(1000).optional(),
+  // Fecha de la próxima llamada. Obligatoria para proxima_llamada; opcional para
+  // no_contesto (reintento que el vendedor planifica).
   proximaLlamadaAt: z.string().datetime({ offset: true }).optional(),
 
   // Si outcome=cita, estos campos son OBLIGATORIOS (validado abajo).
@@ -138,7 +146,7 @@ export async function scheduleCall(
 
 export async function registerCall(
   input: unknown,
-): Promise<ActionResult<{ outcome: string }>> {
+): Promise<ActionResult<{ outcome: string; unansweredStreak: number }>> {
   const { user, tenantId } = await requireTenant()
 
   const parsed = registerCallSchema.safeParse(input)
@@ -232,6 +240,8 @@ export async function registerCall(
   }
 
   const outcomeLabel: Record<string, string> = {
+    no_contesto:     'No contestó',
+    sin_avance:      'Atendió — sin avance',
     proxima_llamada: 'Se agendó próxima llamada',
     cita:            'Se pactó una cita',
     descartado:      'Lead a dar de baja',
@@ -244,26 +254,27 @@ export async function registerCall(
     notasResultado ?? undefined,
   )
 
-  // 6) Side-effect según outcome
-  if (outcome === 'proxima_llamada' && proximaLlamadaAt) {
-    // 6a) Crear próxima llamada agendada
+  // Helper: crea una llamada agendada (pendiente) + evento en el historial.
+  async function scheduleNextCall(whenISO: string, titlePrefix: string) {
     await dbAdmin.insert(schema.leadCalls).values({
       tenant_id:    tenantId,
       lead_id:      leadId,
       created_by:   user.id,
-      scheduled_at: new Date(proximaLlamadaAt),
+      scheduled_at: new Date(whenISO),
     })
-
-    const fechaLabel = format(new Date(proximaLlamadaAt), "d 'de' MMM 'a las' HH:mm", { locale: es })
+    const fechaLabel = format(new Date(whenISO), "d 'de' MMM 'a las' HH:mm", { locale: es })
     await appendTimeline(
       tenantId, leadId, user.id,
       'call_scheduled',
-      `Próxima llamada agendada: ${fechaLabel}`,
+      `${titlePrefix}: ${fechaLabel}`,
     )
   }
 
+  // 6) Side-effect según outcome
+  let unansweredStreak = 0
+
   if (outcome === 'cita' && appointment && apptScheduledAt) {
-    // 6b) Crear la cita atómicamente — mismo flujo que createAppointment.
+    // 6a) Crear la cita atómicamente — mismo flujo que createAppointment.
     const [apptRow] = await dbAdmin.insert(schema.leadAppointments).values({
       tenant_id:      tenantId,
       lead_id:        leadId,
@@ -321,19 +332,66 @@ export async function registerCall(
       },
       visibleToDueno: true,
     })
-  } else {
-    // 6c) Sin cita: solo refrescar el reloj de atención
-    await dbAdmin
-      .update(schema.leads)
-      .set({ last_contact_at: new Date(), updated_by: user.id })
-      .where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
+
+  } else if (outcome === 'proxima_llamada' && proximaLlamadaAt) {
+    // 6b) Quedaron en otra llamada con fecha concreta → crear la llamada
+    //     agendada, avanzar a HORARIO ASIGNADO y refrescar el reloj (hubo contacto).
+    await scheduleNextCall(proximaLlamadaAt, 'Próxima llamada agendada')
+    const nextStatus = advanceStatus(lead.status, 'HORARIO ASIGNADO')
+    await dbAdmin.update(schema.leads).set({
+      status:                nextStatus,
+      last_contact_at:       new Date(),
+      last_contact_critical: false,
+      at_risk:               false,
+      updated_by:            user.id,
+    }).where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
+
+  } else if (outcome === 'sin_avance') {
+    // 6c) Atendió pero sin paso concreto. Cuenta como contacto efectivo
+    //     (refresca el reloj). Si tenía una llamada coordinada (HORARIO
+    //     ASIGNADO) y no se avanzó, vuelve a GESTIÓN. No degradamos etapas
+    //     posteriores (ENTREVISTA PACTADA / CIERRE).
+    const backToGestion = lead.status === 'HORARIO ASIGNADO'
+    await dbAdmin.update(schema.leads).set({
+      last_contact_at:       new Date(),
+      last_contact_critical: false,
+      at_risk:               false,
+      ...(backToGestion ? { status: 'GESTION' as const } : {}),
+      updated_by:            user.id,
+    }).where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
+
+  } else if (outcome === 'no_contesto') {
+    // 6d) No atendió. NO es contacto efectivo: NO refrescamos last_contact_at,
+    //     así el reloj de "Demorado" sigue corriendo (es la señal real de que
+    //     no se lo puede alcanzar). Reintento opcional planificado por el
+    //     vendedor (no avanza la etapa). Calculamos la racha de intentos sin
+    //     respuesta para que la UI sugiera dar de baja tras varios.
+    if (proximaLlamadaAt) {
+      await scheduleNextCall(proximaLlamadaAt, 'Reintento de llamada agendado')
+    }
+    const recent = await dbAdmin
+      .select({ outcome: schema.leadCalls.outcome })
+      .from(schema.leadCalls)
+      .where(and(
+        eq(schema.leadCalls.lead_id, leadId),
+        eq(schema.leadCalls.tenant_id, tenantId),
+        isNotNull(schema.leadCalls.realizada_at),
+      ))
+      .orderBy(desc(schema.leadCalls.realizada_at))
+      .limit(10)
+    for (const r of recent) {
+      if (r.outcome === 'no_contesto') unansweredStreak++
+      else break
+    }
   }
+  // descartado: no toca el lead acá. La baja se hace en el diálogo aparte
+  // (la UI lo abre al recibir outcome='descartado').
 
   revalidatePath('/leads')
   revalidatePath('/pipeline')
   revalidatePath('/all-leads')
   revalidatePath('/citas')
-  return { success: true, data: { outcome } }
+  return { success: true, data: { outcome, unansweredStreak } }
 }
 
 // ── getCallsForLead ───────────────────────────────────────────────────────────

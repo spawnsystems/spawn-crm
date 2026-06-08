@@ -29,7 +29,7 @@ import {
   MessageCircle, Send, Loader2, Pencil, X, Check,
   UserCircle, Plus, RotateCcw, UserPlus, UserCheck, ArrowRight,
   CalendarCheck, Trophy, LifeBuoy, AlertTriangle, CalendarX,
-  ArrowRightLeft, PhoneCall, PhoneIncoming, Clock3, ChevronDown, Trash2, Calculator,
+  ArrowRightLeft, PhoneCall, PhoneIncoming, PhoneOff, MinusCircle, Clock3, ChevronDown, Trash2, Calculator,
 } from 'lucide-react'
 import {
   addNote, deleteNote, toggleTask, getLeadDetail,
@@ -892,10 +892,20 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               callId={registerTarget?.callId}
               leadId={registerTarget?.leadId}
               onOpenChange={(v) => { if (!v) setRegisterTarget(null) }}
-              onDone={(outcome) => {
+              onDone={(outcome, unansweredStreak) => {
                 setRegisterTarget(null)
                 refreshAll()
-                if (outcome === 'descartado') setShowBaja(true)
+                if (outcome === 'descartado') {
+                  setShowBaja(true)
+                } else if (outcome === 'no_contesto' && (unansweredStreak ?? 0) >= 3) {
+                  // Sugerencia (no automática): tras varios intentos sin respuesta,
+                  // ofrecer dar de baja como "NO CONTESTA" (rescatable).
+                  toast.warning(`No contesta hace ${unansweredStreak} intentos`, {
+                    description: 'Quizás convenga darlo de baja como “NO CONTESTA” (después se puede rescatar).',
+                    duration: 10000,
+                    action: { label: 'Dar de baja', onClick: () => setShowBaja(true) },
+                  })
+                }
               }}
             />
 
@@ -1363,6 +1373,8 @@ type LeadCall = {
 }
 
 const OUTCOME_LABEL: Record<string, { label: string; color: string }> = {
+  no_contesto:     { label: 'No contestó',              color: 'text-amber-600'   },
+  sin_avance:      { label: 'Atendió — sin avance',     color: 'text-slate-600'   },
   proxima_llamada: { label: 'Próxima llamada agendada', color: 'text-sky-600'     },
   cita:            { label: 'Cita acordada',            color: 'text-violet-600'  },
   descartado:      { label: 'Lead dado de baja',        color: 'text-rose-600'    },
@@ -1514,31 +1526,48 @@ function ScheduleCallDialog({
 
 // ── RegisterCallDialog ────────────────────────────────────────────────────────
 
-type CallOutcome = 'proxima_llamada' | 'cita' | 'descartado'
+type CallOutcome = 'no_contesto' | 'sin_avance' | 'proxima_llamada' | 'cita' | 'descartado'
 
+// Los 4 resultados "activos" (el lead sigue vivo) se muestran en grilla.
+// "Dar de baja" va aparte, como salida.
 const OUTCOMES: { value: CallOutcome; label: string; desc: string; icon: React.ReactNode; color: string }[] = [
-  {
-    value:  'proxima_llamada',
-    label:  'Próxima llamada',
-    desc:   'Se coordina otra llamada',
-    icon:   <PhoneCall className="size-4" />,
-    color:  'border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100',
-  },
   {
     value:  'cita',
     label:  'Agendar cita',
-    desc:   'Se pactó una cita presencial o virtual',
+    desc:   'Se pactó una cita',
     icon:   <CalendarCheck className="size-4" />,
     color:  'border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100',
   },
   {
-    value:  'descartado',
-    label:  'Dar de baja',
-    desc:   'El lead no sigue adelante',
-    icon:   <X className="size-4" />,
-    color:  'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100',
+    value:  'proxima_llamada',
+    label:  'Próxima llamada',
+    desc:   'Quedaron en hablar con fecha',
+    icon:   <PhoneCall className="size-4" />,
+    color:  'border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100',
+  },
+  {
+    value:  'sin_avance',
+    label:  'Sin avance',
+    desc:   'Atendió, pero sin paso concreto',
+    icon:   <MinusCircle className="size-4" />,
+    color:  'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100',
+  },
+  {
+    value:  'no_contesto',
+    label:  'No contestó',
+    desc:   'No atendió la llamada',
+    icon:   <PhoneOff className="size-4" />,
+    color:  'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100',
   },
 ]
+
+const OUTCOME_BAJA: { value: CallOutcome; label: string; desc: string; icon: React.ReactNode; color: string } = {
+  value:  'descartado',
+  label:  'Dar de baja',
+  desc:   'El lead no sigue adelante',
+  icon:   <X className="size-4" />,
+  color:  'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100',
+}
 
 type ApptTipo = 'videollamada' | 'visita_showroom' | 'cierre'
 
@@ -1557,12 +1586,15 @@ function RegisterCallDialog({
   callId?:      string          // registrar una llamada YA agendada
   leadId?:      string          // registrar una llamada ad-hoc (la crea)
   onOpenChange: (v: boolean) => void
-  onDone:       (outcome: CallOutcome) => void
+  onDone:       (outcome: CallOutcome, unansweredStreak?: number) => void
 }) {
   const isAdHoc = !callId && !!leadId
   const [outcome,    setOutcome]    = useState<CallOutcome | null>(null)
   const [notas,      setNotas]      = useState('')
   const [nextCallAt, setNextCallAt] = useState('')
+  // Reintento opcional para no_contesto (separado de nextCallAt para que el
+  // default de "próxima llamada" no se cuele como reintento involuntario).
+  const [retryAt,    setRetryAt]    = useState('')
   // Campos de cita (solo se usan si outcome === 'cita')
   const [apptAt,     setApptAt]     = useState('')
   const [apptTipo,   setApptTipo]   = useState<ApptTipo>('videollamada')
@@ -1588,11 +1620,11 @@ function RegisterCallDialog({
   }, [open])
 
   function reset() {
-    setOutcome(null); setNotas(''); setNextCallAt('')
+    setOutcome(null); setNotas(''); setNextCallAt(''); setRetryAt('')
     setApptAt(''); setApptTipo('videollamada'); setApptDur(60); setApptLugar('')
   }
 
-  // Validez del submit según outcome
+  // Validez del submit según outcome. no_contesto y sin_avance no exigen campos.
   const submitDisabled =
     !outcome ||
     (outcome === 'proxima_llamada' && !nextCallAt) ||
@@ -1611,11 +1643,19 @@ function RegisterCallDialog({
     }
 
     startTransition(async () => {
+      // proximaLlamadaAt se manda para proxima_llamada (obligatorio, usa
+      // nextCallAt) y para no_contesto si el vendedor cargó un reintento
+      // opcional (usa retryAt).
+      const nextCallISO =
+        outcome === 'proxima_llamada' && nextCallAt ? new Date(nextCallAt).toISOString()
+        : outcome === 'no_contesto' && retryAt      ? new Date(retryAt).toISOString()
+        : undefined
+
       const res = await registerCall({
         ...(callId ? { callId } : { leadId }),
         outcome,
         notasResultado:   notas.trim() || undefined,
-        proximaLlamadaAt: outcome === 'proxima_llamada' ? new Date(nextCallAt).toISOString() : undefined,
+        proximaLlamadaAt: nextCallISO,
         appointment: outcome === 'cita'
           ? {
               scheduled_at: new Date(apptAt).toISOString(),
@@ -1628,13 +1668,15 @@ function RegisterCallDialog({
       if (!res.success) { toast.error(res.error); return }
 
       const labels: Record<CallOutcome, string> = {
+        no_contesto:     retryAt ? 'Llamada registrada — reintento agendado' : 'Llamada registrada — no contestó',
+        sin_avance:      'Llamada registrada — sigue en gestión',
         proxima_llamada: 'Llamada registrada — próxima llamada agendada',
         cita:            'Llamada registrada — cita agendada',
         descartado:      'Llamada registrada',
       }
       toast.success(labels[outcome])
       reset()
-      onDone(outcome)
+      onDone(outcome, res.data.unansweredStreak)
     })
   }
 
@@ -1657,7 +1699,7 @@ function RegisterCallDialog({
           {/* Outcome selector */}
           <div className="space-y-2">
             <Label>¿En qué quedamos? *</Label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {OUTCOMES.map((o) => (
                 <button
                   key={o.value}
@@ -1680,7 +1722,67 @@ function RegisterCallDialog({
                 </button>
               ))}
             </div>
+            {/* Salida: dar de baja (separada de los resultados activos) */}
+            <button
+              type="button"
+              onClick={() => setOutcome(OUTCOME_BAJA.value)}
+              className={cn(
+                'flex w-full items-center justify-center gap-2 rounded-lg border-2 px-3 py-2 text-center transition-all',
+                outcome === OUTCOME_BAJA.value
+                  ? OUTCOME_BAJA.color + ' ring-2 ring-offset-1 ring-current'
+                  : 'border-border hover:border-muted-foreground/40',
+              )}
+            >
+              <span className={outcome === OUTCOME_BAJA.value ? '' : 'text-muted-foreground'}>{OUTCOME_BAJA.icon}</span>
+              <span className={cn('text-xs font-semibold', outcome !== OUTCOME_BAJA.value && 'text-foreground')}>
+                {OUTCOME_BAJA.label}
+              </span>
+              <span className="text-[10px] text-muted-foreground hidden sm:block">— {OUTCOME_BAJA.desc}</span>
+            </button>
           </div>
+
+          {/* No contestó — reintento opcional */}
+          {outcome === 'no_contesto' && (
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
+                <PhoneOff className="size-3.5" />
+                No atendió
+              </div>
+              <p className="text-[11px] text-amber-700/80 leading-snug">
+                Se registra el intento. El lead sigue en su etapa y queda contando como demorado
+                hasta que lo contactes. Podés programar un reintento (opcional).
+              </p>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Reintentar llamada (opcional)</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="datetime-local"
+                    value={retryAt}
+                    onChange={(e) => setRetryAt(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                  {retryAt && (
+                    <button
+                      type="button"
+                      onClick={() => setRetryAt('')}
+                      className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                      title="Quitar reintento"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Sin avance — info */}
+          {outcome === 'sin_avance' && (
+            <p className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 leading-snug">
+              Atendió pero no se llegó a un paso concreto. Cuenta como contacto (se reinicia el reloj
+              de seguimiento) y el lead sigue activo <b>en gestión</b>.
+            </p>
+          )}
 
           {/* Próxima llamada */}
           {outcome === 'proxima_llamada' && (
