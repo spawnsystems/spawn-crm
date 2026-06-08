@@ -1082,13 +1082,46 @@ function UsadoCard({
         <div className="space-y-2">
           {cotizaciones.map((c, idx) => {
             const uso = c.uso === 'taxi_uber_transporte' ? 'Taxi/Uber' : 'Particular'
+
+            // ── Cotizaciones anteriores: compactas, sin editar, apagadas ──
+            if (idx > 0) {
+              return (
+                <div
+                  key={c.id}
+                  className="rounded border border-border/40 bg-muted/20 px-2.5 py-1.5 flex items-center justify-between gap-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-muted-foreground/70 truncate">
+                      {c.marca_modelo || <span className="italic">Sin marca/modelo</span>}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/50 mt-0.5">
+                      {[
+                        c.anio ? String(c.anio) : null,
+                        c.km != null ? `${Number(c.km).toLocaleString('es-AR')} km` : null,
+                        uso,
+                      ].filter(Boolean).join(' · ')}
+                      {' · '}{fmtDayMonthAR(c.created_at)}
+                    </p>
+                  </div>
+                  <span className={cn(
+                    'text-[10px] font-medium shrink-0',
+                    c.rechazado ? 'text-rose-400' : 'text-muted-foreground/60',
+                  )}>
+                    {c.rechazado
+                      ? 'Rechazado'
+                      : formatCurrencyARS(c.valor_final)}
+                  </span>
+                </div>
+              )
+            }
+
+            // ── Cotización activa (la más reciente) ──
             return (
               <div
                 key={c.id}
                 className={cn(
                   'rounded-lg border bg-white/80 overflow-hidden',
                   c.rechazado ? 'border-rose-200' : 'border-emerald-200/80',
-                  idx > 0 && 'opacity-60',
                 )}
               >
                 {/* Top bar: nombre + lápiz */}
@@ -1151,7 +1184,7 @@ function UsadoCard({
 
                 {/* Etiqueta de fecha */}
                 <div className="px-3 py-1 text-[10px] text-muted-foreground/60 bg-muted/10">
-                  {idx === 0 ? 'Última' : 'Anterior'} · {fmtDayMonthAR(c.created_at)}
+                  Última · {fmtDayMonthAR(c.created_at)}
                 </div>
               </div>
             )
