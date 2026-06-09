@@ -460,7 +460,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                         onValueChange={(v) => handleAssign(v === '__none__' ? null : v)}
                         disabled={isPending}
                       >
-                        <SelectTrigger className="h-7 text-xs w-48 border-dashed">
+                        <SelectTrigger className="h-7 text-xs w-auto min-w-[150px] max-w-[220px] border-dashed">
                           <SelectValue placeholder="Sin asignar" />
                         </SelectTrigger>
                         <SelectContent>

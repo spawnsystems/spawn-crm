@@ -215,7 +215,7 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
           value={filterMes?.toString() ?? 'all'}
           onValueChange={(v) => { setFilterMes(v === 'all' ? null : Number(v)); setPage(1) }}
         >
-          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-8 w-auto min-w-[110px] text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los meses</SelectItem>
             {MONTHS.map((m, i) => (
@@ -251,7 +251,7 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
         </div>
 
         <Select value={tipo} onValueChange={(v) => { setTipo(v as TipoFiltro); setFiltroBaja('todos'); setPage(1) }}>
-          <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-8 w-auto min-w-[100px] text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="todos">Todos</SelectItem>
             <SelectItem value="ventas">Solo ventas</SelectItem>
@@ -261,7 +261,7 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
 
         {tipo === 'bajas' && (
           <Select value={filtroBaja} onValueChange={(v) => { setFiltroBaja(v); setPage(1) }}>
-            <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Motivo de baja..." /></SelectTrigger>
+            <SelectTrigger className="h-8 w-auto min-w-[140px] max-w-[220px] text-xs"><SelectValue placeholder="Motivo de baja..." /></SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Todos los motivos</SelectItem>
               {[...BAJA_STATUSES].map((s) => (
@@ -273,7 +273,7 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
 
         {canSeeVendedor && vendedores.length > 0 && (
           <Select value={filtroVendedor} onValueChange={(v) => { setFiltroVendedor(v); setPage(1) }}>
-            <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="Todos los vendedores" /></SelectTrigger>
+            <SelectTrigger className="h-8 w-auto min-w-[140px] max-w-[220px] text-xs"><SelectValue placeholder="Todos los vendedores" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Todos los vendedores</SelectItem>
               {vendedores.map((v) => (

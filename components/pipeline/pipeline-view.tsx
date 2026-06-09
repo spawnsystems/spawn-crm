@@ -65,7 +65,7 @@ export function PipelineView({ initialLeads }: PipelineViewProps) {
         </div>
         {vendedores.length > 1 && (
           <Select value={filterVend} onValueChange={setFilterVend}>
-            <SelectTrigger className={cn('h-9 w-48 text-sm', filterVend !== ALL && 'border-primary text-primary')}>
+            <SelectTrigger className={cn('h-9 w-auto min-w-[150px] max-w-[260px] text-sm', filterVend !== ALL && 'border-primary text-primary')}>
               <SelectValue placeholder="Todos los vendedores" />
             </SelectTrigger>
             <SelectContent>

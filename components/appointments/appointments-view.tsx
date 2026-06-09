@@ -229,7 +229,7 @@ export function AppointmentsView({
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {vendedores.length > 0 && (
           <Select value={filterVend} onValueChange={(v) => { setFilterVend(v); void load(view, anchor, v, showCanceladas) }}>
-            <SelectTrigger className={cn('h-9 w-44 text-sm', filterVend !== ALL && 'border-primary text-primary')}>
+            <SelectTrigger className={cn('h-9 w-auto min-w-[130px] max-w-[240px] text-sm', filterVend !== ALL && 'border-primary text-primary')}>
               <SelectValue placeholder="Vendedor" />
             </SelectTrigger>
             <SelectContent>
@@ -242,7 +242,7 @@ export function AppointmentsView({
         )}
 
         <Select value={filterTipo} onValueChange={setFilterTipo}>
-          <SelectTrigger className={cn('h-9 w-40 text-sm', filterTipo !== ALL && 'border-primary text-primary')}>
+          <SelectTrigger className={cn('h-9 w-auto min-w-[120px] max-w-[220px] text-sm', filterTipo !== ALL && 'border-primary text-primary')}>
             <SelectValue placeholder="Tipo" />
           </SelectTrigger>
           <SelectContent>
@@ -254,7 +254,7 @@ export function AppointmentsView({
         </Select>
 
         <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className={cn('h-9 w-40 text-sm', filterStatus !== ALL && 'border-primary text-primary')}>
+          <SelectTrigger className={cn('h-9 w-auto min-w-[120px] max-w-[220px] text-sm', filterStatus !== ALL && 'border-primary text-primary')}>
             <SelectValue placeholder="Estado" />
           </SelectTrigger>
           <SelectContent>

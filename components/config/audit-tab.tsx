@@ -171,7 +171,7 @@ export function AuditTab({
 
         {/* Entidad */}
         <Select value={filterEntity} onValueChange={setFilterEntity}>
-          <SelectTrigger className="h-9 w-36 text-sm">
+          <SelectTrigger className="h-9 w-auto min-w-[140px] max-w-[220px] text-sm">
             <SelectValue placeholder="Entidad" />
           </SelectTrigger>
           <SelectContent>
@@ -185,7 +185,7 @@ export function AuditTab({
         {/* Actor */}
         {actores.length > 0 && (
           <Select value={filterActor} onValueChange={setFilterActor}>
-            <SelectTrigger className="h-9 w-40 text-sm">
+            <SelectTrigger className="h-9 w-auto min-w-[140px] max-w-[220px] text-sm">
               <SelectValue placeholder="Usuario" />
             </SelectTrigger>
             <SelectContent>

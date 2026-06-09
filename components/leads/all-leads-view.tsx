@@ -232,7 +232,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
           value={filterMes?.toString() ?? 'all'}
           onValueChange={(v) => setFilterMes(v === 'all' ? null : Number(v))}
         >
-          <SelectTrigger className="h-9 w-36 text-sm"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-9 w-auto min-w-[120px] text-sm"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los meses</SelectItem>
             {MONTHS.map((m, i) => (
@@ -265,7 +265,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
 
         {vendedores.length > 0 && (
           <Select value={filterVend} onValueChange={setFilterVend}>
-            <SelectTrigger className={cn('h-9 w-44 text-sm', filterVend !== ALL && 'border-primary text-primary')}>
+            <SelectTrigger className={cn('h-9 w-auto min-w-[130px] max-w-[240px] text-sm', filterVend !== ALL && 'border-primary text-primary')}>
               <SelectValue placeholder="Vendedor" />
             </SelectTrigger>
             <SelectContent>
@@ -279,7 +279,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
         )}
 
         <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className={cn('h-9 w-40 text-sm', filterStatus !== ALL && 'border-primary text-primary')}>
+          <SelectTrigger className={cn('h-9 w-auto min-w-[130px] max-w-[240px] text-sm', filterStatus !== ALL && 'border-primary text-primary')}>
             <SelectValue placeholder="Estado" />
           </SelectTrigger>
           <SelectContent>
@@ -289,7 +289,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
         </Select>
 
         <Select value={filterSource} onValueChange={setFilterSource}>
-          <SelectTrigger className={cn('h-9 w-40 text-sm', filterSource !== ALL && 'border-primary text-primary')}>
+          <SelectTrigger className={cn('h-9 w-auto min-w-[130px] max-w-[240px] text-sm', filterSource !== ALL && 'border-primary text-primary')}>
             <SelectValue placeholder="Origen" />
           </SelectTrigger>
           <SelectContent>
@@ -299,7 +299,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
         </Select>
 
         <Select value={filterAtencion} onValueChange={(v) => setFilterAtencion(v as typeof filterAtencion)}>
-          <SelectTrigger className={cn('h-9 w-44 text-sm', filterAtencion !== 'all' && 'border-amber-500 text-amber-700')}>
+          <SelectTrigger className={cn('h-9 w-auto min-w-[130px] max-w-[240px] text-sm', filterAtencion !== 'all' && 'border-amber-500 text-amber-700')}>
             <SelectValue placeholder="Atención" />
           </SelectTrigger>
           <SelectContent>
@@ -313,7 +313,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
 
         {provincias.length > 0 && (
           <Select value={filterProvincia} onValueChange={setFilterProvincia}>
-            <SelectTrigger className={cn('h-9 w-40 text-sm', filterProvincia !== ALL && 'border-primary text-primary')}>
+            <SelectTrigger className={cn('h-9 w-auto min-w-[130px] max-w-[240px] text-sm', filterProvincia !== ALL && 'border-primary text-primary')}>
               <SelectValue placeholder="Provincia" />
             </SelectTrigger>
             <SelectContent>
@@ -324,7 +324,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
         )}
 
         <Select value={filterUsado} onValueChange={(v) => setFilterUsado(v as 'all' | 'yes' | 'no')}>
-          <SelectTrigger className={cn('h-9 w-36 text-sm', filterUsado !== 'all' && 'border-primary text-primary')}>
+          <SelectTrigger className={cn('h-9 w-auto min-w-[110px] max-w-[200px] text-sm', filterUsado !== 'all' && 'border-primary text-primary')}>
             <SelectValue placeholder="Tiene usado" />
           </SelectTrigger>
           <SelectContent>
