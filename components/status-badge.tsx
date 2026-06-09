@@ -19,6 +19,7 @@ export type { LeadStatus }
 //     DATO ERRÓNEO       → neutral
 //     DERIVAR            → cyan
 const map: Record<LeadStatus, string> = {
+  'NUEVO':              'bg-blue-100    text-blue-700    border-blue-300/60',
   'GESTION':            'bg-slate-100   text-slate-700   border-slate-300/60',
   'HORARIO ASIGNADO':   'bg-sky-100     text-sky-700     border-sky-300/60',
   'ENTREVISTA PACTADA': 'bg-violet-100  text-violet-700  border-violet-300/60',

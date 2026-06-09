@@ -16,6 +16,7 @@ import { BAJA_STATUSES, RESCATABLE_STATUSES } from './constants'
 
 /** Orden del embudo activo. El índice define "más adelante" para no degradar. */
 export const ACTIVE_FLOW = [
+  'NUEVO',
   'GESTION',
   'HORARIO ASIGNADO',
   'ENTREVISTA PACTADA',

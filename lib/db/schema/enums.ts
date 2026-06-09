@@ -9,6 +9,8 @@ export const appRoleEnum = pgEnum('app_role', [
 ])
 
 export const leadStatusEnum = pgEnum('lead_status', [
+  // Inicial — lead recién creado, sin contacto aún
+  'NUEVO',
   // Activos / pipeline (en orden)
   'GESTION',
   'HORARIO ASIGNADO',

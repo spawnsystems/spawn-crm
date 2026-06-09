@@ -145,6 +145,8 @@ export async function createLead(
     observaciones:       data.observaciones ?? null,
     est_value:           data.est_value?.toString() ?? null,
     next_action:         data.next_action ?? null,
+    // Estado inicial: NUEVO (sin contacto). Avanza con la primera interacción.
+    status:              'NUEVO',
     assigned_to:         effectiveAssignedTo,
     equipo_id:           equipoId,
     created_by:          user.id,

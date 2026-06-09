@@ -84,6 +84,7 @@ export default async function PerformancePage() {
   const funnelTotal = nonBaja.length
   const inStage = (status: string) => nonBaja.filter((l) => l.status === status).length
   const funnel = [
+    { stage: 'Nuevos',             count: inStage('NUEVO') },
     { stage: 'En gestión',         count: inStage('GESTION') },
     { stage: 'Horario asignado',   count: inStage('HORARIO ASIGNADO') },
     { stage: 'Entrevista pactada', count: inStage('ENTREVISTA PACTADA') },

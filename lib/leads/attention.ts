@@ -146,7 +146,8 @@ export function computeAttention(
   if (tieneCompromisoFuturo) return OK
 
   // 3) Lead nuevo nunca contactado, pasado el umbral → media/alta por antigüedad.
-  if (lead.status === 'GESTION' && contacto === null) {
+  // Aplica al estado inicial NUEVO (y a GESTION legacy sin contacto).
+  if ((lead.status === 'NUEVO' || lead.status === 'GESTION') && contacto === null) {
     const horas = (now - created) / MS_HORA
     if (horas > cfg.primerContactoHoras) {
       const severity: AttentionSeverity = horas > cfg.primerContactoHoras * 2 ? 'alta' : 'media'

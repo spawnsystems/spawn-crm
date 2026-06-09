@@ -358,15 +358,16 @@ export async function registerCall(
 
   } else if (outcome === 'sin_avance') {
     // 6c) Atendió pero sin paso concreto. Cuenta como contacto efectivo
-    //     (refresca el reloj). Si tenía una llamada coordinada (HORARIO
-    //     ASIGNADO) y no se avanzó, vuelve a GESTIÓN. No degradamos etapas
-    //     posteriores (ENTREVISTA PACTADA / CIERRE).
-    const backToGestion = lead.status === 'HORARIO ASIGNADO'
+    //     (refresca el reloj). Mueve a GESTIÓN si:
+    //       - era NUEVO (primer contacto efectivo → entra en gestión), o
+    //       - tenía una llamada coordinada (HORARIO ASIGNADO) y no se avanzó.
+    //     No degradamos etapas posteriores (ENTREVISTA PACTADA / CIERRE).
+    const toGestion = lead.status === 'NUEVO' || lead.status === 'HORARIO ASIGNADO'
     await dbAdmin.update(schema.leads).set({
       last_contact_at:       new Date(),
       last_contact_critical: false,
       at_risk:               false,
-      ...(backToGestion ? { status: 'GESTION' as const } : {}),
+      ...(toGestion ? { status: 'GESTION' as const } : {}),
       updated_by:            user.id,
     }).where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
 

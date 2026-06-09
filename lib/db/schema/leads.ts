@@ -38,7 +38,7 @@ export const leads = pgTable('leads', {
   observaciones:        text('observaciones'),
 
   // Estado y pipeline
-  status: leadStatusEnum('status').default('GESTION').notNull(),
+  status: leadStatusEnum('status').default('NUEVO').notNull(),
   next_action: text('next_action'),
   est_value: numeric('est_value', { precision: 14, scale: 2 }),
 

@@ -13,6 +13,7 @@ export type LeadStatus = (typeof leadStatusValues)[number]
  *   [baja: NO CONTESTA, NO INTERESADO, INCONTACTABLE, YA COMPRO, DATO ERRONEO, DERIVAR]
  */
 export const STATUS_ORDER: Record<LeadStatus, number> = {
+  'NUEVO':              -1,
   'GESTION':            0,
   'HORARIO ASIGNADO':   1,
   'ENTREVISTA PACTADA': 2,
@@ -48,11 +49,12 @@ export const RESCATABLE_STATUSES: readonly LeadStatus[] = [
 
 /** Estados del pipeline visibles como columnas del Kanban (en orden). */
 export const PIPELINE_COLUMNS: readonly LeadStatus[] = [
-  'GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE', 'VENTA',
+  'NUEVO', 'GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE', 'VENTA',
 ] as const
 
 /** Label de display (el enum guarda GESTION sin tilde por ser SQL-safe). */
 export const STATUS_LABEL: Record<LeadStatus, string> = {
+  'NUEVO':              'NUEVO',
   'GESTION':            'GESTIÓN',
   'HORARIO ASIGNADO':   'HORARIO ASIGNADO',
   'ENTREVISTA PACTADA': 'ENTREVISTA PACTADA',
@@ -87,6 +89,7 @@ export function isRescatable(status: string): boolean {
  */
 export function statusChangeLabel(from: string, to: string): string {
   switch (to) {
+    case 'NUEVO':              return 'Nuevo lead'
     case 'GESTION':            return 'En gestión'
     case 'HORARIO ASIGNADO':   return 'Horario de contacto asignado'
     case 'ENTREVISTA PACTADA': return 'Entrevista pactada'

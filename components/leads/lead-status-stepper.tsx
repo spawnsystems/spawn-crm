@@ -3,19 +3,21 @@
 import { cn } from '@/lib/utils'
 import { isBaja, statusLabel } from '@/lib/leads/constants'
 
-const STEPS = ['GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE', 'VENTA'] as const
+const STEPS = ['NUEVO', 'GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE', 'VENTA'] as const
 type Step = (typeof STEPS)[number]
 
 const STEP_INDEX: Record<Step, number> = {
-  'GESTION':            0,
-  'HORARIO ASIGNADO':   1,
-  'ENTREVISTA PACTADA': 2,
-  'CIERRE':             3,
-  'VENTA':              4,
+  'NUEVO':              0,
+  'GESTION':            1,
+  'HORARIO ASIGNADO':   2,
+  'ENTREVISTA PACTADA': 3,
+  'CIERRE':             4,
+  'VENTA':              5,
 }
 
 // Labels cortos para el stepper (el badge usa los largos)
 const STEP_LABEL: Record<Step, string> = {
+  'NUEVO':              'Nuevo',
   'GESTION':            'Gestión',
   'HORARIO ASIGNADO':   'Horario',
   'ENTREVISTA PACTADA': 'Entrevista',

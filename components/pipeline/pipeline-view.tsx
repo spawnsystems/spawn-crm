@@ -16,6 +16,7 @@ const ALL = '__all__'
 type LeadLike = Lead & { vendedor_nombre?: string | null; vendedor_alias?: string | null }
 
 const STAGES = [
+  { id: 'NUEVO',              label: 'Nuevo',              color: 'bg-blue-500'    },
   { id: 'GESTION',            label: 'Gestión',            color: 'bg-slate-500'   },
   { id: 'HORARIO ASIGNADO',   label: 'Horario asignado',   color: 'bg-sky-500'     },
   { id: 'ENTREVISTA PACTADA', label: 'Entrevista pactada', color: 'bg-violet-500'  },

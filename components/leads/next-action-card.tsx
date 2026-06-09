@@ -297,18 +297,21 @@ function ContactadoCard({
 }) {
   // "sin cita activa" cuando ya estaba en ENTREVISTA PACTADA pero la cita se completó
   const isCitado = lead.status === 'ENTREVISTA PACTADA'
+  const isNuevo  = lead.status === 'NUEVO'
 
   return (
     <div className="rounded-xl bg-blue-50 border border-blue-200/60 px-4 py-3">
       <div className="flex items-center gap-2 mb-1.5">
         <CalendarCheck className="size-4 text-blue-600 shrink-0" />
         <span className="text-sm font-semibold text-blue-900">
-          {isCitado ? 'Sin cita activa' : 'En seguimiento'}
+          {isCitado ? 'Sin cita activa' : isNuevo ? 'Lead nuevo — sin contactar' : 'En seguimiento'}
         </span>
       </div>
       <p className="text-xs text-blue-700/60 mb-3">
         {isCitado
           ? 'La cita anterior fue completada. Organizá una nueva cita para avanzar.'
+          : isNuevo
+          ? 'Hacé el primer contacto: registrá una llamada o agendá una cita para empezar a gestionarlo.'
           : 'Registrá la llamada (queda con su resultado) o agendá una cita cuando el cliente esté listo.'}
       </p>
 
