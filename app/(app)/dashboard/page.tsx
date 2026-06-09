@@ -1,11 +1,12 @@
 import { requireRole } from '@/lib/auth/require-role'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { dbAdmin, schema } from '@/lib/db'
-import { eq, and, count, sql } from 'drizzle-orm'
+import { eq, and, sql, type SQL } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { DashboardView } from '@/components/dashboard/dashboard-view'
 import { getAttentionSummary } from '@/app/actions/leads'
 import { startOfCurrentMonthAR } from '@/lib/utils'
+import { getCurrentUserTeamScope, buildScopeWhere } from '@/lib/tenant/teams'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,104 +19,158 @@ export default async function DashboardPage() {
 
   const startOfMonth = startOfCurrentMonthAR().toISOString()
 
-  // ── Aggregate queries ────────────────────────────────────────
+  // Scope por rol: supervisor → su equipo · gerente → sus equipos · dueño/admin → todo.
+  // Antes el dashboard consultaba TODO el tenant sin filtrar; eso filtraba data de
+  // otros equipos a supervisores/gerentes. Ahora cada rol ve solo lo suyo.
+  const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
+  const scopeWhere = buildScopeWhere(scope)
+  const scoped = (...conds: SQL[]) =>
+    and(
+      eq(schema.leads.tenant_id, tenantId),
+      ...(scopeWhere ? [scopeWhere] : []),
+      ...conds,
+    )
 
-  const [
-    totalResult,
-    closedResult,
-    attention,
-    sellersRaw,
-    sourceRaw,
-  ] = await Promise.all([
-    // Total leads this month
-    dbAdmin
-      .select({ count: count() })
-      .from(schema.leads)
-      .where(
-        and(
-          eq(schema.leads.tenant_id, tenantId),
-          sql`${schema.leads.created_at} >= ${startOfMonth}`,
-        ),
-      ),
+  // ── Query principal: un row por lead del mes (scopeado) con el momento del
+  //    primer contacto real, derivado del timeline. "Primer contacto" = el
+  //    evento más temprano en que el vendedor efectivamente alcanzó/agendó al
+  //    cliente (llamada registrada o cita pactada). Es la señal de respuesta.
+  const firstContactSql = sql<Date | null>`(
+    SELECT MIN(t.created_at) FROM ${schema.leadTimeline} t
+    WHERE t.lead_id = ${schema.leads.id}
+      AND t.event_type IN ('call_registered', 'appointment_scheduled')
+  )`
 
-    // Closed this month
-    dbAdmin
-      .select({ count: count() })
-      .from(schema.leads)
-      .where(
-        and(
-          eq(schema.leads.tenant_id, tenantId),
-          eq(schema.leads.status, 'VENTA'),
-          sql`${schema.leads.created_at} >= ${startOfMonth}`,
-        ),
-      ),
-
-    // Resumen de atención (scopeado por rol, derivado por el engine)
-    getAttentionSummary(),
-
-    // Sellers performance
+  const [leadsRaw, attention] = await Promise.all([
     dbAdmin
       .select({
-        nombre:  schema.usuarios.nombre,
-        alias:   schema.usuarios.alias,
-        total:   count(),
-        closed:  sql<number>`SUM(CASE WHEN ${schema.leads.status} = 'VENTA' THEN 1 ELSE 0 END)::int`,
-        avgResp: sql<number>`0`,
+        id:               schema.leads.id,
+        source:           schema.leads.source,
+        status:           schema.leads.status,
+        seller_id:        schema.leads.assigned_to,
+        seller_nombre:    schema.usuarios.nombre,
+        seller_alias:     schema.usuarios.alias,
+        created_at:       schema.leads.created_at,
+        first_contact_at: firstContactSql,
       })
       .from(schema.leads)
       .leftJoin(schema.usuarios, eq(schema.leads.assigned_to, schema.usuarios.id))
-      .where(
-        and(
-          eq(schema.leads.tenant_id, tenantId),
-          sql`${schema.leads.assigned_to} IS NOT NULL`,
-        ),
-      )
-      .groupBy(schema.usuarios.nombre, schema.usuarios.alias),
+      .where(scoped(sql`${schema.leads.created_at} >= ${startOfMonth}`)),
 
-    // Source breakdown
-    dbAdmin
-      .select({
-        source: schema.leads.source,
-        total:  count(),
-      })
-      .from(schema.leads)
-      .where(eq(schema.leads.tenant_id, tenantId))
-      .groupBy(schema.leads.source),
+    // Resumen de atención (ya scopeado por rol internamente)
+    getAttentionSummary(),
   ])
 
-  const monthLeads     = totalResult[0]?.count  ?? 0
-  const monthClosed    = closedResult[0]?.count  ?? 0
-  const atRiskNow      = attention.total
-  const conversionRate = monthLeads > 0
-    ? Math.round((monthClosed / monthLeads) * 100)
-    : 0
+  // ── Helpers de agregación en JS ──────────────────────────────
+  const respMinutes = (l: (typeof leadsRaw)[number]): number | null => {
+    if (!l.first_contact_at) return null
+    const created = new Date(l.created_at).getTime()
+    const contact = new Date(l.first_contact_at).getTime()
+    const min = Math.round((contact - created) / 60000)
+    return min >= 0 ? min : 0
+  }
 
-  // Atención por vendedor → lookup por nombre visible (alias || nombre)
+  // KPIs generales del mes
+  const monthLeads  = leadsRaw.length
+  const monthClosed = leadsRaw.filter((l) => l.status === 'VENTA').length
+  const conversionRate = monthLeads > 0 ? Math.round((monthClosed / monthLeads) * 100) : 0
+  const atRiskNow   = attention.total
+
+  // ── Tiempo de respuesta ──────────────────────────────────────
+  // Tramos sobre leads contactados; los no contactados se cuentan aparte.
+  const contacted = leadsRaw.map(respMinutes).filter((m): m is number => m !== null)
+  const sinContactar = monthLeads - contacted.length
+  const avgRespMin = contacted.length > 0
+    ? Math.round(contacted.reduce((a, m) => a + m, 0) / contacted.length)
+    : null
+  // Mediana — más robusta que el promedio ante outliers (un lead que se contactó a los 5 días)
+  const medianRespMin = (() => {
+    if (contacted.length === 0) return null
+    const sorted = [...contacted].sort((a, b) => a - b)
+    const mid = Math.floor(sorted.length / 2)
+    return sorted.length % 2 === 0
+      ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+      : sorted[mid]
+  })()
+
+  const respBuckets = [
+    { label: '≤ 15 min', test: (m: number) => m <= 15 },
+    { label: '≤ 1 hora', test: (m: number) => m > 15 && m <= 60 },
+    { label: '≤ 24 hs',  test: (m: number) => m > 60 && m <= 1440 },
+    { label: '+ 24 hs',  test: (m: number) => m > 1440 },
+  ].map((b) => {
+    const count = contacted.filter(b.test).length
+    return { label: b.label, count, pct: monthLeads > 0 ? Math.round((count / monthLeads) * 100) : 0 }
+  })
+  // Tramo extra: sin contactar todavía
+  respBuckets.push({
+    label: 'Sin contactar',
+    count: sinContactar,
+    pct: monthLeads > 0 ? Math.round((sinContactar / monthLeads) * 100) : 0,
+  })
+
+  const responseTime = {
+    avgMin:        avgRespMin,
+    medianMin:     medianRespMin,
+    contacted:     contacted.length,
+    sinContactar,
+    total:         monthLeads,
+    buckets:       respBuckets,
+  }
+
+  // ── Conversión por origen ────────────────────────────────────
+  const sourceMap = new Map<string, { total: number; closed: number }>()
+  for (const l of leadsRaw) {
+    const s = sourceMap.get(l.source) ?? { total: 0, closed: 0 }
+    s.total += 1
+    if (l.status === 'VENTA') s.closed += 1
+    sourceMap.set(l.source, s)
+  }
+  const sources = [...sourceMap.entries()]
+    .map(([name, v]) => ({
+      name,
+      count:      v.total,
+      closed:     v.closed,
+      conversion: v.total > 0 ? Math.round((v.closed / v.total) * 100) : 0,
+      share:      monthLeads > 0 ? Math.round((v.total / monthLeads) * 100) : 0,
+    }))
+    .sort((a, b) => b.count - a.count)
+
+  // ── Detalle por vendedor ─────────────────────────────────────
   const attBySeller = new Map(attention.bySeller.map((s) => [s.name, s.count]))
-
-  // Sellers sorted by closed desc
-  const sellers = sellersRaw
-    .filter((s) => s.nombre)
+  const sellerMap = new Map<string, {
+    nombre: string; alias: string | null
+    total: number; closed: number; contacted: number; respSum: number; respN: number
+  }>()
+  for (const l of leadsRaw) {
+    if (!l.seller_id || !l.seller_nombre) continue
+    const key = l.seller_id
+    const acc = sellerMap.get(key) ?? {
+      nombre: l.seller_nombre, alias: l.seller_alias,
+      total: 0, closed: 0, contacted: 0, respSum: 0, respN: 0,
+    }
+    acc.total += 1
+    if (l.status === 'VENTA') acc.closed += 1
+    const rm = respMinutes(l)
+    if (rm !== null) { acc.contacted += 1; acc.respSum += rm; acc.respN += 1 }
+    sellerMap.set(key, acc)
+  }
+  const sellers = [...sellerMap.values()]
     .map((s) => {
-      const displayName = s.alias || s.nombre || '—'
+      const displayName = s.alias || s.nombre
       return {
-        nombre:     s.nombre ?? '—',
-        alias:      s.alias,
-        total:      Number(s.total),
-        closed:     Number(s.closed),
-        atRisk:     attBySeller.get(displayName) ?? 0,
-        conversion: s.total > 0 ? Math.round((Number(s.closed) / Number(s.total)) * 100) : 0,
+        nombre:      s.nombre,
+        alias:       s.alias,
+        total:       s.total,
+        closed:      s.closed,
+        atRisk:      attBySeller.get(displayName) ?? 0,
+        conversion:  s.total > 0 ? Math.round((s.closed / s.total) * 100) : 0,
+        contacted:   s.contacted,
+        contactRate: s.total > 0 ? Math.round((s.contacted / s.total) * 100) : 0,
+        avgRespMin:  s.respN > 0 ? Math.round(s.respSum / s.respN) : null,
       }
     })
     .sort((a, b) => b.closed - a.closed || b.conversion - a.conversion)
-
-  // Source data (total count per source)
-  const totalAll = sourceRaw.reduce((acc, s) => acc + Number(s.total), 0)
-  const sources = sourceRaw.map((s) => ({
-    name:  s.source,
-    value: totalAll > 0 ? Math.round((Number(s.total) / totalAll) * 100) : 0,
-    count: Number(s.total),
-  })).sort((a, b) => b.count - a.count)
 
   return (
     <DashboardView
@@ -126,7 +181,8 @@ export default async function DashboardPage() {
       attention={attention}
       sellers={sellers}
       sources={sources}
-      totalLeads={totalAll}
+      totalLeads={monthLeads}
+      responseTime={responseTime}
     />
   )
 }
