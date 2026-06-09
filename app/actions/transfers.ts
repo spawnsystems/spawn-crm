@@ -34,7 +34,11 @@ export async function requestTransfer(
 
   // Verificar que el lead existe y está asignado al usuario actual
   const [lead] = await dbAdmin
-    .select({ assigned_to: schema.leads.assigned_to, nombre: schema.leads.nombre })
+    .select({
+      assigned_to: schema.leads.assigned_to,
+      nombre:      schema.leads.nombre,
+      equipo_id:   schema.leads.equipo_id,
+    })
     .from(schema.leads)
     .where(and(eq(schema.leads.id, leadId), eq(schema.leads.tenant_id, tenantId)))
     .limit(1)
@@ -73,6 +77,9 @@ export async function requestTransfer(
     return { success: false, error: 'Ya hay un traspaso pendiente para este lead' }
   }
 
+  const fromName = user.alias || user.nombre
+  const toName   = toUser.alias || toUser.nombre
+
   // Notificar al destinatario
   await dbAdmin.insert(schema.notifications).values({
     tenant_id: tenantId,
@@ -80,11 +87,35 @@ export async function requestTransfer(
     kind:      'transfer_request',
     title:     `Solicitud de traspaso — ${lead.nombre}`,
     body:      motivo
-      ? `${user.alias || user.nombre} quiere transferirte este lead: "${motivo}"`
-      : `${user.alias || user.nombre} quiere transferirte este lead.`,
+      ? `${fromName} quiere transferirte este lead: "${motivo}"`
+      : `${fromName} quiere transferirte este lead.`,
     entity:    'lead_transfer',
     entity_id: transferId,
   })
+
+  // Notificar al supervisor del equipo del lead — para que tenga visibilidad
+  // de que se está moviendo un lead dentro de su equipo. No lo notificamos si
+  // el supervisor es quien solicita o quien recibe (ya está al tanto).
+  if (lead.equipo_id) {
+    const [equipo] = await dbAdmin
+      .select({ supervisor_id: schema.equipos.supervisor_id })
+      .from(schema.equipos)
+      .where(and(eq(schema.equipos.id, lead.equipo_id), eq(schema.equipos.tenant_id, tenantId)))
+      .limit(1)
+
+    const supId = equipo?.supervisor_id
+    if (supId && supId !== user.id && supId !== toUserId) {
+      await dbAdmin.insert(schema.notifications).values({
+        tenant_id: tenantId,
+        user_id:   supId,
+        kind:      'transfer_request',
+        title:     `Traspaso en tu equipo — ${lead.nombre}`,
+        body:      `${fromName} solicitó transferir el lead a ${toName}.`,
+        entity:    'lead_transfer',
+        entity_id: transferId,
+      })
+    }
+  }
 
   // Timeline en el lead
   void appendTimeline(

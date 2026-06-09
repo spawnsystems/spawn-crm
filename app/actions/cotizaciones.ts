@@ -36,6 +36,11 @@ const registrarVentaSchema = z.object({
   modelo:          z.string().optional(),
   monto:           z.number().positive().optional(),
   usado_tomado_id: z.string().uuid().optional(),
+  // Datos del comprador — confirmados al cerrar la venta
+  comprador_telefono:     z.string().trim().min(6, 'Ingresá el teléfono del comprador'),
+  comprador_telefono_alt: z.string().trim().optional(),
+  comprador_dni:          z.string().trim().min(6, 'Ingresá el DNI del comprador'),
+  comprador_email:        z.string().trim().email('Ingresá un email válido'),
 })
 
 // ── createCotizacion ──────────────────────────────────────────────────────────
@@ -231,6 +236,19 @@ export async function getCotizacionesForLead(leadId: string) {
     .orderBy(desc(schema.cotizaciones.created_at))
 }
 
+// ── getLeadContactoParaVenta ──────────────────────────────────────────────────
+// Datos de contacto del lead para precargar el formulario de venta (el teléfono
+// se confirma; el email se completa/confirma). Scopeado por acceso al lead.
+
+export async function getLeadContactoParaVenta(
+  leadId: string,
+): Promise<{ telefono: string | null; email: string | null } | null> {
+  const { user, tenantId } = await requireTenant()
+  const lead = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
+  if (!lead) return null
+  return { telefono: lead.telefono ?? null, email: lead.email ?? null }
+}
+
 // ── registrarVenta ────────────────────────────────────────────────────────────
 
 export async function registrarVenta(input: unknown): Promise<ActionResult<{ id: string }>> {
@@ -264,6 +282,10 @@ export async function registrarVenta(input: unknown): Promise<ActionResult<{ id:
     modelo:          data.modelo ?? null,
     monto:           data.monto?.toString() ?? null,
     usado_tomado_id: data.usado_tomado_id ?? null,
+    comprador_telefono:     data.comprador_telefono,
+    comprador_telefono_alt: data.comprador_telefono_alt ?? null,
+    comprador_dni:          data.comprador_dni,
+    comprador_email:        data.comprador_email,
   }).returning({ id: schema.registroVentas.id })
 
   // Marcar el lead como VENTA (terminal positivo) + timeline + audit.

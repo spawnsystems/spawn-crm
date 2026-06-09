@@ -49,6 +49,12 @@ export const registroVentas = pgTable('registro_ventas', {
   monto:           numeric('monto', { precision: 14, scale: 2 }),
   usado_tomado_id: uuid('usado_tomado_id').references(() => cotizaciones.id, { onDelete: 'set null' }),
 
+  // Datos del comprador confirmados al cerrar la venta (snapshot)
+  comprador_telefono:     text('comprador_telefono'),
+  comprador_telefono_alt: text('comprador_telefono_alt'),
+  comprador_dni:          text('comprador_dni'),
+  comprador_email:        text('comprador_email'),
+
   vendida_at:      timestamp('vendida_at', { withTimezone: true }).defaultNow().notNull(),
   created_at:      timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 })
