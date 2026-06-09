@@ -79,10 +79,20 @@ export async function upsertMetaMensual(
       },
     })
 
+  // Nombre del vendedor para que el detalle de auditoría sea legible
+  const [vend] = await dbAdmin
+    .select({ nombre: schema.usuarios.nombre, alias: schema.usuarios.alias })
+    .from(schema.usuarios)
+    .where(eq(schema.usuarios.id, user_id))
+    .limit(1)
+
   void logAudit({
     tenantId, actorId: user.id,
     action: 'meta.set', entity: 'meta',
-    meta: { user_id, anio, mes, value: meta_ventas },
+    meta: {
+      user_id, anio, mes, value: meta_ventas,
+      vendedor_nombre: vend?.alias || vend?.nombre || null,
+    },
     visibleToDueno: true,
   })
 

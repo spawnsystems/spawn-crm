@@ -26,20 +26,29 @@ const ACTION_LABEL: Record<string, string> = {
   'lead.status_change':            'Cambió etapa',
   'lead.contacted':                'Registró contacto',
   'lead.closed_won':               'Cerró venta',
+  'lead.baja':                     'Dio de baja',
   'lead.reactivated_from_rescue':  'Reactivó lead',
   'lead.note_add':                 'Agregó nota',
+  'lead.note_deleted':             'Eliminó nota',
   'lead.task_add':                 'Agregó tarea',
+  // Ventas / cotizaciones
+  'venta.registrar':               'Registró venta',
+  'cotizacion.create':             'Cotizó un usado',
+  'cotizacion.update':             'Actualizó cotización',
   // Citas
   'appointment.create':            'Pautó cita',
+  'appointment.update':            'Editó cita',
   'appointment.cancel':            'Canceló cita',
   'appointment.done':              'Marcó cita realizada',
-  'appointment.no_show':           'Registró no-show',
+  'appointment.no_show':           'Registró ausencia',
   'appointment.reschedule':        'Reagendó cita',
+  'appointment.resolve':           'Resolvió cita',
   // Usuarios
   'user.invite':                   'Invitó usuario',
   'user.deactivate':               'Desactivó usuario',
   // Configuración
   'tenant.update':                 'Actualizó concesionaria',
+  'tenant.sla_update':             'Actualizó alertas',
   'equipo.create':                 'Creó equipo',
   'equipo.update':                 'Actualizó equipo',
   'modelo.create':                 'Creó modelo',
@@ -50,11 +59,25 @@ const ACTION_LABEL: Record<string, string> = {
   'meta.set':                      'Estableció meta',
 }
 
+// Etiquetas legibles para el badge de entidad (en español, singular)
+const ENTITY_LABEL: Record<string, string> = {
+  lead:        'Lead',
+  appointment: 'Cita',
+  cotizacion:  'Cotización',
+  user:        'Usuario',
+  tenant:      'Empresa',
+  equipo:      'Equipo',
+  modelo:      'Modelo',
+  source:      'Fuente',
+  meta:        'Meta',
+}
+
 const ENTITY_OPTIONS = [
   { value: 'lead',        label: 'Leads' },
   { value: 'appointment', label: 'Citas' },
+  { value: 'cotizacion',  label: 'Cotizaciones' },
   { value: 'user',        label: 'Usuarios' },
-  { value: 'tenant',      label: 'Concesionaria' },
+  { value: 'tenant',      label: 'Empresa' },
   { value: 'equipo',      label: 'Equipos' },
   { value: 'modelo',      label: 'Modelos' },
   { value: 'source',      label: 'Fuentes' },
@@ -64,6 +87,7 @@ const ENTITY_OPTIONS = [
 const ENTITY_COLOR: Record<string, string> = {
   lead:        'bg-primary/10 text-primary',
   appointment: 'bg-violet-500/10 text-violet-600',
+  cotizacion:  'bg-emerald-500/10 text-emerald-600',
   user:        'bg-indigo-500/10 text-indigo-600',
   tenant:      'bg-orange-500/10 text-orange-600',
   equipo:      'bg-teal-500/10 text-teal-600',
@@ -264,7 +288,7 @@ function AuditRow({ log }: { log: AuditRow }) {
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
           <Badge className={`text-[10px] font-medium shrink-0 ${entityColor}`} variant="secondary">
-            {log.entity}
+            {ENTITY_LABEL[log.entity] ?? log.entity}
           </Badge>
           <span className="font-medium text-sm">{actionLabel}</span>
         </div>
@@ -301,11 +325,24 @@ function buildDetail(action: string, meta: Record<string, unknown> | null): stri
     return `${meta.nombre ?? '?'}${asig}`
   }
   if (action === 'appointment.create') {
-    const tipo = meta.tipo ? String(meta.tipo).replace('_', ' ') : 'cita'
+    const tipo = meta.tipo ? String(meta.tipo).replace(/_/g, ' ') : 'cita'
     return tipo.charAt(0).toUpperCase() + tipo.slice(1)
   }
   if (action === 'appointment.reschedule') {
     return '—'
+  }
+  if (action === 'lead.baja') {
+    // motivo de la baja (NO CONTESTA, NO INTERESADO, etc.)
+    return meta.status ? `Motivo: ${meta.status}` : '—'
+  }
+  if (action === 'venta.registrar') {
+    return String(meta.modelo ?? '—')
+  }
+  if (action === 'cotizacion.create' || action === 'cotizacion.update') {
+    if (meta.marca_modelo) return String(meta.marca_modelo)
+    return meta.uso === 'taxi_uber_transporte' ? 'Taxi / Uber'
+      : meta.uso === 'particular' ? 'Particular'
+      : '—'
   }
   if (action.startsWith('lead.')) {
     return String(meta.nombre ?? meta.lead ?? '—')
@@ -314,7 +351,10 @@ function buildDetail(action: string, meta: Record<string, unknown> | null): stri
     return `${meta.email ?? '?'} (${meta.rol ?? '?'})`
   }
   if (action === 'meta.set') {
-    return `${meta.vendedor ?? '?'} — ${meta.month}/${meta.year}: ${meta.value}`
+    const quien  = meta.vendedor_nombre ?? meta.vendedor ?? 'Vendedor'
+    const ventas = meta.value ?? '?'
+    const periodo = (meta.mes && meta.anio) ? ` · ${meta.mes}/${meta.anio}` : ''
+    return `${quien}: ${ventas} ventas${periodo}`
   }
   // Genérico: primer valor de string del meta
   const first = Object.values(meta).find((v) => typeof v === 'string')
