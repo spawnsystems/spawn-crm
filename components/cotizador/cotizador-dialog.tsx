@@ -11,9 +11,9 @@ import { Label } from '@/components/ui/label'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Calculator, AlertTriangle, CheckCircle2, Info } from 'lucide-react'
+import { Loader2, Calculator, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { cn, formatCurrencyARS } from '@/lib/utils'
-import { calcularUsado, condicionesComerciales, type UsoVehiculo } from '@/lib/cotizador/calc'
+import { calcularUsado, type UsoVehiculo } from '@/lib/cotizador/calc'
 import { createCotizacion, updateCotizacion } from '@/app/actions/cotizaciones'
 
 // Cotización existente a editar (modo edición). Si se pasa, el dialog
@@ -230,18 +230,6 @@ export function CotizadorDialog({
             </div>
           )}
 
-          {/* Condiciones comerciales */}
-          {(preview || provincia) && (
-            <details className="group">
-              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-1">
-                <Info className="size-3" />
-                Condiciones comerciales
-              </summary>
-              <pre className="mt-1.5 text-[11px] text-muted-foreground whitespace-pre-wrap bg-muted/40 rounded p-2">
-                {condicionesComerciales(provincia)}
-              </pre>
-            </details>
-          )}
         </div>
 
         <DialogFooter>
