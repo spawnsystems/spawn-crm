@@ -41,7 +41,7 @@ import { scheduleCall, registerCall } from '@/app/actions/calls'
 import { BajaDialog } from '@/components/leads/baja-dialog'
 import { CotizadorDialog, type EditingCotizacion } from '@/components/cotizador/cotizador-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
-import { getVendedoresDelTenant } from '@/app/actions/users'
+import { getVendedoresParaTraspaso } from '@/app/actions/users'
 import { leadSourceValues } from '@/lib/schemas/leads'
 import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appointments'
 import { isBaja } from '@/lib/leads/constants'
@@ -53,7 +53,7 @@ import { formatHorarios } from '@/lib/leads/horarios'
 // ── Types ─────────────────────────────────────────────────────────
 
 type DetailData   = Awaited<ReturnType<typeof getLeadDetail>>
-type Vendedor     = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
+type Vendedor     = Awaited<ReturnType<typeof getVendedoresParaTraspaso>>[number]
 // getNextAppointmentForLead returns rows[0] which may be undefined at runtime
 // even though TS infers the non-nullable element type; we always allow null.
 type Appointment  = Awaited<ReturnType<typeof getNextAppointmentForLead>> | null
@@ -205,7 +205,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
     Promise.all([
       getLeadDetail(leadId),
       getNextAppointmentForLead(leadId),
-      getVendedoresDelTenant(),
+      getVendedoresParaTraspaso(),
     ])
       .then(([d, appt, v]) => {
         if (cancelled) return
@@ -272,6 +272,11 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
 
   // Was this lead ever rescued from rescate?
   const wasRescued = timeline.some((e) => e.event_type === 'reactivated_from_rescue')
+
+  // Lead terminal (vendido o dado de baja): el vendedor no puede tocar nada más.
+  // Un supervisor o superior sí puede seguir editando (corregir datos, rescatar).
+  const isTerminal = !!lead && (lead.status === 'VENTA' || isBaja(lead.status))
+  const readOnly   = isTerminal && currentUser.rol === 'vendedor'
 
   // ── Mutations ──────────────────────────────────────────────────
 
@@ -398,13 +403,15 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                         Reactivado del rescate
                       </span>
                     )}
-                    <button
-                      onClick={() => setEditing((v) => !v)}
-                      className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground ml-auto sm:ml-0"
-                      title="Editar lead"
-                    >
-                      {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
-                    </button>
+                    {!readOnly && (
+                      <button
+                        onClick={() => setEditing((v) => !v)}
+                        className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground ml-auto sm:ml-0"
+                        title="Editar lead"
+                      >
+                        {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
+                      </button>
+                    )}
                   </div>
 
                   {/* Contact info */}
@@ -534,6 +541,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               {/* UsadoCard SIEMPRE visible — si no hay usado muestra botón de agregar */}
               <UsadoCard
                 cotizaciones={cotizaciones}
+                readOnly={readOnly}
                 onNew={() => { setEditingCotizacion(null); setShowCotizador(true) }}
                 onEdit={(c) => { setEditingCotizacion(c); setShowCotizador(true) }}
               />
@@ -652,6 +660,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                   )}
 
                   {/* Agregar acción manual — con fecha/hora opcional */}
+                  {!readOnly && (
                   <div className="space-y-2">
                     <div className="flex gap-2">
                       <Input
@@ -708,6 +717,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                       </Button>
                     </div>
                   </div>
+                  )}
                 </Section>
 
                 {/* Llamadas */}
@@ -819,22 +829,24 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                       )
                     })()}
                   </div>
-                  <div className="flex gap-2">
-                    <Textarea
-                      placeholder="Agregar nota... (Ctrl+Enter para guardar)"
-                      className="text-sm min-h-[60px] resize-none"
-                      value={newNote}
-                      onChange={(e) => setNewNote(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) handleAddNote() }}
-                    />
-                    <Button
-                      size="sm" className="shrink-0 self-end gap-1.5"
-                      onClick={handleAddNote}
-                      disabled={!newNote.trim() || isPending}
-                    >
-                      <Send className="size-3.5" />Guardar
-                    </Button>
-                  </div>
+                  {!readOnly && (
+                    <div className="flex gap-2">
+                      <Textarea
+                        placeholder="Agregar nota... (Ctrl+Enter para guardar)"
+                        className="text-sm min-h-[60px] resize-none"
+                        value={newNote}
+                        onChange={(e) => setNewNote(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) handleAddNote() }}
+                      />
+                      <Button
+                        size="sm" className="shrink-0 self-end gap-1.5"
+                        onClick={handleAddNote}
+                        disabled={!newNote.trim() || isPending}
+                      >
+                        <Send className="size-3.5" />Guardar
+                      </Button>
+                    </div>
+                  )}
                 </Section>
               </div>
 
@@ -1027,11 +1039,12 @@ function Section({ icon, title, children }: {
 // Botón "+" en header agrega una para otro auto.
 
 function UsadoCard({
-  cotizaciones, onNew, onEdit,
+  cotizaciones, onNew, onEdit, readOnly = false,
 }: {
   cotizaciones: NonNullable<DetailData>['cotizaciones']
   onNew:        () => void
   onEdit:       (c: EditingCotizacion) => void
+  readOnly?:    boolean
 }) {
   const isEmpty = cotizaciones.length === 0
 
@@ -1049,7 +1062,7 @@ function UsadoCard({
           </span>
         </div>
 
-        {isEmpty ? (
+        {readOnly ? null : isEmpty ? (
           /* Sin cotizaciones → botón para iniciar */
           <button
             onClick={onNew}
@@ -1138,21 +1151,23 @@ function UsadoCard({
                       ].filter(Boolean).join(' · ')}
                     </p>
                   </div>
-                  <button
-                    onClick={() => onEdit({
-                      id:            c.id,
-                      marca_modelo:  c.marca_modelo,
-                      anio:          c.anio,
-                      km:            c.km != null ? Number(c.km) : null,
-                      uso:           c.uso ?? 'particular',
-                      base_infoauto: c.base_infoauto ?? 0,
-                    })}
-                    title="Editar esta cotización"
-                    aria-label="Editar cotización"
-                    className="shrink-0 p-1 rounded text-muted-foreground/50 hover:text-amber-700 hover:bg-amber-50 transition-colors"
-                  >
-                    <Pencil className="size-3" />
-                  </button>
+                  {!readOnly && (
+                    <button
+                      onClick={() => onEdit({
+                        id:            c.id,
+                        marca_modelo:  c.marca_modelo,
+                        anio:          c.anio,
+                        km:            c.km != null ? Number(c.km) : null,
+                        uso:           c.uso ?? 'particular',
+                        base_infoauto: c.base_infoauto ?? 0,
+                      })}
+                      title="Editar esta cotización"
+                      aria-label="Editar cotización"
+                      className="shrink-0 p-1 rounded text-muted-foreground/50 hover:text-amber-700 hover:bg-amber-50 transition-colors"
+                    >
+                      <Pencil className="size-3" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Bottom bar: valor o rechazado */}
@@ -1339,7 +1354,7 @@ function TransferDialog({
             <Label>Vendedor *</Label>
             {candidates.length === 0 ? (
               <p className="text-sm text-muted-foreground italic">
-                No hay otros vendedores disponibles en el tenant.
+                No hay otros vendedores disponibles para el traspaso.
               </p>
             ) : (
               <Select value={toUserId} onValueChange={setToUserId}>

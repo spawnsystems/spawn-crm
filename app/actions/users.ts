@@ -90,7 +90,7 @@ export async function inviteUserToTenant(input: {
         )
         .limit(1)
       if (alreadyMember[0]) {
-        return { success: false, error: 'Este usuario ya es miembro del tenant' }
+        return { success: false, error: 'Este usuario ya es miembro de la empresa' }
       }
 
       // Agregar directamente como aceptado
@@ -270,6 +270,52 @@ export async function getVendedoresDelTenant() {
       user_id: schema.tenantMembers.user_id,
       nombre:  schema.usuarios.nombre,
       alias:   schema.usuarios.alias,
+      equipo_id: schema.tenantMembers.equipo_id,
+    })
+    .from(schema.tenantMembers)
+    .leftJoin(schema.usuarios, eq(schema.tenantMembers.user_id, schema.usuarios.id))
+    .where(and(...where))
+    .orderBy(schema.usuarios.nombre)
+}
+
+// ── getVendedoresParaTraspaso ─────────────────────────────────
+// Vendedores a los que el usuario actual puede TRASPASAR un lead.
+// A diferencia de getVendedoresDelTenant, un vendedor ve a sus COMPAÑEROS de
+// equipo (no solo a sí mismo): el traspaso es justamente hacia otro vendedor.
+//   vendedor   → compañeros de su equipo (sin equipo → ninguno)
+//   supervisor → vendedores de su equipo
+//   gerente    → vendedores de sus equipos
+//   dueño/admin → todos
+
+export async function getVendedoresParaTraspaso() {
+  const { user, tenantId } = await requireTenant()
+  const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
+
+  const where = [
+    eq(schema.tenantMembers.tenant_id, tenantId),
+    eq(schema.tenantMembers.rol, 'vendedor'),
+    eq(schema.tenantMembers.activo, true),
+  ]
+
+  if (scope.type === 'team') {
+    where.push(eq(schema.tenantMembers.equipo_id, scope.equipoId))
+  } else if (scope.type === 'teams') {
+    if (scope.equipoIds.length === 0) return []
+    where.push(inArray(schema.tenantMembers.equipo_id, scope.equipoIds))
+  } else if (scope.type === 'self') {
+    // vendedor → sus compañeros de equipo. Sin equipo, no hay con quién compartir.
+    if (!scope.equipoId) return []
+    where.push(eq(schema.tenantMembers.equipo_id, scope.equipoId))
+  } else if (scope.type === 'none') {
+    return []
+  }
+  // scope.type === 'all' → sin filtro de equipo (todo el tenant)
+
+  return dbAdmin
+    .select({
+      user_id:   schema.tenantMembers.user_id,
+      nombre:    schema.usuarios.nombre,
+      alias:     schema.usuarios.alias,
       equipo_id: schema.tenantMembers.equipo_id,
     })
     .from(schema.tenantMembers)
