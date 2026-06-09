@@ -80,17 +80,21 @@ export function LeadStatusStepper({ status, wasRescued, className }: LeadStatusS
         })}
       </div>
 
-      {/* Baja branch — shown if current or historical rescue */}
-      {(enBaja || wasRescued) && (
-        <div className="mt-2 ml-[13px] flex items-center gap-1.5">
-          <div className="flex flex-col items-center">
-            <div className={cn('w-px h-2', enBaja ? 'bg-rose-400' : 'bg-muted-foreground/20')} />
-          </div>
-          <span className={cn(
-            'text-[10px] font-medium leading-none',
-            enBaja ? 'text-rose-600' : 'text-muted-foreground/50',
-          )}>
-            {enBaja ? `↳ ${statusLabel(status)}` : '↳ Estuvo en rescate'}
+      {/* Baja — pill claro en lugar de la rama colgante */}
+      {enBaja && (
+        <div className="mt-3">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-700">
+            <span className="size-1.5 rounded-full bg-rose-500 shrink-0" />
+            Dado de baja · {statusLabel(status)}
+          </span>
+        </div>
+      )}
+
+      {/* Pasó por rescate pero está activo de nuevo */}
+      {!enBaja && wasRescued && (
+        <div className="mt-2 ml-[13px]">
+          <span className="text-[10px] font-medium leading-none text-muted-foreground/50">
+            ↳ Estuvo en rescate
           </span>
         </div>
       )}
