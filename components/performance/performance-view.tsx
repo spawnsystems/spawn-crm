@@ -3,7 +3,7 @@
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
-import { TrendingUp, Target, Flame, Medal } from 'lucide-react'
+import { TrendingUp, Target, Flame, Medal, Trophy } from 'lucide-react'
 
 interface FunnelStep {
   stage: string
@@ -26,6 +26,7 @@ interface PerformanceViewProps {
   myClosedMonth: number
   myCloseRate: number
   myAtRisk: number
+  myMeta: number
   funnel: FunnelStep[]
   ranking: RankingEntry[]
 }
@@ -35,11 +36,17 @@ export function PerformanceView({
   myClosedMonth,
   myCloseRate,
   myAtRisk,
+  myMeta,
   funnel,
   ranking,
 }: PerformanceViewProps) {
   const now = new Date()
   const monthLabel = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+
+  const hasMeta  = myMeta > 0
+  const metaPct  = hasMeta ? Math.round((myClosedMonth / myMeta) * 100) : 0
+  const metaDone = hasMeta && myClosedMonth >= myMeta
+  const restantes = hasMeta ? Math.max(0, myMeta - myClosedMonth) : 0
 
   return (
     <div className="p-4 md:p-8 max-w-[1400px] mx-auto space-y-6">
@@ -64,6 +71,45 @@ export function PerformanceView({
         <KpiCard icon={<Flame className="size-4" />}     label="Leads activos"       value={myActive.toString()}        sub={`${myAtRisk} demorados`} accent={myAtRisk > 0 ? 'warning' : undefined} />
         <KpiCard icon={<Target className="size-4" />}    label="Leads demorados"    value={myAtRisk.toString()}        sub="superaron el SLA de contacto" accent={myAtRisk > 0 ? 'destructive' : undefined} />
       </div>
+
+      {/* Meta del mes */}
+      <Card className={cn(
+        'p-6',
+        metaDone && 'border-success/40 bg-success-soft/20',
+      )}>
+        <div className="flex items-center justify-between mb-3 gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Trophy className={cn('size-4', metaDone ? 'text-success' : 'text-primary')} />
+            <h3 className="font-semibold">Meta del mes</h3>
+          </div>
+          {hasMeta ? (
+            <span className="text-sm text-muted-foreground">
+              <span className={cn('text-xl font-semibold', metaDone ? 'text-success' : 'text-foreground')}>
+                {myClosedMonth}
+              </span>
+              <span className="mx-1">/</span>
+              <span className="font-medium text-foreground">{myMeta}</span> ventas
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">Sin meta asignada este mes</span>
+          )}
+        </div>
+        {hasMeta && (
+          <>
+            <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className={cn('h-full rounded-full transition-all', metaDone ? 'bg-success' : 'bg-primary')}
+                style={{ width: `${Math.min(100, metaPct)}%` }}
+              />
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {metaDone
+                ? '¡Meta cumplida! 🎉'
+                : `${metaPct}% · te ${restantes === 1 ? 'falta' : 'faltan'} ${restantes} venta${restantes === 1 ? '' : 's'} para llegar`}
+            </p>
+          </>
+        )}
+      </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Funnel */}

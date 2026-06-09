@@ -5,9 +5,9 @@ import { eq, and, count, sql, inArray } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { TeamView } from '@/components/team/team-view'
 import { getEquiposConMiembros, getMiembrosDelTenant } from '@/app/actions/equipos'
-import { getTeamAttentionCountByUser } from '@/lib/leads/server-helpers'
+import { getTeamAttentionCountByUser, getMetasVentasMap } from '@/lib/leads/server-helpers'
 import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
-import { startOfCurrentMonthAR } from '@/lib/utils'
+import { startOfCurrentMonthAR, currentYearMonthAR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,7 +77,9 @@ export default async function EquipoPage() {
   else if (scope.type === 'teams') attentionEquipoIds = scope.equipoIds
   else if (user.rol === 'vendedor' && vendedorEquipoId) attentionEquipoIds = [vendedorEquipoId]
 
-  const [rawRanking, attentionByUser, equipos, miembros] = await Promise.all([
+  const { year: curYear, month: curMonth } = currentYearMonthAR()
+
+  const [rawRanking, attentionByUser, equipos, miembros, metasMap] = await Promise.all([
     skipRanking
       ? Promise.resolve([])
       : dbAdmin
@@ -106,19 +108,27 @@ export default async function EquipoPage() {
 
     canManage ? getEquiposConMiembros() : Promise.resolve([]),
     canManage ? getMiembrosDelTenant()  : Promise.resolve([]),
+
+    // Metas del mes para el cumplimiento por vendedor
+    getMetasVentasMap(tenantId, curYear, curMonth),
   ])
 
   const ranking = rawRanking
     .filter((r) => r.nombre)
-    .map((r) => ({
-      user_id:    r.user_id ?? '',
-      nombre:     r.nombre ?? '—',
-      alias:      r.alias,
-      closed:     Number(r.closed),
-      total:      Number(r.total),
-      atRisk:     r.user_id ? (attentionByUser[r.user_id] ?? 0) : 0,
-      conversion: r.total > 0 ? Math.round((Number(r.closed) / Number(r.total)) * 100) : 0,
-    }))
+    .map((r) => {
+      const meta = r.user_id ? (metasMap[r.user_id] ?? 0) : 0
+      return {
+        user_id:    r.user_id ?? '',
+        nombre:     r.nombre ?? '—',
+        alias:      r.alias,
+        closed:     Number(r.closed),
+        total:      Number(r.total),
+        atRisk:     r.user_id ? (attentionByUser[r.user_id] ?? 0) : 0,
+        conversion: r.total > 0 ? Math.round((Number(r.closed) / Number(r.total)) * 100) : 0,
+        meta,
+        metaPct:    meta > 0 ? Math.round((Number(r.closed) / meta) * 100) : null,
+      }
+    })
     .sort((a, b) => b.closed - a.closed || b.conversion - a.conversion)
 
   return (

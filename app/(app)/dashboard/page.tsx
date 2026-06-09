@@ -5,8 +5,9 @@ import { eq, and, sql, type SQL } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
 import { DashboardView } from '@/components/dashboard/dashboard-view'
 import { getAttentionSummary } from '@/app/actions/leads'
-import { startOfCurrentMonthAR } from '@/lib/utils'
+import { startOfCurrentMonthAR, currentYearMonthAR } from '@/lib/utils'
 import { getCurrentUserTeamScope, buildScopeWhere } from '@/lib/tenant/teams'
+import { getMetasVentasMap } from '@/lib/leads/server-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,7 +42,9 @@ export default async function DashboardPage() {
       AND t.event_type IN ('call_registered', 'appointment_scheduled')
   )`
 
-  const [leadsRaw, attention] = await Promise.all([
+  const { year: curYear, month: curMonth } = currentYearMonthAR()
+
+  const [leadsRaw, attention, metasMap] = await Promise.all([
     dbAdmin
       .select({
         id:               schema.leads.id,
@@ -59,6 +62,9 @@ export default async function DashboardPage() {
 
     // Resumen de atención (ya scopeado por rol internamente)
     getAttentionSummary(),
+
+    // Metas del mes (cumplimiento por vendedor + total del equipo)
+    getMetasVentasMap(tenantId, curYear, curMonth),
   ])
 
   // ── Helpers de agregación en JS ──────────────────────────────
@@ -155,9 +161,10 @@ export default async function DashboardPage() {
     if (rm !== null) { acc.contacted += 1; acc.respSum += rm; acc.respN += 1 }
     sellerMap.set(key, acc)
   }
-  const sellers = [...sellerMap.values()]
-    .map((s) => {
+  const sellers = [...sellerMap.entries()]
+    .map(([sellerId, s]) => {
       const displayName = s.alias || s.nombre
+      const meta = metasMap[sellerId] ?? 0
       return {
         nombre:      s.nombre,
         alias:       s.alias,
@@ -168,9 +175,21 @@ export default async function DashboardPage() {
         contacted:   s.contacted,
         contactRate: s.total > 0 ? Math.round((s.contacted / s.total) * 100) : 0,
         avgRespMin:  s.respN > 0 ? Math.round(s.respSum / s.respN) : null,
+        meta,
+        metaPct:     meta > 0 ? Math.round((s.closed / meta) * 100) : null,
       }
     })
     .sort((a, b) => b.closed - a.closed || b.conversion - a.conversion)
+
+  // Cumplimiento de meta del equipo. Sumamos solo las metas de los vendedores
+  // que están dentro del scope actual (los que tienen leads del mes en este
+  // tablero), para no filtrar metas de otros equipos a supervisores/gerentes.
+  const totalMeta = [...sellerMap.keys()].reduce((a, id) => a + (metasMap[id] ?? 0), 0)
+  const metaCumplimiento = {
+    closed:  monthClosed,
+    meta:    totalMeta,
+    pct:     totalMeta > 0 ? Math.round((monthClosed / totalMeta) * 100) : null,
+  }
 
   return (
     <DashboardView
@@ -183,6 +202,7 @@ export default async function DashboardPage() {
       sources={sources}
       totalLeads={monthLeads}
       responseTime={responseTime}
+      metaCumplimiento={metaCumplimiento}
     />
   )
 }

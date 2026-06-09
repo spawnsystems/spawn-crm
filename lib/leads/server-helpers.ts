@@ -188,6 +188,32 @@ export async function getTenantSlaConfig(tenantId: string): Promise<SlaConfig> {
 }
 
 /**
+ * Mapa user_id → meta de ventas para un mes dado del tenant.
+ * Lo consumen el dashboard, performance y equipo para mostrar cumplimiento.
+ * Devuelve {} si no hay metas cargadas (el cumplimiento se muestra como "sin meta").
+ */
+export async function getMetasVentasMap(
+  tenantId: string,
+  anio:     number,
+  mes:      number,
+): Promise<Record<string, number>> {
+  const rows = await dbAdmin
+    .select({
+      user_id: schema.metasMensuales.user_id,
+      meta:    schema.metasMensuales.meta_ventas,
+    })
+    .from(schema.metasMensuales)
+    .where(and(
+      eq(schema.metasMensuales.tenant_id, tenantId),
+      eq(schema.metasMensuales.anio, anio),
+      eq(schema.metasMensuales.mes, mes),
+    ))
+  const map: Record<string, number> = {}
+  for (const r of rows) if (r.user_id) map[r.user_id] = r.meta ?? 0
+  return map
+}
+
+/**
  * Verifica que el usuario tenga acceso a un lead según su rol/equipo (no solo
  * por tenant). Reusa la jerarquía de equipos de lib/tenant/teams.ts.
  *

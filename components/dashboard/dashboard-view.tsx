@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import {
-  TrendingUp, Target, AlertOctagon, Bell, AlertTriangle, Timer, Zap,
+  TrendingUp, Target, AlertOctagon, Bell, AlertTriangle, Timer, Zap, Trophy,
 } from 'lucide-react'
 import type { AttentionSummary } from '@/app/actions/leads'
 
@@ -18,6 +18,8 @@ interface Seller {
   contacted: number
   contactRate: number
   avgRespMin: number | null
+  meta: number
+  metaPct: number | null
 }
 
 interface Source {
@@ -37,6 +39,12 @@ interface ResponseTime {
   buckets: { label: string; count: number; pct: number }[]
 }
 
+interface MetaCumplimiento {
+  closed: number
+  meta: number
+  pct: number | null
+}
+
 interface DashboardViewProps {
   monthLeads: number
   monthClosed: number
@@ -47,6 +55,7 @@ interface DashboardViewProps {
   sources: Source[]
   totalLeads: number
   responseTime: ResponseTime
+  metaCumplimiento: MetaCumplimiento
 }
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -101,6 +110,7 @@ export function DashboardView({
   sources,
   totalLeads,
   responseTime,
+  metaCumplimiento,
 }: DashboardViewProps) {
   const now = new Date()
   const monthLabel = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
@@ -153,6 +163,37 @@ export function DashboardView({
           accent={atRiskNow > 0 ? 'destructive' : undefined}
         />
       </div>
+
+      {/* Cumplimiento de meta del equipo */}
+      {metaCumplimiento.pct !== null ? (
+        <Card className={cn('p-5', metaCumplimiento.closed >= metaCumplimiento.meta && 'border-success/40 bg-success-soft/20')}>
+          <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
+            <div className="flex items-center gap-2">
+              <Trophy className={cn('size-4', metaCumplimiento.closed >= metaCumplimiento.meta ? 'text-success' : 'text-primary')} />
+              <h3 className="font-semibold">Cumplimiento de meta del equipo</h3>
+            </div>
+            <span className="text-sm text-muted-foreground">
+              <span className={cn('text-xl font-semibold', metaCumplimiento.closed >= metaCumplimiento.meta ? 'text-success' : 'text-foreground')}>
+                {metaCumplimiento.closed}
+              </span>
+              <span className="mx-1">/</span>
+              <span className="font-medium text-foreground">{metaCumplimiento.meta}</span> ventas
+              <span className="ml-2 font-semibold text-primary">{metaCumplimiento.pct}%</span>
+            </span>
+          </div>
+          <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all', metaCumplimiento.closed >= metaCumplimiento.meta ? 'bg-success' : 'bg-primary')}
+              style={{ width: `${Math.min(100, metaCumplimiento.pct)}%` }}
+            />
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-4 text-xs text-muted-foreground flex items-center gap-2">
+          <Trophy className="size-4 text-muted-foreground/50 shrink-0" />
+          No hay metas cargadas para este mes. Cargalas en Configuración → Metas para ver el cumplimiento del equipo.
+        </Card>
+      )}
 
       {/* Conversión por origen + Tiempo de respuesta */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -284,6 +325,7 @@ export function DashboardView({
                   <th className="pb-2 font-medium text-center">Contactó</th>
                   <th className="pb-2 font-medium text-center">T. respuesta</th>
                   <th className="pb-2 font-medium text-center">Ventas</th>
+                  <th className="pb-2 font-medium text-center">Meta</th>
                   <th className="pb-2 font-medium text-center">Riesgo</th>
                   <th className="pb-2 font-medium">Conversión</th>
                 </tr>
@@ -311,6 +353,21 @@ export function DashboardView({
                         {fmtDuration(s.avgRespMin)}
                       </td>
                       <td className="text-center font-semibold tabular-nums">{s.closed}</td>
+                      <td className="text-center tabular-nums">
+                        {s.meta > 0 ? (
+                          <span>
+                            <span className="font-medium">{s.closed}/{s.meta}</span>
+                            <span className={cn(
+                              'ml-1.5 text-xs font-semibold',
+                              (s.metaPct ?? 0) >= 100 ? 'text-success'
+                              : (s.metaPct ?? 0) >= 60 ? 'text-amber-600'
+                              : 'text-muted-foreground',
+                            )}>{s.metaPct}%</span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="text-center">
                         {s.atRisk > 0 ? (
                           <span className="text-destructive font-medium tabular-nums">{s.atRisk}</span>

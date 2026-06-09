@@ -7,7 +7,8 @@ import { PerformanceView } from '@/components/performance/performance-view'
 import { isBaja } from '@/lib/leads/constants'
 import { getMyLeads } from '@/app/actions/leads'
 import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
-import { startOfCurrentMonthAR } from '@/lib/utils'
+import { getMetasVentasMap } from '@/lib/leads/server-helpers'
+import { startOfCurrentMonthAR, currentYearMonthAR } from '@/lib/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,7 +45,9 @@ export default async function PerformancePage() {
   }
   // scope.type === 'all' → sin filtro
 
-  const [myLeads, teamRankRaw] = await Promise.all([
+  const { year: curYear, month: curMonth } = currentYearMonthAR()
+
+  const [myLeads, teamRankRaw, metasMap] = await Promise.all([
     // Mis leads (enriquecidos con el estado de atención del engine)
     getMyLeads(),
 
@@ -68,7 +71,12 @@ export default async function PerformancePage() {
         ),
       )
       .groupBy(schema.leads.assigned_to, schema.usuarios.nombre, schema.usuarios.alias),
+
+    // Metas del mes (para el cumplimiento propio)
+    getMetasVentasMap(tenantId, curYear, curMonth),
   ])
+
+  const myMeta = metasMap[user.id] ?? 0
 
   // My stats
   const myActive    = myLeads.filter((l) => !isBaja(l.status) && l.status !== 'VENTA').length
@@ -115,6 +123,7 @@ export default async function PerformancePage() {
       myClosedMonth={myClosedM}
       myCloseRate={myCloseRate}
       myAtRisk={myAtRisk}
+      myMeta={myMeta}
       funnel={funnel}
       ranking={ranking}
     />

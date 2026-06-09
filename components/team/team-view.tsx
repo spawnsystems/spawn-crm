@@ -38,6 +38,8 @@ interface RankingEntry {
   total: number
   atRisk: number
   conversion: number
+  meta: number
+  metaPct: number | null
 }
 
 interface TeamViewProps {
@@ -236,12 +238,24 @@ function RankingTab({ ranking, userRol }: { ranking: RankingEntry[]; userRol?: s
                   <Metric label="Ventas" value={`${s.closed}`} highlight />
                   <Metric label="Conversión" value={`${s.conversion}%`} />
                   <Metric label="Leads" value={`${s.total}`} />
+                  {s.meta > 0 && <Metric label="Meta" value={`${s.closed}/${s.meta}`} />}
                 </div>
                 <div className="w-28 shrink-0">
-                  <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-                    <span>Ventas</span><span>{s.closed}/{maxClosed}</span>
-                  </div>
-                  <Progress value={(s.closed / maxClosed) * 100} className="h-1.5" />
+                  {s.meta > 0 ? (
+                    <>
+                      <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+                        <span>Meta</span><span>{s.metaPct}%</span>
+                      </div>
+                      <Progress value={Math.min(100, s.metaPct ?? 0)} className="h-1.5" />
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+                        <span>Ventas</span><span>{s.closed}/{maxClosed}</span>
+                      </div>
+                      <Progress value={(s.closed / maxClosed) * 100} className="h-1.5" />
+                    </>
+                  )}
                 </div>
               </Card>
             )
@@ -651,6 +665,8 @@ function VendedorTeamView({
   const myEntry     = ranking[myIdx] ?? null
   const teamTotal   = ranking.reduce((a, r) => a + r.closed, 0)
   const totalLeads  = ranking.reduce((a, r) => a + r.total, 0)
+  const teamMeta    = ranking.reduce((a, r) => a + r.meta, 0)
+  const teamMetaPct = teamMeta > 0 ? Math.round((teamTotal / teamMeta) * 100) : null
   const avgConv     = ranking.length > 0
     ? Math.round(ranking.reduce((a, r) => a + r.conversion, 0) / ranking.length)
     : 0
@@ -676,9 +692,13 @@ function VendedorTeamView({
             <div className="text-[10px] text-muted-foreground">de {ranking.length}</div>
           </Card>
           <Card className="p-4 text-center">
-            <div className="text-2xl font-bold text-emerald-600">{myEntry.closed}</div>
-            <div className="text-xs text-muted-foreground mt-0.5">Tus ventas</div>
-            <div className="text-[10px] text-muted-foreground">{myEntry.conversion}% conversión</div>
+            <div className="text-2xl font-bold text-emerald-600">
+              {myEntry.closed}{myEntry.meta > 0 && <span className="text-base text-muted-foreground font-medium">/{myEntry.meta}</span>}
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">{myEntry.meta > 0 ? 'Ventas / meta' : 'Tus ventas'}</div>
+            <div className="text-[10px] text-muted-foreground">
+              {myEntry.meta > 0 ? `${myEntry.metaPct}% de tu meta` : `${myEntry.conversion}% conversión`}
+            </div>
           </Card>
           <Card className="p-4 text-center">
             <div className="text-2xl font-bold">{myEntry.total}</div>
@@ -786,7 +806,7 @@ function VendedorTeamView({
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
           Totales del equipo este mes
         </div>
-        <div className="grid grid-cols-3 gap-4 text-center">
+        <div className={cn('grid gap-4 text-center', teamMetaPct !== null ? 'grid-cols-4' : 'grid-cols-3')}>
           <div>
             <div className="text-2xl font-bold text-emerald-600">{teamTotal}</div>
             <div className="text-xs text-muted-foreground">ventas</div>
@@ -799,6 +819,12 @@ function VendedorTeamView({
             <div className="text-2xl font-bold">{avgConv}%</div>
             <div className="text-xs text-muted-foreground">conv. media</div>
           </div>
+          {teamMetaPct !== null && (
+            <div>
+              <div className={cn('text-2xl font-bold', teamMetaPct >= 100 ? 'text-success' : 'text-primary')}>{teamMetaPct}%</div>
+              <div className="text-xs text-muted-foreground">meta ({teamTotal}/{teamMeta})</div>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -827,6 +853,15 @@ function PodiumCard({ seller: s, position, featured }: {
       </div>
       <div className={cn('font-bold text-primary', featured ? 'text-4xl' : 'text-3xl')}>{s.closed}</div>
       <div className="text-xs text-muted-foreground mb-3">ventas del mes</div>
+      {s.meta > 0 && (
+        <div className="w-full mb-3">
+          <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+            <span>Meta {s.closed}/{s.meta}</span>
+            <span className={cn('font-semibold', (s.metaPct ?? 0) >= 100 ? 'text-success' : 'text-primary')}>{s.metaPct}%</span>
+          </div>
+          <Progress value={Math.min(100, s.metaPct ?? 0)} className="h-1.5" />
+        </div>
+      )}
       <div className="w-full border-t border-border pt-3 grid grid-cols-2 gap-2 text-center">
         <div><div className="text-xs font-semibold">{s.conversion}%</div><div className="text-[10px] text-muted-foreground">conversión</div></div>
         <div><div className="text-xs font-semibold">{s.total}</div><div className="text-[10px] text-muted-foreground">leads</div></div>
