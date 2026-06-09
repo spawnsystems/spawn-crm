@@ -22,6 +22,7 @@ import {
   Inbox,
   Archive,
   ScrollText,
+  Receipt,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -63,6 +64,13 @@ const NAV_ITEMS: NavItem[] = [
     roles:   ['vendedor'],
     section: 'analisis',
   },
+  {
+    href:    '/ventas',
+    label:   'Ventas',
+    icon:    <Receipt className="size-4" />,
+    roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
+    section: 'analisis',
+  },
   // ── Leads ───────────────────────────────────────────────────
   {
     href:    '/all-leads',
@@ -87,13 +95,6 @@ const NAV_ITEMS: NavItem[] = [
     section: 'leads',
   },
   {
-    href:    '/historial',
-    label:   'Historial',
-    icon:    <Archive className="size-4" />,
-    roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
-    section: 'leads',
-  },
-  {
     href:    '/bandeja',
     label:   'Bandeja',
     icon:    <Inbox className="size-4" />,
@@ -101,11 +102,27 @@ const NAV_ITEMS: NavItem[] = [
     section: 'leads',
     badge:   true,
   },
+  // Historial para supervisor/vendedor: debajo de Bandeja
+  {
+    href:    '/historial',
+    label:   'Historial',
+    icon:    <Archive className="size-4" />,
+    roles:   ['supervisor', 'vendedor'],
+    section: 'leads',
+  },
   // Mis Leads para dueño/gerente/admin: va después de Bandeja
   {
     href:    '/leads',
     label:   'Mis Leads',
     icon:    <Users className="size-4" />,
+    roles:   ['platform_admin', 'dueno', 'gerente'],
+    section: 'leads',
+  },
+  // Historial para dueño/gerente/admin: debajo de Mis Leads
+  {
+    href:    '/historial',
+    label:   'Historial',
+    icon:    <Archive className="size-4" />,
     roles:   ['platform_admin', 'dueno', 'gerente'],
     section: 'leads',
   },
