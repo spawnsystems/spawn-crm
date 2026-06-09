@@ -21,6 +21,7 @@ import {
   CalendarDays,
   Inbox,
   Archive,
+  ScrollText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -121,6 +122,14 @@ const NAV_ITEMS: NavItem[] = [
     label:   'Pipeline',
     icon:    <GitBranch className="size-4" />,
     roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
+    section: 'actividad',
+  },
+  // Auditoría — solo el dueño
+  {
+    href:    '/auditoria',
+    label:   'Auditoría',
+    icon:    <ScrollText className="size-4" />,
+    roles:   ['platform_admin', 'dueno'],
     section: 'actividad',
   },
   // ── Equipo ───────────────────────────────────────────────────

@@ -5,7 +5,6 @@ import { getVendedoresDelTenant } from '@/app/actions/users'
 import { getModelosVehiculo } from '@/app/actions/modelos'
 import { getSourcesCustom } from '@/app/actions/sources'
 import { getMetasMensuales } from '@/app/actions/metas'
-import { getAuditLogs } from '@/app/actions/audit'
 import { getTenantSlaConfig } from '@/lib/leads/server-helpers'
 import { DEFAULT_SLA } from '@/lib/leads/sla'
 import { ConfiguracionView } from '@/components/config/configuracion-view'
@@ -23,7 +22,7 @@ export default async function ConfiguracionPage({
 
   const { year: currentYear, month: currentMonth } = currentYearMonthAR()
 
-  const [user, tenant, miembros, equipos, modelos, sourcesCustom, vendedores, metas, auditLogs] =
+  const [user, tenant, miembros, equipos, modelos, sourcesCustom, vendedores, metas] =
     await Promise.all([
       requireAuth(),
       getCurrentTenant(),
@@ -33,7 +32,6 @@ export default async function ConfiguracionPage({
       getSourcesCustom(),
       getVendedoresDelTenant(),
       getMetasMensuales(currentYear),
-      getAuditLogs(),
     ])
 
   const canManage         = ['dueno'].includes(user.rol)
@@ -52,7 +50,6 @@ export default async function ConfiguracionPage({
       modelos={modelos}
       sourcesCustom={sourcesCustom}
       metas={metas}
-      auditLogs={auditLogs}
       vendedores={vendedores}
       sla={sla}
       canManage={canManage}
