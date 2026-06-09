@@ -1,17 +1,32 @@
 // Horarios de preferencia del lead: rangos personalizables (puede haber varios).
 // Se persisten en la columna `leads.horario_preferencia` (text) como JSON:
-//   [{"from":"09:00","to":"12:00"},{"from":"17:00","to":"19:00"}]
-// Para no romper datos viejos (que guardaban un solo "HH:MM"), el parser
-// tolera el formato legacy y lo convierte a un rango abierto.
+//   [{"from":"09:00","to":"12:00","days":[0,2]},{"from":"17:00","to":"19:00"}]
+// `days` es opcional (0=Lun … 6=Dom); sin días = "cualquier día".
+// Para no romper datos viejos (que guardaban un solo "HH:MM" o rangos sin days),
+// el parser tolera el formato legacy.
 
 export interface HorarioRange {
-  from: string   // "HH:MM"
-  to:   string   // "HH:MM"
+  from: string       // "HH:MM"
+  to:   string       // "HH:MM"
+  days?: number[]    // 0=Lun … 6=Dom. Vacío/ausente = cualquier día.
+}
+
+/** Etiquetas de día, lunes primero (índice 0..6). */
+export const HORARIO_DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] as const
+
+function cleanDays(days: unknown): number[] {
+  if (!Array.isArray(days)) return []
+  return days.filter((d): d is number => typeof d === 'number' && d >= 0 && d <= 6)
 }
 
 /** Serializa rangos a JSON para guardar en la DB. Devuelve null si está vacío. */
 export function serializeHorarios(ranges: HorarioRange[]): string | null {
-  const clean = ranges.filter((r) => r.from && r.to)
+  const clean = ranges
+    .filter((r) => r.from && r.to)
+    .map((r) => {
+      const days = cleanDays(r.days)
+      return days.length ? { from: r.from, to: r.to, days } : { from: r.from, to: r.to }
+    })
   return clean.length ? JSON.stringify(clean) : null
 }
 
@@ -28,7 +43,10 @@ export function parseHorarios(raw: string | null | undefined): HorarioRange[] {
       if (Array.isArray(arr)) {
         return arr
           .filter((r) => r && typeof r.from === 'string' && typeof r.to === 'string')
-          .map((r) => ({ from: r.from, to: r.to }))
+          .map((r) => {
+            const days = cleanDays(r.days)
+            return days.length ? { from: r.from, to: r.to, days } : { from: r.from, to: r.to }
+          })
       }
     } catch {
       return []
@@ -39,12 +57,23 @@ export function parseHorarios(raw: string | null | undefined): HorarioRange[] {
   return [{ from: trimmed, to: '' }]
 }
 
-/** Texto legible: "09:00–12:00 · 17:00–19:00". Vacío si no hay rangos. */
+/** Etiqueta de días de un rango: "Lun, Mié" (vacío si aplica a cualquier día). */
+export function formatDays(days: number[] | undefined): string {
+  const clean = cleanDays(days)
+  if (!clean.length) return ''
+  return [...clean].sort((a, b) => a - b).map((d) => HORARIO_DAYS[d]).join(', ')
+}
+
+/** Texto legible: "Lun, Mié 09:00–12:00 · 17:00–19:00". Vacío si no hay rangos. */
 export function formatHorarios(raw: string | null | undefined): string {
   const ranges = parseHorarios(raw)
   if (ranges.length === 0) return ''
   return ranges
-    .map((r) => (r.to ? `${r.from}–${r.to}` : r.from))
+    .map((r) => {
+      const time = r.to ? `${r.from}–${r.to}` : r.from
+      const days = formatDays(r.days)
+      return days ? `${days} ${time}` : time
+    })
     .join(' · ')
 }
 

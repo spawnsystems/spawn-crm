@@ -5,6 +5,11 @@ export const leadSourceValues = [
   'Visita al local', 'Contacto directo', 'Otro',
 ] as const
 
+// Estado inicial: lead recién creado, todavía sin ningún contacto.
+// No es un target seleccionable manualmente; el lead lo abandona en cuanto
+// hay una primera interacción (llamada, cita, etc.).
+export const initialStatusValue = 'NUEVO' as const
+
 // Estados activos del pipeline (seleccionables para avanzar el lead)
 export const activeStatusValues = [
   'GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE', 'VENTA',
@@ -15,15 +20,16 @@ export const bajaStatusValues = [
   'NO CONTESTA', 'NO INTERESADO', 'INCONTACTABLE', 'YA COMPRO', 'DATO ERRONEO', 'DERIVAR',
 ] as const
 
-// Universo completo del enum lead_status
+// Universo completo del enum lead_status (NUEVO primero como estado inicial)
 export const leadStatusValues = [
-  ...activeStatusValues, ...bajaStatusValues,
+  initialStatusValue, ...activeStatusValues, ...bajaStatusValues,
 ] as const
 
-// Rango horario de preferencia (puede haber varios).
+// Rango horario de preferencia (puede haber varios). `days` opcional: 0=Lun … 6=Dom.
 export const horarioRangeSchema = z.object({
   from: z.string().regex(/^\d{2}:\d{2}$/, 'Hora inválida'),
   to:   z.string().regex(/^\d{2}:\d{2}$/, 'Hora inválida'),
+  days: z.array(z.number().int().min(0).max(6)).optional(),
 })
 
 // Usado en parte de pago — datos para cotizar junto con el alta del lead.

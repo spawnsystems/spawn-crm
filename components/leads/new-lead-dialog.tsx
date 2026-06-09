@@ -23,7 +23,7 @@ import { leadSourceValues } from '@/lib/schemas/leads'
 import { getInitials, formatCurrencyARS } from '@/lib/utils'
 import { useCurrentUser } from '@/lib/tenant/context'
 import { PROVINCIAS_AR, PROVINCIA_DEFAULT } from '@/lib/ar/provincias'
-import { type HorarioRange } from '@/lib/leads/horarios'
+import { type HorarioRange, HORARIO_DAYS } from '@/lib/leads/horarios'
 import { calcularUsado, type UsoVehiculo } from '@/lib/cotizador/calc'
 
 const emailSchema = z.string().email('Ingresá un email válido')
@@ -104,12 +104,25 @@ export function NewLeadDialog({
 
   // ── Horarios de preferencia (rangos) ──────────────────────────
   function addHorario() {
-    setForm((f) => ({ ...f, horarios: [...f.horarios, { from: '', to: '' }] }))
+    setForm((f) => ({ ...f, horarios: [...f.horarios, { from: '', to: '', days: [] }] }))
   }
-  function updateHorario(i: number, field: keyof HorarioRange, val: string) {
+  function updateHorario(i: number, field: 'from' | 'to', val: string) {
     setForm((f) => ({
       ...f,
       horarios: f.horarios.map((r, idx) => (idx === i ? { ...r, [field]: val } : r)),
+    }))
+  }
+  function toggleHorarioDay(i: number, day: number) {
+    setForm((f) => ({
+      ...f,
+      horarios: f.horarios.map((r, idx) => {
+        if (idx !== i) return r
+        const days = r.days ?? []
+        return {
+          ...r,
+          days: days.includes(day) ? days.filter((d) => d !== day) : [...days, day],
+        }
+      }),
     }))
   }
   function removeHorario(i: number) {
@@ -325,31 +338,59 @@ export function NewLeadDialog({
                   <div className="space-y-2">
                     {form.horarios.map((r, i) => {
                       const invalid = r.from && r.to && r.from >= r.to
+                      const days = r.days ?? []
                       return (
-                        <div key={i} className="flex items-center gap-2">
-                          <input
-                            type="time"
-                            value={r.from}
-                            onChange={(e) => updateHorario(i, 'from', e.target.value)}
-                            className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                          />
-                          <span className="text-muted-foreground text-sm shrink-0">a</span>
-                          <input
-                            type="time"
-                            value={r.to}
-                            onChange={(e) => updateHorario(i, 'to', e.target.value)}
-                            className={`flex h-9 w-full rounded-md border bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                              invalid ? 'border-destructive' : 'border-input'
-                            }`}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeHorario(i)}
-                            className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
-                            title="Quitar franja"
-                          >
-                            <X className="size-3.5" />
-                          </button>
+                        <div key={i} className="rounded-md border border-border/60 bg-muted/20 p-2 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="time"
+                              value={r.from}
+                              onChange={(e) => updateHorario(i, 'from', e.target.value)}
+                              className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            />
+                            <span className="text-muted-foreground text-sm shrink-0">a</span>
+                            <input
+                              type="time"
+                              value={r.to}
+                              onChange={(e) => updateHorario(i, 'to', e.target.value)}
+                              className={`flex h-9 w-full rounded-md border bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                                invalid ? 'border-destructive' : 'border-input'
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeHorario(i)}
+                              className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                              title="Quitar franja"
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          </div>
+                          {/* Días de la semana — vacío = cualquier día */}
+                          <div className="flex flex-wrap gap-1">
+                            {HORARIO_DAYS.map((label, d) => {
+                              const on = days.includes(d)
+                              return (
+                                <button
+                                  key={d}
+                                  type="button"
+                                  onClick={() => toggleHorarioDay(i, d)}
+                                  className={`px-2 py-1 rounded text-[11px] font-medium border transition-colors ${
+                                    on
+                                      ? 'bg-primary text-primary-foreground border-primary'
+                                      : 'bg-background text-muted-foreground border-input hover:bg-muted'
+                                  }`}
+                                >
+                                  {label}
+                                </button>
+                              )
+                            })}
+                            {days.length === 0 && (
+                              <span className="self-center text-[11px] text-muted-foreground/70 ml-1">
+                                Cualquier día
+                              </span>
+                            )}
+                          </div>
                         </div>
                       )
                     })}
