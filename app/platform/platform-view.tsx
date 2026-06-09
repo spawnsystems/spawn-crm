@@ -60,7 +60,7 @@ export function PlatformView({ user, tenants: initialTenants }: PlatformViewProp
     startTransition(async () => {
       const res = await createTenant({ nombre, concesionaria, color_primario: color })
       if (res.success) {
-        toast.success('Tenant creado')
+        toast.success('Concesionaria creada')
         setShowCreate(false)
         setNombre(''); setConcesionaria(''); setColor('#2563eb')
         // Reload — revalidatePath will cause a fresh server fetch on navigation
@@ -77,7 +77,7 @@ export function PlatformView({ user, tenants: initialTenants }: PlatformViewProp
       const res = await action(t.id)
       if (res.success) {
         setTenants((ts) => ts.map((x) => x.id === t.id ? { ...x, activo: !x.activo } : x))
-        toast.success(t.activo ? 'Tenant suspendido' : 'Tenant reactivado')
+        toast.success(t.activo ? 'Concesionaria suspendida' : 'Concesionaria reactivada')
       } else {
         toast.error(res.error)
       }
@@ -131,7 +131,7 @@ export function PlatformView({ user, tenants: initialTenants }: PlatformViewProp
 
         {/* Stats summary */}
         <div className="grid grid-cols-2 gap-4">
-          <StatCard label="Tenants activos" value={activeCount} icon={<Building2 className="size-4" />} />
+          <StatCard label="Empresas activas" value={activeCount} icon={<Building2 className="size-4" />} />
           <StatCard label="Total usuarios" value={tenants.reduce((a, t) => a + t.memberCount, 0)} icon={<Users className="size-4" />} />
         </div>
 
@@ -143,14 +143,14 @@ export function PlatformView({ user, tenants: initialTenants }: PlatformViewProp
             </h2>
             <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
               <Plus className="size-3.5" />
-              Nuevo tenant
+              Nueva empresa
             </Button>
           </div>
 
           {tenants.length === 0 ? (
             <div className="rounded-xl border-2 border-dashed bg-card p-12 text-center">
               <Building2 className="mx-auto mb-3 size-8 text-muted-foreground/30" />
-              <p className="text-sm font-medium text-muted-foreground">No hay tenants creados aún</p>
+              <p className="text-sm font-medium text-muted-foreground">No hay concesionarias creadas aún</p>
               <p className="text-xs text-muted-foreground/70 mt-1">Creá el primero con el botón de arriba</p>
             </div>
           ) : (
@@ -241,7 +241,7 @@ export function PlatformView({ user, tenants: initialTenants }: PlatformViewProp
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>Nombre del tenant</Label>
+              <Label>Nombre de la empresa</Label>
               <Input
                 placeholder="Ej: Chevrolet Norte"
                 value={nombre}
@@ -280,7 +280,7 @@ export function PlatformView({ user, tenants: initialTenants }: PlatformViewProp
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>Cancelar</Button>
             <Button onClick={handleCreate} disabled={isPending}>
-              {isPending ? <Loader2 className="size-4 animate-spin" /> : 'Crear tenant'}
+              {isPending ? <Loader2 className="size-4 animate-spin" /> : 'Crear empresa'}
             </Button>
           </DialogFooter>
         </DialogContent>

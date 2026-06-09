@@ -99,7 +99,7 @@ export function TenantDetailView({ tenant: initialTenant, members: initialMember
         nombre, concesionaria, color_primario: color, plan_key: planKey,
       })
       if (res.success) {
-        toast.success('Tenant actualizado')
+        toast.success('Empresa actualizada')
         setIsDirty(false)
         setTenant((t) => ({ ...t, nombre, concesionaria, color_primario: color, plan_key: planKey }))
       } else {
@@ -191,7 +191,7 @@ export function TenantDetailView({ tenant: initialTenant, members: initialMember
           <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-2">
               <Building2 className="size-4 text-muted-foreground" />
-              <h2 className="font-semibold">Información del tenant</h2>
+              <h2 className="font-semibold">Información de la empresa</h2>
             </div>
             {isDirty && (
               <Button size="sm" className="gap-1.5" onClick={handleSave} disabled={isPending}>
@@ -203,7 +203,7 @@ export function TenantDetailView({ tenant: initialTenant, members: initialMember
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>Nombre del tenant</Label>
+              <Label>Nombre de la empresa</Label>
               <Input
                 value={nombre}
                 onChange={(e) => { setNombre(e.target.value); markDirty() }}

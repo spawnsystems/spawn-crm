@@ -207,7 +207,7 @@ export async function inviteUserToTenantAsAdmin(
         .limit(1)
 
       if (alreadyMember[0]) {
-        return { success: false, error: 'Este usuario ya es miembro del tenant' }
+        return { success: false, error: 'Este usuario ya es miembro de la empresa' }
       }
 
       await dbAdmin.insert(schema.tenantMembers).values({
