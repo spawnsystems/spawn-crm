@@ -18,9 +18,17 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Settings, UserPlus, Loader2, Check, Pencil, X,
+  Settings, UserPlus, Loader2, Check, Pencil, X, MoreHorizontal, KeyRound, UserCog, UserMinus, UserCheck,
 } from 'lucide-react'
-import { inviteUserToTenant, updateMyProfile } from '@/app/actions/users'
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu'
+import {
+  inviteUserToTenant, updateMyProfile,
+  changeMemberRole, resetMemberPassword, deactivateMember, reactivateMember,
+} from '@/app/actions/users'
+import type { AppRole } from '@/lib/auth/get-current-user'
 import { updateTenantInfo, updateSlaConfig } from '@/app/actions/tenant'
 import type { SlaConfig } from '@/lib/leads/sla'
 import { ModelosTab }  from '@/components/config/modelos-tab'
@@ -189,7 +197,7 @@ export function ConfiguracionView({
                   </Button>
                 </div>
               )}
-              <MiembrosTable miembros={miembros} />
+              <MiembrosTable miembros={miembros} canManage={canManage} currentUserId={user.id} onChanged={refresh} />
             </div>
           </TabsContent>
         )}
@@ -402,10 +410,31 @@ function AlertasForm({ sla, canManage, onSaved }: { sla: SlaConfig; canManage: b
 
 // ── MiembrosTable ─────────────────────────────────────────────
 
-function MiembrosTable({ miembros }: { miembros: Miembro[] }) {
+const MANAGEABLE_ROLES: AppRole[] = ['gerente', 'supervisor', 'vendedor']
+
+function MiembrosTable({ miembros, canManage, currentUserId, onChanged }: {
+  miembros:      Miembro[]
+  canManage:     boolean
+  currentUserId: string
+  onChanged:     () => void
+}) {
+  const [pendingId, setPendingId] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+
   if (miembros.length === 0) {
     return <p className="text-sm text-muted-foreground py-2">No hay miembros todavía.</p>
   }
+
+  function run(memberId: string, fn: () => Promise<{ success: boolean; error?: string }>, okMsg: string) {
+    setPendingId(memberId)
+    startTransition(async () => {
+      const res = await fn()
+      setPendingId(null)
+      if (res.success) { toast.success(okMsg); onChanged() }
+      else toast.error(res.error)
+    })
+  }
+
   return (
     <Card className="overflow-hidden">
       <table className="w-full text-sm">
@@ -415,33 +444,94 @@ function MiembrosTable({ miembros }: { miembros: Miembro[] }) {
             <th className="px-4 py-2.5 font-medium hidden sm:table-cell">Email</th>
             <th className="px-4 py-2.5 font-medium">Rol</th>
             <th className="px-4 py-2.5 font-medium">Estado</th>
+            {canManage && <th className="px-4 py-2.5 font-medium text-right w-12">Acciones</th>}
           </tr>
         </thead>
         <tbody>
-          {miembros.map((m) => (
-            <tr key={m.user_id} className="border-b border-border/40 last:border-0 hover:bg-muted/20">
-              <td className="px-4 py-2.5 font-medium">
-                {m.alias || m.nombre || '—'}
-              </td>
-              <td className="px-4 py-2.5 text-muted-foreground text-xs hidden sm:table-cell">
-                {m.email}
-              </td>
-              <td className="px-4 py-2.5">
-                <Badge variant="outline" className="text-[10px]">
-                  {ROLES_LABEL[m.rol] ?? m.rol}
-                </Badge>
-              </td>
-              <td className="px-4 py-2.5">
-                {m.invitation_status === 'accepted' ? (
-                  <span className="flex items-center gap-1 text-xs text-success">
-                    <Check className="size-3" />Activo
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground italic">Invitación pendiente</span>
+          {miembros.map((m) => {
+            // El dueño puede gestionar gerente/supervisor/vendedor, menos a sí mismo.
+            const manageable = canManage
+              && m.user_id !== currentUserId
+              && MANAGEABLE_ROLES.includes(m.rol as AppRole)
+            const isInactive = m.activo === false
+            const busy = pendingId === m.user_id
+
+            return (
+              <tr key={m.user_id} className="border-b border-border/40 last:border-0 hover:bg-muted/20">
+                <td className="px-4 py-2.5 font-medium">
+                  {m.alias || m.nombre || '—'}
+                </td>
+                <td className="px-4 py-2.5 text-muted-foreground text-xs hidden sm:table-cell">
+                  {m.email}
+                </td>
+                <td className="px-4 py-2.5">
+                  <Badge variant="outline" className="text-[10px]">
+                    {ROLES_LABEL[m.rol] ?? m.rol}
+                  </Badge>
+                </td>
+                <td className="px-4 py-2.5">
+                  {isInactive ? (
+                    <span className="text-xs text-destructive">Inactivo</span>
+                  ) : m.invitation_status === 'accepted' ? (
+                    <span className="flex items-center gap-1 text-xs text-success">
+                      <Check className="size-3" />Activo
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground italic">Invitación pendiente</span>
+                  )}
+                </td>
+                {canManage && (
+                  <td className="px-4 py-2.5 text-right">
+                    {manageable ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="icon" variant="ghost" className="size-7" disabled={busy}>
+                            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <MoreHorizontal className="size-4" />}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                          <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
+                            <UserCog className="size-3.5" />Cambiar rol
+                          </DropdownMenuLabel>
+                          {MANAGEABLE_ROLES.filter((r) => r !== m.rol).map((r) => (
+                            <DropdownMenuItem
+                              key={r}
+                              onClick={() => run(m.user_id, () => changeMemberRole(m.user_id, r), `Rol cambiado a ${ROLES_LABEL[r]}`)}
+                            >
+                              {ROLES_LABEL[r]}
+                            </DropdownMenuItem>
+                          ))}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => run(m.user_id, () => resetMemberPassword(m.user_id), 'Email de restablecimiento enviado')}
+                          >
+                            <KeyRound className="size-3.5" />Restablecer contraseña
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {isInactive ? (
+                            <DropdownMenuItem
+                              onClick={() => run(m.user_id, () => reactivateMember(m.user_id), 'Miembro reactivado')}
+                            >
+                              <UserCheck className="size-3.5" />Reactivar
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => run(m.user_id, () => deactivateMember(m.user_id), 'Miembro dado de baja')}
+                            >
+                              <UserMinus className="size-3.5" />Dar de baja
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      <span className="text-muted-foreground/30">—</span>
+                    )}
+                  </td>
                 )}
-              </td>
-            </tr>
-          ))}
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </Card>

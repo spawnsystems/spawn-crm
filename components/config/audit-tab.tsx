@@ -46,6 +46,8 @@ const ACTION_LABEL: Record<string, string> = {
   // Usuarios
   'user.invite':                   'Invitó usuario',
   'user.deactivate':               'Desactivó usuario',
+  'user.role_change':              'Cambió el rol',
+  'user.password_reset':           'Envió restablecimiento',
   // Configuración
   'tenant.update':                 'Actualizó concesionaria',
   'tenant.sla_update':             'Actualizó alertas',
@@ -349,6 +351,12 @@ function buildDetail(action: string, meta: Record<string, unknown> | null): stri
   }
   if (action === 'user.invite') {
     return `${meta.email ?? '?'} (${meta.rol ?? '?'})`
+  }
+  if (action === 'user.role_change') {
+    return `${meta.from ?? '?'} → ${meta.to ?? '?'}`
+  }
+  if (action === 'user.password_reset') {
+    return String(meta.email ?? '—')
   }
   if (action === 'meta.set') {
     const quien  = meta.vendedor_nombre ?? meta.vendedor ?? 'Vendedor'

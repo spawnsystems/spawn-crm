@@ -4,12 +4,70 @@ import { revalidatePath } from 'next/cache'
 import { getCurrentUser } from '@/lib/auth/get-current-user'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { dbAdmin, schema } from '@/lib/db'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, gte, count } from 'drizzle-orm'
 import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { logAudit } from '@/lib/audit/log'
+import { startOfTodayAR } from '@/lib/utils'
 import type { ActionResult } from './auth'
 import type { AppRole } from '@/lib/auth/get-current-user'
+
+// Límite diario que impone el producto (independiente del rate-limit de Supabase).
+const DUENO_DAILY_LIMIT = 4
+
+// Roles que el dueño puede gestionar/asignar (no puede tocar dueño/platform_admin).
+const MANAGEABLE_ROLES: AppRole[] = ['gerente', 'supervisor', 'vendedor']
+
+/** Cuenta las acciones de un actor en el día (calendario AR) para rate-limits. */
+async function countActorActionsToday(
+  tenantId: string,
+  actorId:  string,
+  action:   string,
+): Promise<number> {
+  const [row] = await dbAdmin
+    .select({ n: count() })
+    .from(schema.auditLogs)
+    .where(and(
+      eq(schema.auditLogs.tenant_id, tenantId),
+      eq(schema.auditLogs.actor_id, actorId),
+      eq(schema.auditLogs.action, action),
+      gte(schema.auditLogs.created_at, startOfTodayAR()),
+    ))
+  return Number(row?.n ?? 0)
+}
+
+/**
+ * Carga un miembro del tenant verificando que el dueño pueda gestionarlo:
+ * existe en el tenant, no es el propio dueño, y su rol es gestionable
+ * (no otro dueño ni platform_admin). Devuelve el email del usuario o un error.
+ */
+async function loadManageableMember(
+  tenantId:     string,
+  callerId:     string,
+  targetUserId: string,
+): Promise<{ email: string; rol: AppRole } | { error: string }> {
+  if (targetUserId === callerId) return { error: 'No podés realizar esta acción sobre vos mismo' }
+
+  const [row] = await dbAdmin
+    .select({
+      rol:   schema.tenantMembers.rol,
+      email: schema.usuarios.email,
+      isPA:  schema.usuarios.is_platform_admin,
+    })
+    .from(schema.tenantMembers)
+    .leftJoin(schema.usuarios, eq(schema.tenantMembers.user_id, schema.usuarios.id))
+    .where(and(
+      eq(schema.tenantMembers.tenant_id, tenantId),
+      eq(schema.tenantMembers.user_id, targetUserId),
+    ))
+    .limit(1)
+
+  if (!row) return { error: 'El usuario no es miembro de tu empresa' }
+  if (row.isPA || row.rol === 'dueno') {
+    return { error: 'No podés gestionar a este usuario' }
+  }
+  return { email: row.email ?? '', rol: row.rol as AppRole }
+}
 
 // ── Guard ─────────────────────────────────────────────────────
 
@@ -61,6 +119,15 @@ export async function inviteUserToTenant(input: {
   const email = input.email.toLowerCase().trim()
   if (!email.includes('@')) return { success: false, error: 'Email inválido' }
   if (!input.nombre.trim())  return { success: false, error: 'El nombre es requerido' }
+
+  // Límite diario propio del producto: 4 invitaciones por día por dueño.
+  const invitesHoy = await countActorActionsToday(tenantId, user.id, 'user.invite')
+  if (invitesHoy >= DUENO_DAILY_LIMIT) {
+    return {
+      success: false,
+      error: `Llegaste al límite de ${DUENO_DAILY_LIMIT} invitaciones por día. Probá de nuevo mañana.`,
+    }
+  }
 
   const adminClient = createAdminClient()
   const siteUrl     = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
@@ -211,6 +278,94 @@ export async function reactivateMember(memberId: string): Promise<ActionResult<v
     )
 
   revalidatePath('/equipo')
+  return { success: true, data: undefined }
+}
+
+// ── changeMemberRole ──────────────────────────────────────────
+// El dueño cambia el rol de un miembro de su empresa (gerente/supervisor/
+// vendedor). Actualiza usuarios.rol (autoritativo) y tenant_members.rol.
+
+export async function changeMemberRole(
+  memberUserId: string,
+  newRol:       AppRole,
+): Promise<ActionResult<void>> {
+  const { user, tenantId } = await requireTenant()
+  if (user.rol !== 'dueno') return { success: false, error: 'Solo el dueño puede cambiar roles' }
+  if (!MANAGEABLE_ROLES.includes(newRol)) return { success: false, error: 'Rol inválido' }
+
+  const target = await loadManageableMember(tenantId, user.id, memberUserId)
+  if ('error' in target) return { success: false, error: target.error }
+  if (target.rol === newRol) return { success: true, data: undefined }
+
+  await Promise.all([
+    dbAdmin.update(schema.usuarios)
+      .set({ rol: newRol })
+      .where(eq(schema.usuarios.id, memberUserId)),
+    dbAdmin.update(schema.tenantMembers)
+      .set({ rol: newRol })
+      .where(and(
+        eq(schema.tenantMembers.tenant_id, tenantId),
+        eq(schema.tenantMembers.user_id, memberUserId),
+      )),
+  ])
+
+  void logAudit({
+    tenantId,
+    actorId:        user.id,
+    action:         'user.role_change',
+    entity:         'user',
+    entityId:       memberUserId,
+    meta:           { from: target.rol, to: newRol },
+    visibleToDueno: true,
+  })
+
+  revalidatePath('/configuracion')
+  revalidatePath('/equipo')
+  return { success: true, data: undefined }
+}
+
+// ── resetMemberPassword ───────────────────────────────────────
+// El dueño manda un email de "restablecer contraseña" a un miembro.
+// Límite del producto: 4 por día por dueño.
+
+export async function resetMemberPassword(
+  memberUserId: string,
+): Promise<ActionResult<void>> {
+  const { user, tenantId } = await requireTenant()
+  if (user.rol !== 'dueno') return { success: false, error: 'Solo el dueño puede enviar restablecimientos' }
+
+  const target = await loadManageableMember(tenantId, user.id, memberUserId)
+  if ('error' in target) return { success: false, error: target.error }
+  if (!target.email) return { success: false, error: 'El usuario no tiene email cargado' }
+
+  const resetsHoy = await countActorActionsToday(tenantId, user.id, 'user.password_reset')
+  if (resetsHoy >= DUENO_DAILY_LIMIT) {
+    return {
+      success: false,
+      error: `Llegaste al límite de ${DUENO_DAILY_LIMIT} restablecimientos por día. Probá de nuevo mañana.`,
+    }
+  }
+
+  const adminClient = createAdminClient()
+  const siteUrl     = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
+  const { error } = await adminClient.auth.resetPasswordForEmail(target.email, {
+    redirectTo: `${siteUrl}/auth/confirm?next=/update-password`,
+  })
+  if (error) {
+    console.error('[resetMemberPassword]', error)
+    return { success: false, error: 'No se pudo enviar el email. Puede ser el límite de envíos de Supabase; probá más tarde.' }
+  }
+
+  void logAudit({
+    tenantId,
+    actorId:        user.id,
+    action:         'user.password_reset',
+    entity:         'user',
+    entityId:       memberUserId,
+    meta:           { email: target.email },
+    visibleToDueno: true,
+  })
+
   return { success: true, data: undefined }
 }
 

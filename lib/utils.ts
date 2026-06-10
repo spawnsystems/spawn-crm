@@ -80,6 +80,21 @@ export function startOfCurrentMonthAR(): Date {
   return new Date(Date.UTC(year, month - 1, 1, 3, 0, 0, 0))
 }
 
+/**
+ * Inicio del día actual en horario Argentina, como instante UTC.
+ * Para límites diarios (rate-limits) que respetan el calendario AR.
+ * AR = UTC-3 fijo → 00:00 AR = 03:00 UTC.
+ */
+export function startOfTodayAR(): Date {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BA_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date())
+  const year  = Number(parts.find((p) => p.type === 'year')!.value)
+  const month = Number(parts.find((p) => p.type === 'month')!.value)
+  const day   = Number(parts.find((p) => p.type === 'day')!.value)
+  return new Date(Date.UTC(year, month - 1, day, 3, 0, 0, 0))
+}
+
 /** Año y mes (1-12) actuales en horario Argentina, sin importar el TZ del server. */
 export function currentYearMonthAR(): { year: number; month: number } {
   const parts = new Intl.DateTimeFormat('en-CA', {
