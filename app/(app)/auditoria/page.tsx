@@ -1,4 +1,5 @@
 import { requireRole } from '@/lib/auth/require-role'
+import { requireModule } from '@/lib/modules/server'
 import { getAuditLogs } from '@/app/actions/audit'
 import { getMiembrosDelTenant } from '@/app/actions/equipos'
 import { AuditTab } from '@/components/config/audit-tab'
@@ -8,6 +9,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function AuditoriaPage() {
   // Solo dueño (y platform_admin por jerarquía). Gerente/supervisor/vendedor → /
+  await requireModule('auditoria')
   await requireRole('dueno')
 
   const [auditLogs, miembros] = await Promise.all([

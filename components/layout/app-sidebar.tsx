@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { useCurrentUser, useTenant } from '@/lib/tenant/context'
+import { useCurrentUser, useTenant, useEnabledModules } from '@/lib/tenant/context'
+import type { ModuleKey } from '@/lib/modules/definitions'
 import { signOut } from '@/app/actions/auth'
 import { getUnreadCount } from '@/app/actions/notifications'
 import {
@@ -36,7 +37,8 @@ interface NavItem {
   icon:    React.ReactNode
   roles:   string[]
   section: string
-  badge?:  boolean  // si true, mostrará el badge de notificaciones
+  badge?:  boolean      // si true, mostrará el badge de notificaciones
+  module?: ModuleKey    // si está seteado, el ítem se oculta cuando el módulo está apagado
 }
 
 // Sections define the visual groups — rendered only if they have
@@ -70,6 +72,7 @@ const NAV_ITEMS: NavItem[] = [
     icon:    <Receipt className="size-4" />,
     roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
     section: 'analisis',
+    module:  'ventas',
   },
   // ── Leads ───────────────────────────────────────────────────
   {
@@ -93,6 +96,7 @@ const NAV_ITEMS: NavItem[] = [
     icon:    <LifeBuoy className="size-4" />,
     roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor'],
     section: 'leads',
+    module:  'rescate',
   },
   {
     href:    '/bandeja',
@@ -109,6 +113,7 @@ const NAV_ITEMS: NavItem[] = [
     icon:    <Archive className="size-4" />,
     roles:   ['supervisor', 'vendedor'],
     section: 'leads',
+    module:  'historial',
   },
   // Mis Leads para dueño/gerente/admin: va después de Bandeja
   {
@@ -125,6 +130,7 @@ const NAV_ITEMS: NavItem[] = [
     icon:    <Archive className="size-4" />,
     roles:   ['platform_admin', 'dueno', 'gerente'],
     section: 'leads',
+    module:  'historial',
   },
   // ── Actividad ────────────────────────────────────────────────
   {
@@ -133,6 +139,7 @@ const NAV_ITEMS: NavItem[] = [
     icon:    <CalendarDays className="size-4" />,
     roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
     section: 'actividad',
+    module:  'citas',
   },
   {
     href:    '/pipeline',
@@ -140,6 +147,7 @@ const NAV_ITEMS: NavItem[] = [
     icon:    <GitBranch className="size-4" />,
     roles:   ['platform_admin', 'dueno', 'gerente', 'supervisor', 'vendedor'],
     section: 'actividad',
+    module:  'pipeline',
   },
   // Auditoría — solo el dueño
   {
@@ -148,6 +156,7 @@ const NAV_ITEMS: NavItem[] = [
     icon:    <ScrollText className="size-4" />,
     roles:   ['platform_admin', 'dueno'],
     section: 'actividad',
+    module:  'auditoria',
   },
   // ── Equipo ───────────────────────────────────────────────────
   {
@@ -197,6 +206,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const user     = useCurrentUser()
   const tenant   = useTenant()
+  const modules  = useEnabledModules()
   const [isPending, startTransition] = useTransition()
 
   const initials = user.nombre
@@ -206,8 +216,14 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     .slice(0, 2)
     .toUpperCase()
 
-  // Pre-filter items by role once
-  const itemsByRole = NAV_ITEMS.filter((item) => item.roles.includes(user.rol))
+  // Pre-filter items por rol y por módulos activos del tenant.
+  // Un ítem con `module` se oculta si ese módulo está apagado.
+  const moduleSet = new Set(modules)
+  const itemsByRole = NAV_ITEMS.filter(
+    (item) =>
+      item.roles.includes(user.rol) &&
+      (!item.module || moduleSet.has(item.module)),
+  )
 
   // Build visible sections (only sections with ≥ 1 item)
   const visibleSections = SECTIONS

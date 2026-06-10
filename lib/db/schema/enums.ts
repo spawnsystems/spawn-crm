@@ -62,6 +62,11 @@ export const moduleKeyEnum = pgEnum('module_key', [
   'cotizaciones',
   'inventario',
   'reportes',
+  // v2 — secciones reales seleccionables como módulo (migración 026)
+  'citas',
+  'ventas',
+  'historial',
+  'auditoria',
 ])
 
 export const appointmentTipoEnum = pgEnum('appointment_tipo', [

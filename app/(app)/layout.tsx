@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth/get-current-user'
 import { getCurrentTenant, getCurrentTenantId } from '@/lib/tenant/server'
 import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
+import { getEnabledModules } from '@/lib/modules/server'
 import { TenantProvider } from '@/lib/tenant/context'
 import { PreviewBanner } from '@/components/platform/preview-banner'
 import { AppSidebar } from '@/components/layout/app-sidebar'
@@ -41,13 +42,16 @@ export default async function AppLayout({
     )
   }
 
-  const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
+  const [scope, modules] = await Promise.all([
+    getCurrentUserTeamScope(user.id, tenantId, user.rol),
+    getEnabledModules(tenantId),
+  ])
 
   const cookieStore = await cookies()
   const isPreview = user.is_platform_admin && !!cookieStore.get(PREVIEW_COOKIE)?.value
 
   return (
-    <TenantProvider value={{ tenant, user, scope, isPreview }}>
+    <TenantProvider value={{ tenant, user, scope, isPreview, modules }}>
       <div className="flex flex-col min-h-screen">
         {isPreview && <PreviewBanner tenantNombre={tenant.nombre} />}
         <div className="flex flex-1 overflow-hidden">

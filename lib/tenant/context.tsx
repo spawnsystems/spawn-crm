@@ -11,6 +11,7 @@ import { createContext, useContext } from 'react'
 import type { TenantData } from './server'
 import type { CurrentUser } from '@/lib/auth/get-current-user'
 import type { TeamScope } from './teams'
+import type { ModuleKey } from '@/lib/modules/definitions'
 
 // ── Tipos ─────────────────────────────────────────────────────
 
@@ -19,6 +20,7 @@ interface TenantContextValue {
   user:      CurrentUser
   scope:     TeamScope
   isPreview: boolean
+  modules:   ModuleKey[]   // módulos activos para el tenant
 }
 
 // ── Context ───────────────────────────────────────────────────
@@ -67,6 +69,11 @@ export function useTeamScope(): TeamScope {
 /** True si el platform admin está en modo preview de un tenant. */
 export function useIsPreview(): boolean {
   return useTenantContext().isPreview
+}
+
+/** Lista de módulos activos para el tenant. */
+export function useEnabledModules(): ModuleKey[] {
+  return useTenantContext().modules
 }
 
 /** Verifica si el usuario puede ver un lead específico por su equipo/asignación. */

@@ -1,4 +1,5 @@
 import { requireAuth } from '@/lib/auth/require-role'
+import { requireModule } from '@/lib/modules/server'
 import { getAppointmentsInRange } from '@/app/actions/appointments'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { AppointmentsView } from '@/components/appointments/appointments-view'
@@ -7,6 +8,7 @@ import { startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns'
 export const dynamic = 'force-dynamic'
 
 export default async function CitasPage() {
+  await requireModule('citas')
   const user = await requireAuth()
 
   const now  = new Date()

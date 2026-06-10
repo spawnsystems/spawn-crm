@@ -3,6 +3,7 @@ import { dbAdmin, schema } from '@/lib/db'
 import { eq } from 'drizzle-orm'
 import { notFound } from 'next/navigation'
 import { getTenantMembers } from '@/app/actions/platform'
+import { MODULE_KEYS } from '@/lib/modules/definitions'
 import { TenantDetailView } from './tenant-detail-view'
 
 export const dynamic = 'force-dynamic'
@@ -27,7 +28,11 @@ export default async function TenantDetailPage({
   const tenant = rows[0]
   if (!tenant) notFound()
 
-  const enabledModules = moduleRows.filter((m) => m.enabled).map((m) => m.module_key)
+  // Estado efectivo: un módulo está activo salvo que exista una fila explícita
+  // con enabled=false. Así los módulos sin fila se muestran prendidos (igual que
+  // los ve la app), y solo lo explícitamente apagado aparece desmarcado.
+  const disabled = new Set(moduleRows.filter((m) => !m.enabled).map((m) => m.module_key))
+  const enabledModules = MODULE_KEYS.filter((k) => !disabled.has(k))
 
   return <TenantDetailView tenant={tenant} members={members} enabledModules={enabledModules} />
 }

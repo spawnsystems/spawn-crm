@@ -1,4 +1,5 @@
 import { requireAuth } from '@/lib/auth/require-role'
+import { requireModule } from '@/lib/modules/server'
 import { getCurrentTenantId } from '@/lib/tenant/server'
 import { redirect } from 'next/navigation'
 import { getVentas } from '@/app/actions/ventas'
@@ -11,6 +12,7 @@ export const metadata = { title: 'Ventas — Spawn CRM' }
 export const dynamic  = 'force-dynamic'
 
 export default async function VentasPage() {
+  await requireModule('ventas')
   const [user, tenantId] = await Promise.all([requireAuth(), getCurrentTenantId()])
   if (!tenantId) redirect('/login')
 

@@ -3,15 +3,17 @@
 export type ModuleKey =
   | 'pipeline'
   | 'rescate'
-  | 'test_drive'
-  | 'cotizaciones'
-  | 'inventario'
-  | 'reportes'
+  | 'citas'
+  | 'ventas'
+  | 'historial'
+  | 'auditoria'
 
 export interface ModuleDefinition {
   key:         ModuleKey
   nombre:      string
   descripcion: string
+  /** Ruta base de la sección — usada para gatear sidebar y proteger la ruta. */
+  route:       string
   /** Si está marcado como true, viene activado por defecto en tenants nuevos */
   defaultOn:   boolean
   /** Si es true, el módulo está en desarrollo y se muestra con badge "Próximamente" */
@@ -19,45 +21,53 @@ export interface ModuleDefinition {
 }
 
 // ── Definiciones ──────────────────────────────────────────────────────────────
+// Núcleo siempre activo (NO son módulos): Dashboard, Mi Performance, Mis Leads,
+// Todos los Leads, Bandeja, Equipo, Cotizador y Configuración.
 
 export const MODULE_DEFINITIONS: ModuleDefinition[] = [
   {
     key:         'pipeline',
     nombre:      'Pipeline Kanban',
-    descripcion: 'Vista de embudo de ventas en columnas arrastrables',
+    descripcion: 'Vista de embudo de ventas en columnas por etapa',
+    route:       '/pipeline',
+    defaultOn:   true,
+  },
+  {
+    key:         'citas',
+    nombre:      'Agenda de citas',
+    descripcion: 'Calendario y gestión de citas (videollamada, showroom, cierre)',
+    route:       '/citas',
+    defaultOn:   true,
+  },
+  {
+    key:         'ventas',
+    nombre:      'Ventas',
+    descripcion: 'Sección con métricas de ventas, ranking y cumplimiento de metas',
+    route:       '/ventas',
+    defaultOn:   true,
+  },
+  {
+    key:         'historial',
+    nombre:      'Historial de leads',
+    descripcion: 'Registro de leads cerrados (ventas y bajas) con filtros',
+    route:       '/historial',
     defaultOn:   true,
   },
   {
     key:         'rescate',
     nombre:      'Rescate de leads',
-    descripcion: 'Campaña de reactivación para leads abandonados (+15 días)',
+    descripcion: 'Bandeja de reactivación para leads abandonados o inactivos',
+    route:       '/rescate',
     defaultOn:   true,
   },
   {
-    key:         'test_drive',
-    nombre:      'Agenda de test drives',
-    descripcion: 'Calendario y gestión de citas de test drive por vendedor',
-    defaultOn:   false,
-    comingSoon:  true,
-  },
-  {
-    key:         'cotizaciones',
-    nombre:      'Cotizador de usados',
-    descripcion: 'Cálculo del valor de toma de autos usados con reglas InfoAuto por km y uso',
+    key:         'auditoria',
+    nombre:      'Auditoría',
+    descripcion: 'Registro de actividad de la empresa (solo visible para el dueño)',
+    route:       '/auditoria',
     defaultOn:   true,
-  },
-  {
-    key:         'inventario',
-    nombre:      'Catálogo vehicular',
-    descripcion: 'Stock de modelos, versiones, colores y precios actualizados',
-    defaultOn:   false,
-    comingSoon:  true,
-  },
-  {
-    key:         'reportes',
-    nombre:      'Reportes avanzados',
-    descripcion: 'Exportación a Excel, tendencias históricas y comparativas de equipo',
-    defaultOn:   false,
-    comingSoon:  true,
   },
 ]
+
+/** Set de claves de módulo conocidas, para validar y filtrar. */
+export const MODULE_KEYS: ModuleKey[] = MODULE_DEFINITIONS.map((m) => m.key)
