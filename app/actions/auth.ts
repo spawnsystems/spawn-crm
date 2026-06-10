@@ -3,6 +3,8 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { loginSchema } from '@/lib/schemas/auth'
+import { dbAdmin, schema } from '@/lib/db'
+import { and, eq } from 'drizzle-orm'
 
 export type ActionResult<T = void> =
   | { success: true; data: T }
@@ -71,10 +73,25 @@ export async function updatePassword(
   password: string,
 ): Promise<ActionResult<void>> {
   const supabase = await createClient()
-  const { error } = await supabase.auth.updateUser({ password })
+  const { data, error } = await supabase.auth.updateUser({ password })
 
   if (error) {
     return { success: false, error: 'No se pudo actualizar la contraseña. Intentá de nuevo.' }
+  }
+
+  // Si el usuario venía de una invitación, este es el paso que cierra el
+  // onboarding: activamos su membresía pendiente. Solo tocamos invitaciones
+  // 'pending' → así un usuario DESACTIVADO que resetea su contraseña NO se
+  // reactiva solo (su membresía ya está en 'accepted').
+  const userId = data.user?.id
+  if (userId) {
+    await dbAdmin
+      .update(schema.tenantMembers)
+      .set({ activo: true, invitation_status: 'accepted' })
+      .where(and(
+        eq(schema.tenantMembers.user_id, userId),
+        eq(schema.tenantMembers.invitation_status, 'pending'),
+      ))
   }
 
   return { success: true, data: undefined }
