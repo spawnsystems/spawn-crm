@@ -42,6 +42,7 @@ import { BajaDialog } from '@/components/leads/baja-dialog'
 import { CotizadorDialog, type EditingCotizacion } from '@/components/cotizador/cotizador-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresParaTraspaso } from '@/app/actions/users'
+import { getActiveModelNames } from '@/app/actions/modelos'
 import { leadSourceValues } from '@/lib/schemas/leads'
 import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appointments'
 import { isBaja, modeloLabel } from '@/lib/leads/constants'
@@ -49,6 +50,10 @@ import { useCurrentUser } from '@/lib/tenant/context'
 import type { Lead } from '@/lib/db'
 import { cn, parseNumeric, safeRefetch, fmtDayMonthAR, toBADate, formatCurrencyARS } from '@/lib/utils'
 import { formatHorarios } from '@/lib/leads/horarios'
+
+// Sentinelas del selector de modelo (igual que en NewLeadDialog)
+const SIN_MODELO  = '__sin_definir__'
+const OTRO_MODELO = '__otro__'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -180,6 +185,10 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
   const [dueCalendarOpen, setDueCalendarOpen] = useState(false)
   const [editing,         setEditing]         = useState(false)
   const [editForm,        setEditForm]        = useState<Partial<Lead>>({})
+  const [modelos,         setModelos]         = useState<string[]>([])
+  // Selector de modelo en edición: sentinela + texto libre para "Otro"
+  const [mSel,            setMSel]            = useState<string>(SIN_MODELO)
+  const [mCustom,         setMCustom]         = useState('')
   const [showBaja,         setShowBaja]         = useState(false)
   const [showCotizador,    setShowCotizador]    = useState(false)
   const [editingCotizacion, setEditingCotizacion] = useState<EditingCotizacion | null>(null)
@@ -206,12 +215,14 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
       getLeadDetail(leadId),
       getNextAppointmentForLead(leadId),
       getVendedoresParaTraspaso(),
+      getActiveModelNames(),
     ])
-      .then(([d, appt, v]) => {
+      .then(([d, appt, v, mods]) => {
         if (cancelled) return
         setDetail(d)
         setNextAppointment(appt)
         setVendedores(v)
+        setModelos(mods)
         if (d) setEditForm(d.lead)
       })
       .catch((err) => {
@@ -228,6 +239,17 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
   }, [leadId])
 
   const lead            = detail?.lead
+
+  // Al entrar en edición, derivar el selector de modelo del valor actual:
+  //   vacío → "Sin definir" · en catálogo → esa opción · otro → texto libre
+  useEffect(() => {
+    if (!editing || !lead) return
+    const m = (lead.modelo ?? '').trim()
+    if (!m)                       { setMSel(SIN_MODELO);  setMCustom('') }
+    else if (modelos.includes(m)) { setMSel(m);           setMCustom('') }
+    else                          { setMSel(OTRO_MODELO); setMCustom(m) }
+  }, [editing, lead, modelos])
+
   const notes           = detail?.notes          ?? []
   const timeline        = detail?.timeline        ?? []
   const tasks           = detail?.tasks           ?? []
@@ -341,18 +363,25 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
 
   function handleSaveEdit() {
     if (!lead) return
+    // Modelo final del selector: "Sin definir" → null; "Otro" → texto libre;
+    // catálogo → la opción elegida.
+    const modeloFinal = mSel === SIN_MODELO
+      ? null
+      : mSel === OTRO_MODELO
+      ? (mCustom.trim() || null)
+      : mSel
     startTransition(async () => {
       const res = await updateLead(lead.id, {
         nombre:      editForm.nombre,
         telefono:    editForm.telefono ?? undefined,
         email:       editForm.email    ?? undefined,
-        modelo:      editForm.modelo   ?? undefined,
+        modelo:      modeloFinal,
         source:      editForm.source,
         next_action: editForm.next_action ?? undefined,
         est_value:   parseNumeric(editForm.est_value),
       })
       if (res.success) {
-        setDetail((d) => d ? { ...d, lead: { ...d.lead, ...editForm } } : d)
+        setDetail((d) => d ? { ...d, lead: { ...d.lead, ...editForm, modelo: modeloFinal } } : d)
         setEditing(false)
         toast.success('Lead actualizado')
       } else {
@@ -577,13 +606,33 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Modelo</Label>
-                    <Input
-                      value={editForm.modelo ?? ''}
-                      onChange={(e) => setEditForm((f) => ({ ...f, modelo: e.target.value }))}
-                      placeholder="Ej: Tracker Premier"
-                      className="h-8 text-sm"
-                    />
+                    <Label className="text-xs">Modelo de interés</Label>
+                    <Select
+                      value={mSel}
+                      onValueChange={(v) => { setMSel(v); if (v !== OTRO_MODELO) setMCustom('') }}
+                    >
+                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={SIN_MODELO}>
+                          <span className="text-muted-foreground">Sin definir</span>
+                        </SelectItem>
+                        {modelos.map((m) => (
+                          <SelectItem key={m} value={m}>{m}</SelectItem>
+                        ))}
+                        <SelectItem value={OTRO_MODELO}>
+                          <span className="text-muted-foreground">Otro (escribir)</span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {mSel === OTRO_MODELO && (
+                      <Input
+                        value={mCustom}
+                        onChange={(e) => setMCustom(e.target.value)}
+                        placeholder="Escribí el modelo..."
+                        className="h-8 text-sm mt-1.5"
+                        autoFocus
+                      />
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Origen</Label>

@@ -70,7 +70,7 @@ export const updateLeadSchema = z.object({
   nombre:               z.string().min(2).optional(),
   telefono:             z.string().optional(),
   email:                z.string().email().optional().or(z.literal('')),
-  modelo:               z.string().optional(),
+  modelo:               z.string().nullable().optional(),
   source:               z.enum(leadSourceValues).optional(),
   source_custom:        z.string().optional(),
   localidad:            z.string().optional(),
