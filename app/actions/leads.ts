@@ -11,7 +11,8 @@ import {
   pendingCallAtSql, openApptAtSql, openApptTipoSql, usadoValorSql, usadoRechazadoSql, usadoMarcaSql, ventaAtSql, creatorNombreSql,
 } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
-import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
+import { getCurrentUserTeamScope, buildScopeWhere } from '@/lib/tenant/teams'
+import { z } from 'zod'
 import { serializeHorarios } from '@/lib/leads/horarios'
 import { calcularUsado } from '@/lib/cotizador/calc'
 import { activeIndex, terminalBlockReason } from '@/lib/leads/state-machine'
@@ -437,6 +438,100 @@ export async function assignLead(
   revalidatePath('/all-leads')
   revalidatePath('/rescate')
   return { success: true, data: undefined }
+}
+
+// ── bulkAssignLeads ───────────────────────────────────────────
+// Asigna (o desasigna) varios leads a la vez. Solo supervisor+ y solo sobre
+// leads dentro de su alcance — aunque manden IDs de otros equipos, el scope los
+// filtra. Devuelve cuántos leads se asignaron efectivamente.
+
+const bulkAssignSchema = z.object({
+  leadIds:    z.array(z.string().uuid()).min(1).max(500),
+  vendedorId: z.string().uuid().nullable(),
+})
+
+export async function bulkAssignLeads(
+  input: unknown,
+): Promise<ActionResult<{ count: number }>> {
+  const { user, tenantId, q } = await requireTenant()
+
+  if (!['dueno', 'gerente', 'supervisor'].includes(user.rol)) {
+    return { success: false, error: 'Sin permisos para asignar leads' }
+  }
+
+  const parsed = bulkAssignSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const { leadIds, vendedorId } = parsed.data
+
+  // Alcance: el usuario solo puede tocar leads que ve por su rol/equipo.
+  const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
+  const scopeWhere = buildScopeWhere(scope)
+
+  const whereClause = and(
+    eq(schema.leads.tenant_id, tenantId),
+    inArray(schema.leads.id, leadIds),
+    ...(scopeWhere ? [scopeWhere] : []),
+  )
+
+  // Leads realmente alcanzables (para contar + timeline/audit precisos)
+  const targets = await dbAdmin
+    .select({ id: schema.leads.id })
+    .from(schema.leads)
+    .where(whereClause)
+
+  if (targets.length === 0) {
+    return { success: false, error: 'No hay leads asignables en tu alcance entre los seleccionados' }
+  }
+
+  // Equipo del vendedor destino (para mantener equipo_id coherente)
+  let equipoId: string | null = null
+  if (vendedorId) {
+    const member = await dbAdmin
+      .select({ equipo_id: schema.tenantMembers.equipo_id })
+      .from(schema.tenantMembers)
+      .where(and(
+        eq(schema.tenantMembers.tenant_id, tenantId),
+        eq(schema.tenantMembers.user_id, vendedorId),
+      ))
+      .limit(1)
+    equipoId = member[0]?.equipo_id ?? null
+  }
+
+  await q.update(schema.leads)
+    .set({ assigned_to: vendedorId, equipo_id: equipoId, updated_by: user.id })
+    .where(whereClause)
+
+  const vendedorName = vendedorId ? await getVendedorName(vendedorId) : null
+  const title = vendedorName ? `Asignado a ${vendedorName}` : 'Enviado a Bandeja General'
+
+  // Timeline en batch
+  await dbAdmin.insert(schema.leadTimeline).values(
+    targets.map((t) => ({
+      tenant_id:  tenantId,
+      lead_id:    t.id,
+      actor_id:   user.id,
+      event_type: 'reassigned',
+      title,
+    })),
+  )
+
+  // Audit (uno por lead, fire-and-forget)
+  for (const t of targets) {
+    void logAudit({
+      tenantId,
+      actorId:        user.id,
+      action:         'lead.assign',
+      entity:         'lead',
+      entityId:       t.id,
+      meta:           { vendedor_id: vendedorId, vendedor_nombre: vendedorName, bulk: true },
+      visibleToDueno: true,
+    })
+  }
+
+  revalidatePath('/leads')
+  revalidatePath('/all-leads')
+  revalidatePath('/rescate')
+  return { success: true, data: { count: targets.length } }
 }
 
 // ── markAsClosed (DEPRECADO) ──────────────────────────────────

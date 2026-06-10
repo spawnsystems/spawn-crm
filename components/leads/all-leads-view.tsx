@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useTransition } from 'react'
 import { format } from 'date-fns'
+import { toast } from 'sonner'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import { StatusBadge } from '@/components/status-badge'
 import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
 import { NewLeadDialog } from '@/components/leads/new-lead-dialog'
@@ -13,8 +15,8 @@ import {
 } from '@/components/ui/select'
 import { cn, formatRelative, getInitials, safeRefetch, toBADate } from '@/lib/utils'
 import { Paginator } from '@/components/ui/paginator'
-import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, XCircle, AlertTriangle } from 'lucide-react'
-import { getAllLeads } from '@/app/actions/leads'
+import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, XCircle, AlertTriangle, UserCheck, Loader2 } from 'lucide-react'
+import { getAllLeads, bulkAssignLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadStatusValues } from '@/lib/schemas/leads'
 import { STATUS_ORDER, isBaja, sourceLabel } from '@/lib/leads/constants'
@@ -194,6 +196,53 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
+  // ── Selección múltiple + asignación masiva ────────────────────
+  const canBulk = vendedores.length > 0   // solo supervisor+ con vendedores a cargo
+  const [selected,   setSelected]   = useState<Set<string>>(new Set())
+  const [bulkVend,   setBulkVend]   = useState('')
+  const [isAssigning, startAssign]  = useTransition()
+
+  // El "seleccionar todo" opera sobre TODO el resultado filtrado (no solo la página)
+  const filteredIds   = useMemo(() => filtered.map((l) => l.id), [filtered])
+  const allSelected   = filteredIds.length > 0 && filteredIds.every((id) => selected.has(id))
+  const someSelected  = filteredIds.some((id) => selected.has(id)) && !allSelected
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const s = new Set(prev)
+      if (s.has(id)) s.delete(id); else s.add(id)
+      return s
+    })
+  }
+  function toggleAllFiltered() {
+    setSelected((prev) => {
+      const s = new Set(prev)
+      if (allSelected) filteredIds.forEach((id) => s.delete(id))
+      else filteredIds.forEach((id) => s.add(id))
+      return s
+    })
+  }
+  function clearSelection() { setSelected(new Set()); setBulkVend('') }
+
+  function handleBulkAssign() {
+    if (selected.size === 0 || !bulkVend) return
+    const vendedorId = bulkVend === '__unassigned__' ? null : bulkVend
+    startAssign(async () => {
+      const res = await bulkAssignLeads({ leadIds: Array.from(selected), vendedorId })
+      if (res.success) {
+        const dest = vendedorId
+          ? vendedores.find((v) => v.user_id === vendedorId)
+          : null
+        const name = dest ? (dest.alias || dest.nombre) : 'Bandeja General'
+        toast.success(`${res.data.count} ${res.data.count === 1 ? 'lead asignado' : 'leads asignados'} a ${name}`)
+        clearSelection()
+        refresh()
+      } else {
+        toast.error(res.error)
+      }
+    })
+  }
+
   return (
     <div className="p-4 md:p-8 max-w-[1500px] mx-auto">
       {/* Header */}
@@ -356,6 +405,15 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
           <table className="w-full min-w-[950px] text-sm">
             <thead className="bg-muted/40">
               <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                {canBulk && (
+                  <th className="pl-4 pr-1 py-3 w-8">
+                    <Checkbox
+                      checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                      onCheckedChange={toggleAllFiltered}
+                      aria-label="Seleccionar todos"
+                    />
+                  </th>
+                )}
                 <th className="px-4 py-3 font-medium">Lead</th>
                 <th className="px-4 py-3 font-medium">Modelo</th>
                 <th className="px-4 py-3 font-medium">Origen</th>
@@ -373,8 +431,21 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                 const vendorName = l.vendedor_alias || l.vendedor_nombre
                 const lastContact = l.last_contact_at ? formatRelative(new Date(l.last_contact_at)) : 'Sin contactar'
                 const cierreAt = getCierreAt(l)
+                const isSel = selected.has(l.id)
                 return (
-                  <tr key={l.id} className="group border-b border-border/50 last:border-0 hover:bg-muted/30 cursor-pointer" onClick={() => setOpenLeadId(l.id)}>
+                  <tr key={l.id} className={cn(
+                    'group border-b border-border/50 last:border-0 cursor-pointer',
+                    isSel ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-muted/30',
+                  )} onClick={() => setOpenLeadId(l.id)}>
+                    {canBulk && (
+                      <td className="pl-4 pr-1 py-3" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={isSel}
+                          onCheckedChange={() => toggleOne(l.id)}
+                          aria-label={`Seleccionar ${l.nombre}`}
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="font-medium">{l.nombre}</div>
                       {(l.localidad || l.provincia) && (
@@ -437,7 +508,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                 )
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                <tr><td colSpan={canBulk ? 11 : 10} className="px-4 py-12 text-center text-sm text-muted-foreground">
                   {hasFilters ? 'No hay leads que coincidan con los filtros.' : 'No se encontraron leads.'}
                 </td></tr>
               )}
@@ -447,6 +518,41 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
       </Card>
 
       <Paginator page={page} totalPages={totalPages} totalItems={filtered.length} pageSize={PAGE_SIZE} onPageChange={setPage} className="mt-4" />
+
+      {/* ── Barra de acciones masivas ── */}
+      {canBulk && selected.size > 0 && (
+        <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 pointer-events-none">
+          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card shadow-elevated px-4 py-3 max-w-[95vw]">
+            <span className="text-sm font-medium whitespace-nowrap">
+              {selected.size} {selected.size === 1 ? 'lead seleccionado' : 'leads seleccionados'}
+            </span>
+            <div className="h-5 w-px bg-border hidden sm:block" />
+            <div className="flex items-center gap-2">
+              <UserCheck className="size-4 text-muted-foreground shrink-0" />
+              <Select value={bulkVend} onValueChange={setBulkVend}>
+                <SelectTrigger className="h-9 w-auto min-w-[170px] max-w-[240px] text-sm">
+                  <SelectValue placeholder="Asignar a..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {vendedores.map((v) => (
+                    <SelectItem key={v.user_id} value={v.user_id}>{v.alias || v.nombre || v.user_id}</SelectItem>
+                  ))}
+                  <SelectItem value="__unassigned__">
+                    <span className="text-muted-foreground italic">Sin asignar (Bandeja)</span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" className="h-9 gap-1.5" onClick={handleBulkAssign} disabled={!bulkVend || isAssigning}>
+                {isAssigning ? <Loader2 className="size-3.5 animate-spin" /> : <UserCheck className="size-3.5" />}
+                Asignar
+              </Button>
+            </div>
+            <Button size="sm" variant="ghost" className="h-9 gap-1.5 text-muted-foreground" onClick={clearSelection} disabled={isAssigning}>
+              <X className="size-3.5" />Limpiar
+            </Button>
+          </div>
+        </div>
+      )}
 
       <LeadDetailSheet
         leadId={openLeadId}
