@@ -286,6 +286,41 @@ export async function updateLead(
   return { success: true, data: undefined }
 }
 
+// ── setLeadModelo ─────────────────────────────────────────────
+// Cambia el modelo de interés del lead (o lo deja "Sin definir" = null) y
+// registra el cambio en el historial del lead. Scopeado por acceso al lead.
+
+export async function setLeadModelo(
+  leadId: string,
+  modelo: string | null,
+): Promise<ActionResult<void>> {
+  const { user, tenantId, q, forTenant } = await requireTenant()
+
+  const lead = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
+  if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
+
+  const nuevo = modelo?.trim() || null
+  const viejo = lead.modelo?.trim() || null
+  if (nuevo === viejo) return { success: true, data: undefined } // sin cambios
+
+  await q.update(schema.leads)
+    .set({ modelo: nuevo, updated_by: user.id })
+    .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+
+  const title = !viejo
+    ? `Modelo de interés: ${nuevo}`
+    : !nuevo
+    ? `Modelo de interés: marcado "Sin definir" (antes ${viejo})`
+    : `Modelo de interés: ${viejo} → ${nuevo}`
+
+  await appendTimeline(tenantId, leadId, user.id, 'modelo_changed', title)
+
+  revalidatePath('/leads')
+  revalidatePath('/all-leads')
+  revalidatePath('/pipeline')
+  return { success: true, data: undefined }
+}
+
 // ── changeStatus ──────────────────────────────────────────────
 
 export async function changeStatus(

@@ -34,7 +34,7 @@ import {
 } from 'lucide-react'
 import {
   addNote, deleteNote, toggleTask, getLeadDetail,
-  updateLead, addTask, assignLead,
+  updateLead, addTask, assignLead, setLeadModelo,
 } from '@/app/actions/leads'
 import { requestTransfer } from '@/app/actions/transfers'
 import { scheduleCall, registerCall } from '@/app/actions/calls'
@@ -45,7 +45,7 @@ import { getVendedoresParaTraspaso } from '@/app/actions/users'
 import { getActiveModelNames } from '@/app/actions/modelos'
 import { leadSourceValues } from '@/lib/schemas/leads'
 import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appointments'
-import { isBaja, modeloLabel } from '@/lib/leads/constants'
+import { isBaja } from '@/lib/leads/constants'
 import { useCurrentUser } from '@/lib/tenant/context'
 import type { Lead } from '@/lib/db'
 import { cn, parseNumeric, safeRefetch, fmtDayMonthAR, toBADate, formatCurrencyARS } from '@/lib/utils'
@@ -71,6 +71,7 @@ const TIMELINE_EVENT_STYLE: Record<string, EventStyle> = {
   lead_created:            { bg: 'bg-slate-500',   Icon: UserPlus      },
   contacted:               { bg: 'bg-blue-500',    Icon: Phone         },
   status_changed:          { bg: 'bg-primary',     Icon: ArrowRight    },
+  modelo_changed:          { bg: 'bg-primary',     Icon: Car           },
   reassigned:              { bg: 'bg-indigo-500',  Icon: UserCheck     },
   note_added:              { bg: 'bg-slate-400',   Icon: FileText      },
   note_deleted:            { bg: 'bg-rose-400',    Icon: X             },
@@ -186,7 +187,8 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
   const [editing,         setEditing]         = useState(false)
   const [editForm,        setEditForm]        = useState<Partial<Lead>>({})
   const [modelos,         setModelos]         = useState<string[]>([])
-  // Selector de modelo en edición: sentinela + texto libre para "Otro"
+  // Editor inline del modelo de interés (visual, registra en el historial)
+  const [editingModelo,   setEditingModelo]   = useState(false)
   const [mSel,            setMSel]            = useState<string>(SIN_MODELO)
   const [mCustom,         setMCustom]         = useState('')
   const [showBaja,         setShowBaja]         = useState(false)
@@ -240,15 +242,37 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
 
   const lead            = detail?.lead
 
-  // Al entrar en edición, derivar el selector de modelo del valor actual:
+  // Abre el editor inline de modelo posicionado en el valor actual:
   //   vacío → "Sin definir" · en catálogo → esa opción · otro → texto libre
-  useEffect(() => {
-    if (!editing || !lead) return
+  function startEditModelo() {
+    if (!lead) return
     const m = (lead.modelo ?? '').trim()
     if (!m)                       { setMSel(SIN_MODELO);  setMCustom('') }
     else if (modelos.includes(m)) { setMSel(m);           setMCustom('') }
     else                          { setMSel(OTRO_MODELO); setMCustom(m) }
-  }, [editing, lead, modelos])
+    setEditingModelo(true)
+  }
+
+  function saveModelo() {
+    if (!lead) return
+    const id = lead.id
+    const modeloFinal = mSel === SIN_MODELO
+      ? null
+      : mSel === OTRO_MODELO
+      ? (mCustom.trim() || null)
+      : mSel
+    startTransition(async () => {
+      const res = await setLeadModelo(id, modeloFinal)
+      if (!res.success) { toast.error(res.error); return }
+      setEditingModelo(false)
+      const updated = await safeRefetch(
+        () => getLeadDetail(id),
+        'Modelo actualizado, pero no se pudo refrescar la ficha',
+      )
+      if (updated) setDetail(updated)
+      toast.success('Modelo actualizado')
+    })
+  }
 
   const notes           = detail?.notes          ?? []
   const timeline        = detail?.timeline        ?? []
@@ -363,25 +387,18 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
 
   function handleSaveEdit() {
     if (!lead) return
-    // Modelo final del selector: "Sin definir" → null; "Otro" → texto libre;
-    // catálogo → la opción elegida.
-    const modeloFinal = mSel === SIN_MODELO
-      ? null
-      : mSel === OTRO_MODELO
-      ? (mCustom.trim() || null)
-      : mSel
+    // El modelo se edita aparte (control dedicado, con registro en historial).
     startTransition(async () => {
       const res = await updateLead(lead.id, {
         nombre:      editForm.nombre,
         telefono:    editForm.telefono ?? undefined,
         email:       editForm.email    ?? undefined,
-        modelo:      modeloFinal,
         source:      editForm.source,
         next_action: editForm.next_action ?? undefined,
         est_value:   parseNumeric(editForm.est_value),
       })
       if (res.success) {
-        setDetail((d) => d ? { ...d, lead: { ...d.lead, ...editForm, modelo: modeloFinal } } : d)
+        setDetail((d) => d ? { ...d, lead: { ...d.lead, ...editForm } } : d)
         setEditing(false)
         toast.success('Lead actualizado')
       } else {
@@ -468,11 +485,74 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                     )}
                   </div>
 
-                  {/* Model + Status (la etapa avanza con las acciones, no se edita a mano) */}
+                  {/* Modelo de interés (visual + editable) + Status.
+                      La etapa avanza con las acciones, no se edita a mano. */}
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
-                    <Car className="size-4 text-primary" />
-                    <span className="font-medium">{modeloLabel(lead.modelo)}</span>
-                    <StatusBadge status={lead.status} />
+                    {editingModelo ? (
+                      <div className="flex items-center gap-2 flex-wrap rounded-lg border border-primary/30 bg-primary/5 p-2">
+                        <Car className="size-4 text-primary shrink-0" />
+                        <Select value={mSel} onValueChange={(v) => { setMSel(v); if (v !== OTRO_MODELO) setMCustom('') }}>
+                          <SelectTrigger className="h-8 w-auto min-w-[160px] text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={SIN_MODELO}>
+                              <span className="text-muted-foreground">Sin definir</span>
+                            </SelectItem>
+                            {modelos.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                            <SelectItem value={OTRO_MODELO}>
+                              <span className="text-muted-foreground">Otro (escribir)</span>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {mSel === OTRO_MODELO && (
+                          <Input
+                            value={mCustom}
+                            onChange={(e) => setMCustom(e.target.value)}
+                            placeholder="Escribí el modelo..."
+                            className="h-8 w-40 text-sm"
+                            autoFocus
+                          />
+                        )}
+                        <Button size="sm" className="h-8" onClick={saveModelo} disabled={isPending}>
+                          {isPending ? <Loader2 className="size-3.5 animate-spin" /> : 'Guardar'}
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditingModelo(false)} disabled={isPending}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    ) : lead.modelo ? (
+                      <>
+                        <span className="inline-flex items-center gap-1.5">
+                          <Car className="size-4 text-primary" />
+                          <span className="font-medium">{lead.modelo}</span>
+                        </span>
+                        {!readOnly && (
+                          <button
+                            onClick={startEditModelo}
+                            className="text-xs font-medium text-primary hover:underline"
+                          >
+                            Cambiar
+                          </button>
+                        )}
+                        <StatusBadge status={lead.status} />
+                      </>
+                    ) : (
+                      <>
+                        {!readOnly ? (
+                          <button
+                            onClick={startEditModelo}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+                          >
+                            <Car className="size-3.5 shrink-0" />
+                            Este lead todavía no eligió un modelo · Agregar
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                            <Car className="size-4" />Sin definir
+                          </span>
+                        )}
+                        <StatusBadge status={lead.status} />
+                      </>
+                    )}
                   </div>
 
                   {/* Vendedor asignado */}
@@ -604,35 +684,6 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                       onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
                       className="h-8 text-sm"
                     />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Modelo de interés</Label>
-                    <Select
-                      value={mSel}
-                      onValueChange={(v) => { setMSel(v); if (v !== OTRO_MODELO) setMCustom('') }}
-                    >
-                      <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={SIN_MODELO}>
-                          <span className="text-muted-foreground">Sin definir</span>
-                        </SelectItem>
-                        {modelos.map((m) => (
-                          <SelectItem key={m} value={m}>{m}</SelectItem>
-                        ))}
-                        <SelectItem value={OTRO_MODELO}>
-                          <span className="text-muted-foreground">Otro (escribir)</span>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {mSel === OTRO_MODELO && (
-                      <Input
-                        value={mCustom}
-                        onChange={(e) => setMCustom(e.target.value)}
-                        placeholder="Escribí el modelo..."
-                        className="h-8 text-sm mt-1.5"
-                        autoFocus
-                      />
-                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Origen</Label>
