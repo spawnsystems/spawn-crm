@@ -14,7 +14,7 @@ import {
 import {
   Archive, Search, Trophy, XCircle, ArrowUp, ArrowDown, ArrowUpDown, X,
 } from 'lucide-react'
-import { isBaja, statusLabel, BAJA_STATUSES } from '@/lib/leads/constants'
+import { isBaja, statusLabel, BAJA_STATUSES, modeloLabel } from '@/lib/leads/constants'
 import { getHistorialLeads } from '@/app/actions/leads'
 import { safeRefetch, toBADate } from '@/lib/utils'
 
@@ -329,7 +329,7 @@ export function HistorialView({ initialLeads, canSeeVendedor }: HistorialViewPro
                         {lead.nombre}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">{lead.modelo ?? '—'}</td>
+                    <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">{modeloLabel(lead.modelo)}</td>
                     <td className="px-4 py-3"><StatusBadge status={lead.status} /></td>
                     {canSeeVendedor && (
                       <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{vendorName ?? '—'}</td>

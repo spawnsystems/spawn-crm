@@ -32,6 +32,7 @@ import {
   appointmentTipoValues, appointmentStatusValues,
   APPOINTMENT_TIPO_LABEL, APPOINTMENT_STATUS_LABEL,
 } from '@/lib/schemas/appointments'
+import { modeloLabel } from '@/lib/leads/constants'
 
 type LeadRow     = Awaited<ReturnType<typeof getAllLeads>>[number]
 type VendedorRow = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
@@ -340,7 +341,7 @@ export function AppointmentsView({
                     className="w-full text-left rounded-lg px-3 py-2 hover:bg-muted transition-colors"
                   >
                     <div className="text-sm font-medium">{l.nombre}</div>
-                    <div className="text-xs text-muted-foreground">{l.modelo ?? 'Sin modelo'} · {l.status}</div>
+                    <div className="text-xs text-muted-foreground">{modeloLabel(l.modelo)} · {l.status}</div>
                   </button>
                 ))}
                 {filteredLeads.length === 0 && (

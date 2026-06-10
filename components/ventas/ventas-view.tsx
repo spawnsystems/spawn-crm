@@ -15,7 +15,7 @@ import {
   Trophy, DollarSign, Receipt, Search, X, Medal, Car, Crown,
 } from 'lucide-react'
 import { cn, formatCurrencyARS, parseNumeric, fmtDateShortAR } from '@/lib/utils'
-import { sourceLabel } from '@/lib/leads/constants'
+import { sourceLabel, modeloLabel } from '@/lib/leads/constants'
 import { getVentas } from '@/app/actions/ventas'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 
@@ -290,7 +290,7 @@ export function VentasView({
                       >
                         <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtDateShortAR(v.vendida_at)}</td>
                         <td className="px-4 py-3 font-medium">{v.cliente ?? '—'}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{v.modelo ?? '—'}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{modeloLabel(v.modelo)}</td>
                         <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatCurrencyARS(monto(v))}</td>
                         <td className="px-4 py-3 hidden md:table-cell text-xs">
                           {v.usado_marca ? (

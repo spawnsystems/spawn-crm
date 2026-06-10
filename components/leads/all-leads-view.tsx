@@ -19,7 +19,7 @@ import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, XCircle, AlertTriangl
 import { getAllLeads, bulkAssignLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { leadStatusValues } from '@/lib/schemas/leads'
-import { STATUS_ORDER, isBaja, sourceLabel } from '@/lib/leads/constants'
+import { STATUS_ORDER, isBaja, sourceLabel, modeloLabel } from '@/lib/leads/constants'
 import { ATTENTION_LABEL, type AttentionType } from '@/lib/leads/attention'
 import { BajaDialog } from '@/components/leads/baja-dialog'
 
@@ -455,7 +455,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                         <span className="inline-flex items-center text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200/60 rounded px-1.5 py-0.5 mt-0.5">Tiene usado</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{l.modelo ?? '—'}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{modeloLabel(l.modelo)}</td>
                     <td className="px-4 py-3 text-muted-foreground">{sourceLabel(l.source, l.source_custom)}</td>
                     <td className="px-4 py-3">
                       {vendorName ? (

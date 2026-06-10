@@ -17,7 +17,7 @@ import {
 import type { Lead } from '@/lib/db'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 import { getMyLeads } from '@/app/actions/leads'
-import { STATUS_ORDER, isBaja, sourceLabel } from '@/lib/leads/constants'
+import { STATUS_ORDER, isBaja, sourceLabel, modeloLabel } from '@/lib/leads/constants'
 import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appointments'
 
 type Vendedor = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
@@ -431,7 +431,7 @@ function LeadCard({ lead, onOpen }: { lead: MyLead; onOpen: () => void }) {
           </div>
           <div className="mt-1.5 flex items-center gap-2 flex-wrap text-sm text-muted-foreground">
             <span>
-              <span className="text-foreground/80 font-medium">{lead.modelo ?? '—'}</span>
+              <span className="text-foreground/80 font-medium">{modeloLabel(lead.modelo)}</span>
               <span className="mx-2">·</span>
               <span>{sourceLabel(lead.source, lead.source_custom)}</span>
             </span>

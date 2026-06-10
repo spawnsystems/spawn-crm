@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import type { Lead } from '@/lib/db'
-import { isBaja } from '@/lib/leads/constants'
+import { isBaja, modeloLabel } from '@/lib/leads/constants'
 
 const ALL = '__all__'
 
@@ -193,7 +193,7 @@ function KanbanCard({ lead, onClick }: { lead: LeadLike; onClick: () => void }) 
       onClick={onClick}
     >
       <div className="text-sm font-medium">{lead.nombre}</div>
-      <div className="text-xs text-muted-foreground mt-0.5">{lead.modelo ?? '—'}</div>
+      <div className="text-xs text-muted-foreground mt-0.5">{modeloLabel(lead.modelo)}</div>
       <div className="mt-2 flex items-center justify-between text-[11px]">
         {formattedValue ? (
           <span className="font-semibold text-primary">{formattedValue}</span>

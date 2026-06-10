@@ -44,7 +44,7 @@ import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresParaTraspaso } from '@/app/actions/users'
 import { leadSourceValues } from '@/lib/schemas/leads'
 import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appointments'
-import { isBaja } from '@/lib/leads/constants'
+import { isBaja, modeloLabel } from '@/lib/leads/constants'
 import { useCurrentUser } from '@/lib/tenant/context'
 import type { Lead } from '@/lib/db'
 import { cn, parseNumeric, safeRefetch, fmtDayMonthAR, toBADate, formatCurrencyARS } from '@/lib/utils'
@@ -442,7 +442,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                   {/* Model + Status (la etapa avanza con las acciones, no se edita a mano) */}
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     <Car className="size-4 text-primary" />
-                    <span className="font-medium">{lead.modelo ?? 'Sin modelo'}</span>
+                    <span className="font-medium">{modeloLabel(lead.modelo)}</span>
                     <StatusBadge status={lead.status} />
                   </div>
 

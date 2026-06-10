@@ -45,7 +45,8 @@ export const createLeadSchema = z.object({
   nombre:               z.string().min(2, 'El nombre es requerido'),
   telefono:             z.string().min(6, 'El teléfono es requerido'),
   email:                z.string().email('Email inválido').optional().or(z.literal('')),
-  modelo:               z.string().min(1, 'El modelo de interés es requerido'),
+  // Opcional: el lead puede entrar sin un modelo definido todavía ("Sin definir").
+  modelo:               z.string().optional(),
   source:               z.enum(leadSourceValues, { errorMap: () => ({ message: 'Seleccioná el origen del lead' }) }),
   source_custom:        z.string().optional(),
   localidad:            z.string().min(2, 'La localidad es requerida'),

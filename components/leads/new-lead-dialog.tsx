@@ -29,6 +29,7 @@ import { calcularUsado, type UsoVehiculo } from '@/lib/cotizador/calc'
 const emailSchema = z.string().email('Ingresá un email válido')
 
 const OTRO_MODELO  = '__otro__'
+const SIN_MODELO   = '__sin_definir__'   // el lead todavía no tiene un modelo definido
 const OTRO_SOURCE  = '__otro__'
 const CUSTOM_PREFIX = '__custom__:'
 
@@ -156,8 +157,13 @@ export function NewLeadDialog({
     return r.success ? null : (r.error.issues[0]?.message ?? 'Email inválido')
   }
 
-  // Modelo efectivo: si eligió OTRO_MODELO usa el texto libre, si no usa la opción
-  const modeloFinal = form.modelo === OTRO_MODELO ? form.modeloCustom.trim() : form.modelo
+  // Modelo efectivo: "Sin definir" → vacío (se guarda null); "Otro" → texto libre;
+  // en otro caso, la opción elegida del catálogo.
+  const modeloFinal = form.modelo === SIN_MODELO
+    ? ''
+    : form.modelo === OTRO_MODELO
+    ? form.modeloCustom.trim()
+    : form.modelo
 
   // Source efectivo:
   //   - Valor estándar del enum   → sourceFinal = ese valor, sin custom
@@ -207,7 +213,7 @@ export function NewLeadDialog({
         nombre:              form.nombre,
         telefono:            form.telefono,
         email:               form.email    || undefined,
-        modelo:              modeloFinal,
+        modelo:              modeloFinal || undefined,
         source:              sourceFinal,
         source_custom:       sourceCustom  || undefined,
         localidad:           form.localidad,
@@ -231,6 +237,11 @@ export function NewLeadDialog({
     })
   }
 
+  // Modelo válido: eligió algo (incluido "Sin definir"); si es "Otro", el texto
+  // libre debe tener contenido. "Sin definir" es un caso válido (modelo = null).
+  const modeloOk = form.modelo === SIN_MODELO
+    || (form.modelo === OTRO_MODELO ? form.modeloCustom.trim().length >= 1 : !!form.modelo)
+
   // Origen válido: algo seleccionado; si es "escribir", el texto debe tener al menos 2 chars
   const sourceOk = !!form.source && (form.source !== OTRO_SOURCE || form.sourceCustom.trim().length >= 2)
 
@@ -243,7 +254,7 @@ export function NewLeadDialog({
     form.telefono.trim().length >= 6 &&
     form.localidad.trim().length >= 2 &&
     form.provincia.trim().length >= 2 &&
-    !!modeloFinal &&
+    modeloOk &&
     sourceOk &&
     assignOk &&
     !emailError &&
@@ -416,7 +427,7 @@ export function NewLeadDialog({
               <div className="col-span-2 space-y-1.5">
                 <Label className="flex items-center gap-1.5">
                   <Car className="size-3.5 text-muted-foreground" />
-                  Modelo de interés <span className="text-destructive">*</span>
+                  Modelo de interés
                 </Label>
                 <Select
                   value={form.modelo}
@@ -429,16 +440,13 @@ export function NewLeadDialog({
                     <SelectValue placeholder="Seleccionar modelo..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {modelos.length === 0 ? (
-                      <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-                        Sin modelos — agregá uno en{' '}
-                        <span className="font-medium">Configuración → Modelos</span>
-                      </div>
-                    ) : (
-                      modelos.map((m) => (
-                        <SelectItem key={m} value={m}>{m}</SelectItem>
-                      ))
-                    )}
+                    {/* Caso nativo: el lead todavía no definió un modelo */}
+                    <SelectItem value={SIN_MODELO}>
+                      <span className="text-muted-foreground">Sin definir</span>
+                    </SelectItem>
+                    {modelos.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
                     <SelectItem value={OTRO_MODELO}>
                       <span className="text-muted-foreground">Otro (escribir)</span>
                     </SelectItem>

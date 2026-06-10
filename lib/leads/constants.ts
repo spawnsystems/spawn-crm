@@ -74,6 +74,14 @@ export function statusLabel(status: string): string {
 }
 
 /**
+ * Etiqueta visible del modelo de interés. Si el lead no tiene modelo definido
+ * todavía, se muestra "Sin definir" (estado válido, no un modelo inventado).
+ */
+export function modeloLabel(modelo: string | null | undefined): string {
+  return modelo?.trim() || 'Sin definir'
+}
+
+/**
  * Etiqueta visible del origen de un lead. Cuando el origen es "Otro" y tiene un
  * nombre personalizado cargado, se muestra ese nombre (no el genérico "Otro").
  */
