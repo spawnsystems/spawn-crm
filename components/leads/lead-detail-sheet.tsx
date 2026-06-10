@@ -596,7 +596,11 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                       </SelectTrigger>
                       <SelectContent>
                         {leadSourceValues.map((s) => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                          <SelectItem key={s} value={s}>
+                            {/* Si el lead tiene un origen personalizado, mostramos
+                                su nombre real en lugar del genérico "Otro". */}
+                            {s === 'Otro' && lead.source_custom ? lead.source_custom : s}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

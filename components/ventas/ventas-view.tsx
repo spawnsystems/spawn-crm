@@ -15,6 +15,7 @@ import {
   Trophy, DollarSign, Receipt, Search, X, Medal, Car, Crown,
 } from 'lucide-react'
 import { cn, formatCurrencyARS, parseNumeric, fmtDateShortAR } from '@/lib/utils'
+import { sourceLabel } from '@/lib/leads/constants'
 import { getVentas } from '@/app/actions/ventas'
 import { getVendedoresDelTenant } from '@/app/actions/users'
 
@@ -299,7 +300,7 @@ export function VentasView({
                             </span>
                           ) : <span className="text-muted-foreground/40">—</span>}
                         </td>
-                        <td className="px-4 py-3 hidden lg:table-cell text-xs text-muted-foreground">{v.source ?? '—'}</td>
+                        <td className="px-4 py-3 hidden lg:table-cell text-xs text-muted-foreground">{sourceLabel(v.source, v.source_custom)}</td>
                         {canSeeVendedor && (
                           <td className="px-4 py-3 text-xs">{v.vendedor_alias || v.vendedor_nombre || '—'}</td>
                         )}

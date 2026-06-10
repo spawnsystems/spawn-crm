@@ -31,6 +31,7 @@ export async function getVentas() {
     comprador_email:        schema.registroVentas.comprador_email,
     cliente:          schema.leads.nombre,
     source:           schema.leads.source,
+    source_custom:    schema.leads.source_custom,
     provincia:        schema.leads.provincia,
     equipo_id:        schema.leads.equipo_id,
     vendedor_nombre:  schema.usuarios.nombre,

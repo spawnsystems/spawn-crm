@@ -73,6 +73,18 @@ export function statusLabel(status: string): string {
   return STATUS_LABEL[status as LeadStatus] ?? status
 }
 
+/**
+ * Etiqueta visible del origen de un lead. Cuando el origen es "Otro" y tiene un
+ * nombre personalizado cargado, se muestra ese nombre (no el genérico "Otro").
+ */
+export function sourceLabel(
+  source: string | null | undefined,
+  sourceCustom?: string | null,
+): string {
+  if (source === 'Otro' && sourceCustom?.trim()) return sourceCustom.trim()
+  return source ?? '—'
+}
+
 /** True si el estado es de baja (terminal negativo). */
 export function isBaja(status: string): boolean {
   return (BAJA_STATUSES as readonly string[]).includes(status)

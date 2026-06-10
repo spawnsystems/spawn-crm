@@ -16,8 +16,8 @@ import { Paginator } from '@/components/ui/paginator'
 import { Search, Plus, X, ArrowUp, ArrowDown, ArrowUpDown, XCircle, AlertTriangle } from 'lucide-react'
 import { getAllLeads } from '@/app/actions/leads'
 import { getVendedoresDelTenant } from '@/app/actions/users'
-import { leadSourceValues, leadStatusValues } from '@/lib/schemas/leads'
-import { STATUS_ORDER, isBaja } from '@/lib/leads/constants'
+import { leadStatusValues } from '@/lib/schemas/leads'
+import { STATUS_ORDER, isBaja, sourceLabel } from '@/lib/leads/constants'
 import { ATTENTION_LABEL, type AttentionType } from '@/lib/leads/attention'
 import { BajaDialog } from '@/components/leads/baja-dialog'
 
@@ -106,6 +106,14 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))
   }, [leads])
 
+  // Opciones de origen derivadas de los datos: incluye los nombres
+  // personalizados reales (no el genérico "Otro") presentes en los leads.
+  const sourceOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const l of leads) set.add(sourceLabel(l.source, l.source_custom))
+    return [...set].sort((a, b) => a.localeCompare(b, 'es'))
+  }, [leads])
+
   const filtered = useMemo(() => {
     const result = leads.filter((l) => {
       if (filterVend !== ALL) {
@@ -113,7 +121,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
         else { if (l.assigned_to !== filterVend) return false }
       }
       if (filterStatus !== ALL && l.status !== filterStatus) return false
-      if (filterSource !== ALL && l.source !== filterSource) return false
+      if (filterSource !== ALL && sourceLabel(l.source, l.source_custom) !== filterSource) return false
       if (filterProvincia !== ALL && (l.provincia ?? '').toLowerCase() !== filterProvincia.toLowerCase()) return false
       if (filterUsado === 'yes' && !l.tiene_usado) return false
       if (filterUsado === 'no'  &&  l.tiene_usado) return false
@@ -294,7 +302,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>Todos los orígenes</SelectItem>
-            {leadSourceValues.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            {sourceOptions.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
 
@@ -377,7 +385,7 @@ export function AllLeadsView({ initialLeads, vendedores, modelos, customSources 
                       )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{l.modelo ?? '—'}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{l.source_custom || l.source}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{sourceLabel(l.source, l.source_custom)}</td>
                     <td className="px-4 py-3">
                       {vendorName ? (
                         <div className="flex items-center gap-1.5 text-muted-foreground">

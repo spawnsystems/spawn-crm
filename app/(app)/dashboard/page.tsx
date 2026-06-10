@@ -8,6 +8,7 @@ import { getAttentionSummary } from '@/app/actions/leads'
 import { startOfCurrentMonthAR, currentYearMonthAR } from '@/lib/utils'
 import { getCurrentUserTeamScope, buildScopeWhere } from '@/lib/tenant/teams'
 import { getMetasVentasMap } from '@/lib/leads/server-helpers'
+import { sourceLabel } from '@/lib/leads/constants'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,6 +50,7 @@ export default async function DashboardPage() {
       .select({
         id:               schema.leads.id,
         source:           schema.leads.source,
+        source_custom:    schema.leads.source_custom,
         status:           schema.leads.status,
         seller_id:        schema.leads.assigned_to,
         seller_nombre:    schema.usuarios.nombre,
@@ -125,12 +127,15 @@ export default async function DashboardPage() {
   }
 
   // ── Conversión por origen ────────────────────────────────────
+  // Agrupamos por la etiqueta visible: las fuentes personalizadas se cuentan por
+  // su nombre real (no colapsadas en "Otro").
   const sourceMap = new Map<string, { total: number; closed: number }>()
   for (const l of leadsRaw) {
-    const s = sourceMap.get(l.source) ?? { total: 0, closed: 0 }
+    const label = sourceLabel(l.source, l.source_custom)
+    const s = sourceMap.get(label) ?? { total: 0, closed: 0 }
     s.total += 1
     if (l.status === 'VENTA') s.closed += 1
-    sourceMap.set(l.source, s)
+    sourceMap.set(label, s)
   }
   const sources = [...sourceMap.entries()]
     .map(([name, v]) => ({
