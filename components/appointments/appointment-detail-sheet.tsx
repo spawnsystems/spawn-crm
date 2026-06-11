@@ -195,10 +195,12 @@ export function AppointmentDetailSheet({
             appointmentId={appt.id}
             tipoActual={appt.tipo}
             onResolved={({ openVenta, openBaja }) => {
-              onUpdated()
+              // Con diálogo de seguimiento (venta/baja) NO refrescamos todavía:
+              // el refetch desmontaría este bloque (y su diálogo) antes de que el
+              // usuario lo complete. El refresh lo hace el onDone de cada diálogo.
               if (openVenta)      setShowVenta(true)
               else if (openBaja)  setShowBaja(true)
-              else                onClose()
+              else { onUpdated(); onClose() }
             }}
           />
           <RegistrarVentaDialog

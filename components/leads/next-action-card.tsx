@@ -189,15 +189,19 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated, onRegiste
           appointmentId={nextAppointment.id}
           tipoActual={nextAppointment.tipo}
           onResolved={({ openVenta, openBaja }) => {
-            onLeadUpdated()
-            if (openVenta) setShowVenta(true)
-            if (openBaja)  setShowBaja(true)
+            // Si hay un diálogo de seguimiento (venta/baja), NO refrescamos todavía:
+            // el refetch volvería null a nextAppointment y desmontaría este bloque
+            // (con su diálogo adentro) antes de que el usuario lo complete. El
+            // refresh lo dispara el onDone de cada diálogo al cerrarse.
+            if (openVenta)      setShowVenta(true)
+            else if (openBaja)  setShowBaja(true)
+            else                onLeadUpdated()
           }}
         />
 
         <RegistrarVentaDialog
           open={showVenta}
-          onOpenChange={setShowVenta}
+          onOpenChange={(v) => { setShowVenta(v); if (!v) onLeadUpdated() }}
           leadId={lead.id}
           leadNombre={lead.nombre}
           defaultModelo={lead.modelo}
@@ -206,7 +210,7 @@ export function NextActionCard({ lead, nextAppointment, onLeadUpdated, onRegiste
 
         <BajaDialog
           open={showBaja}
-          onOpenChange={setShowBaja}
+          onOpenChange={(v) => { setShowBaja(v); if (!v) onLeadUpdated() }}
           leadId={lead.id}
           leadNombre={lead.nombre}
           onDone={() => { setShowBaja(false); onLeadUpdated() }}
