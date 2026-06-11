@@ -65,8 +65,8 @@ const EMPTY = {
   localidad: '', provincia: PROVINCIA_DEFAULT as string,
   horarios: [] as HorarioRange[],
   tiene_usado: false, observaciones: '', assign: '',
-  // Marca del auto usado — el resto se cotiza desde la ficha del lead
-  usadoMarca: '',
+  // Marca y año del auto usado — km/uso/InfoAuto se completan desde la ficha
+  usadoMarca: '', usadoAnio: String(new Date().getFullYear() - 2),
 }
 
 export function NewLeadDialog({
@@ -163,9 +163,9 @@ export function NewLeadDialog({
     // Rangos válidos (ambos extremos cargados)
     const horariosValidos = form.horarios.filter((r) => r.from && r.to)
 
-    // Usado: si está activo, enviar solo la marca (el resto se cotiza desde la ficha)
-    const usadoPayload = form.tiene_usado && form.usadoMarca.trim()
-      ? { marca_modelo: form.usadoMarca.trim() }
+    // Usado: si está activo, enviar marca y año (el resto se cotiza desde la ficha)
+    const usadoPayload = form.tiene_usado && form.usadoMarca.trim() && !isNaN(usadoAnioNum)
+      ? { marca_modelo: form.usadoMarca.trim(), anio: usadoAnioNum }
       : undefined
 
     // Parsear el destino de asignación.
@@ -219,8 +219,12 @@ export function NewLeadDialog({
   // el lead podría quedar sin visibilidad para ellos. Supervisor/vendedor no.
   const assignOk = isVendedor || !multiTeam || form.assign !== ''
 
-  // Si tiene_usado activo, la marca es obligatoria
-  const usadoOk = !form.tiene_usado || form.usadoMarca.trim().length >= 1
+  // Si tiene_usado activo, marca y año son obligatorios
+  const usadoAnioNum = parseInt(form.usadoAnio, 10)
+  const usadoOk = !form.tiene_usado || (
+    form.usadoMarca.trim().length >= 1 &&
+    !isNaN(usadoAnioNum) && usadoAnioNum >= 1960 && usadoAnioNum <= new Date().getFullYear() + 1
+  )
 
   const canSubmit =
     !!form.nombre.trim() &&
@@ -456,27 +460,43 @@ export function NewLeadDialog({
                 </label>
               </div>
 
-              {/* Auto usado — solo la marca al crear; el resto se cotiza desde la ficha */}
+              {/* Auto usado — marca y año al crear; km/uso/InfoAuto se completan desde la ficha */}
               {form.tiene_usado && (
                 <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
                     <Car className="size-3.5" />
                     Auto en parte de pago
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">
-                      Marca y modelo <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      placeholder="Ej: Toyota Corolla"
-                      className="h-8 text-sm bg-white"
-                      value={form.usadoMarca}
-                      onChange={(e) => set('usadoMarca', e.target.value)}
-                      autoFocus
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="col-span-2 space-y-1.5">
+                      <Label className="text-xs">
+                        Marca y modelo <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        placeholder="Ej: Toyota Corolla"
+                        className="h-8 text-sm bg-white"
+                        value={form.usadoMarca}
+                        onChange={(e) => set('usadoMarca', e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">
+                        Año <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        type="number"
+                        placeholder={String(new Date().getFullYear() - 2)}
+                        className="h-8 text-sm bg-white"
+                        value={form.usadoAnio}
+                        onChange={(e) => set('usadoAnio', e.target.value)}
+                        min={1960}
+                        max={new Date().getFullYear() + 1}
+                      />
+                    </div>
                   </div>
                   <p className="text-[11px] text-amber-700/70">
-                    El año, km y valor InfoAuto se completan desde la ficha del lead.
+                    Km y valor InfoAuto se completan desde la ficha del lead.
                   </p>
                 </div>
               )}

@@ -32,10 +32,11 @@ export const horarioRangeSchema = z.object({
   days: z.array(z.number().int().min(0).max(6)).optional(),
 })
 
-// Usado en parte de pago — al crear el lead solo se registra la marca.
-// El resto (año, km, uso, valor InfoAuto) se completa desde la ficha del lead.
+// Usado en parte de pago — al crear el lead se registra marca y año.
+// El resto (km, uso, valor InfoAuto) se completa desde la ficha del lead.
 export const usadoInlineSchema = z.object({
   marca_modelo: z.string().min(1, 'La marca es requerida').max(150),
+  anio:         z.number().int().min(1900).max(new Date().getFullYear() + 1),
 })
 
 export const createLeadSchema = z.object({

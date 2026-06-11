@@ -35,6 +35,7 @@ interface CotizadorDialogProps {
   provincia?:    string
   editing?:      EditingCotizacion | null
   initialMarca?: string   // pre-población cuando se crea la primera cotización
+  initialAnio?:  number
   onCreated?:    () => void
 }
 
@@ -49,7 +50,7 @@ const EMPTY = {
 }
 
 export function CotizadorDialog({
-  open, onOpenChange, leadId, leadNombre, provincia, editing, initialMarca, onCreated,
+  open, onOpenChange, leadId, leadNombre, provincia, editing, initialMarca, initialAnio, onCreated,
 }: CotizadorDialogProps) {
   const [form,      setForm]      = useState(EMPTY)
   const [isPending, startTransition] = useTransition()
@@ -73,9 +74,13 @@ export function CotizadorDialog({
         base_infoauto: editing.base_infoauto != null ? String(Math.round(Number(editing.base_infoauto))) : '',
       })
     } else {
-      setForm({ ...EMPTY, marca_modelo: initialMarca ?? '' })
+      setForm({
+        ...EMPTY,
+        marca_modelo: initialMarca ?? '',
+        anio: initialAnio != null ? String(initialAnio) : EMPTY.anio,
+      })
     }
-  }, [open, editing, initialMarca])
+  }, [open, editing, initialMarca, initialAnio])
 
   // ── Preview en vivo ───────────────────────────────────────────
   const preview = useMemo(() => {

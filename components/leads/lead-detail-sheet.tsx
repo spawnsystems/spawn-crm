@@ -654,6 +654,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                 cotizaciones={cotizaciones}
                 tieneUsado={lead?.tiene_usado ?? false}
                 usadoMarca={lead?.usado_marca ?? null}
+                usadoAnio={lead?.usado_anio ?? null}
                 readOnly={readOnly}
                 onNew={() => { setEditingCotizacion(null); setShowCotizador(true) }}
                 onEdit={(c) => { setEditingCotizacion(c); setShowCotizador(true) }}
@@ -1058,6 +1059,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               provincia={lead.provincia ?? undefined}
               editing={editingCotizacion}
               initialMarca={!editingCotizacion ? (lead.usado_marca ?? undefined) : undefined}
+              initialAnio={!editingCotizacion ? (lead.usado_anio ?? undefined) : undefined}
               onCreated={() => {
                 setShowCotizador(false)
                 setEditingCotizacion(null)
@@ -1148,11 +1150,12 @@ function Section({ icon, title, children }: {
 // Botón "+" en header agrega una para otro auto.
 
 function UsadoCard({
-  cotizaciones, tieneUsado, usadoMarca, onNew, onEdit, readOnly = false,
+  cotizaciones, tieneUsado, usadoMarca, usadoAnio, onNew, onEdit, readOnly = false,
 }: {
   cotizaciones: NonNullable<DetailData>['cotizaciones']
   tieneUsado:   boolean
   usadoMarca:   string | null
+  usadoAnio:    number | null
   onNew:        () => void
   onEdit:       (c: EditingCotizacion) => void
   readOnly?:    boolean
@@ -1212,11 +1215,13 @@ function UsadoCard({
       {pendienteCotizar ? (
         /* Tiene auto anotado pero sin cotización — CTA prominente */
         <div>
-          {usadoMarca && (
-            <p className="text-sm font-medium text-amber-800 mb-1">{usadoMarca}</p>
+          {(usadoMarca || usadoAnio) && (
+            <p className="text-sm font-medium text-amber-800 mb-1">
+              {[usadoMarca, usadoAnio].filter(Boolean).join(' · ')}
+            </p>
           )}
           <p className="text-xs text-amber-700/80">
-            Falta año, km y valor InfoAuto para calcular el precio de toma.
+            Falta km y valor InfoAuto para calcular el precio de toma.
           </p>
           {!readOnly && (
             <button
