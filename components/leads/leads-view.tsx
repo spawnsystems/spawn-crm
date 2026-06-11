@@ -68,6 +68,10 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
 
   const activeLeads = leads.filter((l) => !isBaja(l.status) && l.status !== 'VENTA')
   const atRiskCount = leads.filter((l) => l.at_risk).length
+  // "Sin contactar" usa el motor de atención (respeta el umbral de primer
+  // contacto y los compromisos futuros), NO el crudo !last_contact_at: un lead
+  // recién creado o con una llamada/cita agendada NO debe contar acá.
+  const sinContactarCount = leads.filter((l) => l.attention_type === 'sin_contactar').length
   const closedMonth = leads.filter((l) => l.status === 'VENTA').length
   const closeRate   = leads.length > 0 ? Math.round((closedMonth / leads.length) * 100) : 0
 
@@ -77,7 +81,7 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
       const esActivo = !isBaja(l.status) && l.status !== 'VENTA'
       if (!esActivo) return false
       switch (filter) {
-        case 'Sin contactar':     return l.status === 'GESTION' && !l.last_contact_at
+        case 'Sin contactar':     return l.attention_type === 'sin_contactar'
         case 'En seguimiento':    return ['GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE'].includes(l.status)
         case 'Requieren atención': return l.at_risk
         default:               return true
@@ -128,9 +132,9 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
         <KpiCard
           icon={<AlertTriangle className="size-4 text-destructive" />}
           label="Sin contactar"
-          value={leads.filter((l) => !l.last_contact_at && !isBaja(l.status) && l.status !== 'VENTA').length.toString()}
-          sub="requieren atención"
-          accent={leads.filter((l) => !l.last_contact_at && !isBaja(l.status) && l.status !== 'VENTA').length > 0 ? 'destructive' : undefined}
+          value={sinContactarCount.toString()}
+          sub="pasaron el plazo de 1er contacto"
+          accent={sinContactarCount > 0 ? 'destructive' : undefined}
         />
         <KpiCard
           icon={<Clock className="size-4 text-destructive" />}
