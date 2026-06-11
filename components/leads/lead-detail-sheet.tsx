@@ -207,7 +207,9 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
   // `cancelled` flag prevents stale updates on quick open/close.
   useEffect(() => {
     if (!leadId) { setDetail(null); setNextAppointment(null); setEditing(false); return }
-    // Colapsar secciones cuando se abre un lead nuevo
+    // Colapsar secciones cuando se abre un lead nuevo; limpiar detail para no
+    // mostrar datos del lead anterior mientras carga (evita stale render).
+    setDetail(null)
     setShowAllCalls(false)
     setShowAllNotes(false)
     setLoading(true)
