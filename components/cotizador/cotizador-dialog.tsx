@@ -34,8 +34,13 @@ interface CotizadorDialogProps {
   leadNombre?:   string
   provincia?:    string
   editing?:      EditingCotizacion | null
-  initialMarca?: string   // pre-población cuando se crea la primera cotización
+  // Pre-población cuando se crea la primera cotización desde un lead con datos
+  // del usado anotados al alta (marca/año obligatorios; km/uso/valor opcionales).
+  initialMarca?: string
   initialAnio?:  number
+  initialKm?:    number
+  initialUso?:   string
+  initialValor?: number
   onCreated?:    () => void
 }
 
@@ -50,7 +55,8 @@ const EMPTY = {
 }
 
 export function CotizadorDialog({
-  open, onOpenChange, leadId, leadNombre, provincia, editing, initialMarca, initialAnio, onCreated,
+  open, onOpenChange, leadId, leadNombre, provincia, editing,
+  initialMarca, initialAnio, initialKm, initialUso, initialValor, onCreated,
 }: CotizadorDialogProps) {
   const [form,      setForm]      = useState(EMPTY)
   const [isPending, startTransition] = useTransition()
@@ -76,11 +82,14 @@ export function CotizadorDialog({
     } else {
       setForm({
         ...EMPTY,
-        marca_modelo: initialMarca ?? '',
-        anio: initialAnio != null ? String(initialAnio) : EMPTY.anio,
+        marca_modelo:  initialMarca ?? '',
+        anio:          initialAnio != null ? String(initialAnio) : EMPTY.anio,
+        km:            initialKm != null ? String(initialKm) : '',
+        uso:           (initialUso as UsoVehiculo) || 'particular',
+        base_infoauto: initialValor != null ? String(Math.round(initialValor)) : '',
       })
     }
-  }, [open, editing, initialMarca, initialAnio])
+  }, [open, editing, initialMarca, initialAnio, initialKm, initialUso, initialValor])
 
   // ── Preview en vivo ───────────────────────────────────────────
   const preview = useMemo(() => {

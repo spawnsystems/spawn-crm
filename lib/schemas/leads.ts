@@ -32,11 +32,18 @@ export const horarioRangeSchema = z.object({
   days: z.array(z.number().int().min(0).max(6)).optional(),
 })
 
-// Usado en parte de pago — al crear el lead se registra marca y año.
-// El resto (km, uso, valor InfoAuto) se completa desde la ficha del lead.
+// Usado en parte de pago al crear el lead.
+//   Obligatorios: marca y año.
+//   Opcionales:   km, uso, valor InfoAuto.
+// Si vienen km + valor InfoAuto, alcanza para cotizar y la cotización se genera
+// automáticamente; si no, los parciales quedan como borrador y pre-cargan el
+// cotizador desde la ficha del lead.
 export const usadoInlineSchema = z.object({
-  marca_modelo: z.string().min(1, 'La marca es requerida').max(150),
-  anio:         z.number().int().min(1900).max(new Date().getFullYear() + 1),
+  marca_modelo:  z.string().min(1, 'La marca es requerida').max(150),
+  anio:          z.number().int().min(1900).max(new Date().getFullYear() + 1),
+  km:            z.number().int().min(0).optional(),
+  uso:           z.enum(['particular', 'taxi_uber_transporte']).optional(),
+  base_infoauto: z.number().positive().optional(),
 })
 
 export const createLeadSchema = z.object({

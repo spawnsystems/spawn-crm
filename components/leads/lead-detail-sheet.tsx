@@ -655,6 +655,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                 tieneUsado={lead?.tiene_usado ?? false}
                 usadoMarca={lead?.usado_marca ?? null}
                 usadoAnio={lead?.usado_anio ?? null}
+                usadoKm={lead?.usado_km ?? null}
                 readOnly={readOnly}
                 onNew={() => { setEditingCotizacion(null); setShowCotizador(true) }}
                 onEdit={(c) => { setEditingCotizacion(c); setShowCotizador(true) }}
@@ -1060,6 +1061,9 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               editing={editingCotizacion}
               initialMarca={!editingCotizacion ? (lead.usado_marca ?? undefined) : undefined}
               initialAnio={!editingCotizacion ? (lead.usado_anio ?? undefined) : undefined}
+              initialKm={!editingCotizacion ? (lead.usado_km ?? undefined) : undefined}
+              initialUso={!editingCotizacion ? (lead.usado_uso ?? undefined) : undefined}
+              initialValor={!editingCotizacion && lead.usado_valor_infoauto != null ? Number(lead.usado_valor_infoauto) : undefined}
               onCreated={() => {
                 setShowCotizador(false)
                 setEditingCotizacion(null)
@@ -1150,12 +1154,13 @@ function Section({ icon, title, children }: {
 // Botón "+" en header agrega una para otro auto.
 
 function UsadoCard({
-  cotizaciones, tieneUsado, usadoMarca, usadoAnio, onNew, onEdit, readOnly = false,
+  cotizaciones, tieneUsado, usadoMarca, usadoAnio, usadoKm, onNew, onEdit, readOnly = false,
 }: {
   cotizaciones: NonNullable<DetailData>['cotizaciones']
   tieneUsado:   boolean
   usadoMarca:   string | null
   usadoAnio:    number | null
+  usadoKm:      number | null
   onNew:        () => void
   onEdit:       (c: EditingCotizacion) => void
   readOnly?:    boolean
@@ -1215,13 +1220,17 @@ function UsadoCard({
       {pendienteCotizar ? (
         /* Tiene auto anotado pero sin cotización — CTA prominente */
         <div>
-          {(usadoMarca || usadoAnio) && (
+          {(usadoMarca || usadoAnio || usadoKm != null) && (
             <p className="text-sm font-medium text-amber-800 mb-1">
-              {[usadoMarca, usadoAnio].filter(Boolean).join(' · ')}
+              {[
+                usadoMarca,
+                usadoAnio,
+                usadoKm != null ? `${usadoKm.toLocaleString('es-AR')} km` : null,
+              ].filter(Boolean).join(' · ')}
             </p>
           )}
           <p className="text-xs text-amber-700/80">
-            Falta km y valor InfoAuto para calcular el precio de toma.
+            Falta {[usadoKm == null ? 'km' : null, 'valor InfoAuto'].filter(Boolean).join(' y ')} para calcular el precio de toma.
           </p>
           {!readOnly && (
             <button

@@ -37,6 +37,9 @@ export const leads = pgTable('leads', {
   tiene_usado:          boolean('tiene_usado').default(false).notNull(),
   usado_marca:          text('usado_marca'),           // marca anotada al crear (antes de cotizar)
   usado_anio:           integer('usado_anio'),         // año anotado al crear
+  usado_km:             integer('usado_km'),           // km parcial (borrador, opcional al crear)
+  usado_uso:            text('usado_uso'),             // 'particular' | 'taxi_uber_transporte' (borrador)
+  usado_valor_infoauto: numeric('usado_valor_infoauto', { precision: 14, scale: 2 }), // valor InfoAuto parcial
   observaciones:        text('observaciones'),
 
   // Estado y pipeline

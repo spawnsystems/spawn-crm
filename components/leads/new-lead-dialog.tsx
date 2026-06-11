@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import {
@@ -15,12 +15,13 @@ import {
   SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  UserCircle, Loader2, Car, Plus, X, Clock,
+  UserCircle, Loader2, Car, Plus, X, Clock, Calculator, CheckCircle2, AlertTriangle,
 } from 'lucide-react'
 import { createLead } from '@/app/actions/leads'
 import { getAsignablesParaLead } from '@/app/actions/users'
 import { leadSourceValues } from '@/lib/schemas/leads'
-import { getInitials } from '@/lib/utils'
+import { calcularUsado, type UsoVehiculo } from '@/lib/cotizador/calc'
+import { getInitials, formatCurrencyARS } from '@/lib/utils'
 import { useCurrentUser } from '@/lib/tenant/context'
 import { PROVINCIAS_AR, PROVINCIA_DEFAULT } from '@/lib/ar/provincias'
 import { type HorarioRange, HORARIO_DAYS } from '@/lib/leads/horarios'
@@ -65,8 +66,10 @@ const EMPTY = {
   localidad: '', provincia: PROVINCIA_DEFAULT as string,
   horarios: [] as HorarioRange[],
   tiene_usado: false, observaciones: '', assign: '',
-  // Marca y año del auto usado — km/uso/InfoAuto se completan desde la ficha
+  // Usado: marca y año obligatorios; km/uso/valor InfoAuto opcionales. Si se
+  // cargan km + valor, la cotización se genera automáticamente al crear el lead.
   usadoMarca: '', usadoAnio: String(new Date().getFullYear() - 2),
+  usadoKm: '', usadoUso: 'particular' as UsoVehiculo, usadoValor: '',
 }
 
 export function NewLeadDialog({
@@ -163,9 +166,17 @@ export function NewLeadDialog({
     // Rangos válidos (ambos extremos cargados)
     const horariosValidos = form.horarios.filter((r) => r.from && r.to)
 
-    // Usado: si está activo, enviar marca y año (el resto se cotiza desde la ficha)
+    // Usado: marca y año obligatorios; km/uso/valor opcionales. Lo que se haya
+    // cargado viaja: si alcanza para cotizar (km + valor), el server genera la
+    // cotización automáticamente; si no, queda como borrador en el lead.
     const usadoPayload = form.tiene_usado && form.usadoMarca.trim() && !isNaN(usadoAnioNum)
-      ? { marca_modelo: form.usadoMarca.trim(), anio: usadoAnioNum }
+      ? {
+          marca_modelo:  form.usadoMarca.trim(),
+          anio:          usadoAnioNum,
+          km:            !isNaN(usadoKmNum) ? usadoKmNum : undefined,
+          uso:           form.usadoUso,
+          base_infoauto: usadoValorNum > 0 ? usadoValorNum : undefined,
+        }
       : undefined
 
     // Parsear el destino de asignación.
@@ -219,12 +230,28 @@ export function NewLeadDialog({
   // el lead podría quedar sin visibilidad para ellos. Supervisor/vendedor no.
   const assignOk = isVendedor || !multiTeam || form.assign !== ''
 
-  // Si tiene_usado activo, marca y año son obligatorios
-  const usadoAnioNum = parseInt(form.usadoAnio, 10)
+  // Si tiene_usado activo, marca y año son obligatorios; km/valor son opcionales.
+  const usadoAnioNum  = parseInt(form.usadoAnio, 10)
+  const usadoKmNum    = parseInt(form.usadoKm.replace(/\./g, ''), 10)
+  const usadoValorNum = parseFloat(form.usadoValor.replace(/\./g, '').replace(',', '.'))
   const usadoOk = !form.tiene_usado || (
     form.usadoMarca.trim().length >= 1 &&
     !isNaN(usadoAnioNum) && usadoAnioNum >= 1960 && usadoAnioNum <= new Date().getFullYear() + 1
   )
+
+  // Preview en vivo: si cargaron km + valor InfoAuto, mostramos la cotización
+  // que se generará automáticamente al crear el lead.
+  const usadoPreview = useMemo(() => {
+    if (!form.tiene_usado) return null
+    if (isNaN(usadoKmNum) || !(usadoValorNum > 0) || isNaN(usadoAnioNum)) return null
+    return calcularUsado({
+      baseInfoauto: usadoValorNum,
+      km:           usadoKmNum,
+      anio:         usadoAnioNum,
+      uso:          form.usadoUso,
+      provincia:    form.provincia,
+    })
+  }, [form.tiene_usado, usadoKmNum, usadoValorNum, usadoAnioNum, form.usadoUso, form.provincia])
 
   const canSubmit =
     !!form.nombre.trim() &&
@@ -460,7 +487,8 @@ export function NewLeadDialog({
                 </label>
               </div>
 
-              {/* Auto usado — marca y año al crear; km/uso/InfoAuto se completan desde la ficha */}
+              {/* Auto usado — marca y año obligatorios; km/uso/InfoAuto opcionales.
+                  Si se completan km + valor, la cotización se calcula al crear. */}
               {form.tiene_usado && (
                 <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
@@ -494,10 +522,71 @@ export function NewLeadDialog({
                         max={new Date().getFullYear() + 1}
                       />
                     </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Kilometraje</Label>
+                      <Input
+                        type="number"
+                        placeholder="Ej: 65000"
+                        className="h-8 text-sm bg-white"
+                        value={form.usadoKm}
+                        onChange={(e) => set('usadoKm', e.target.value)}
+                      />
+                    </div>
+                    <div className="col-span-2 space-y-1.5">
+                      <Label className="text-xs">Tipo de uso</Label>
+                      <Select value={form.usadoUso} onValueChange={(v) => set('usadoUso', v as UsoVehiculo)}>
+                        <SelectTrigger className="h-8 text-sm bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="particular">Particular</SelectItem>
+                          <SelectItem value="taxi_uber_transporte">Taxi / Uber / Transporte</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-2 space-y-1.5">
+                      <Label className="text-xs">Valor InfoAuto</Label>
+                      <Input
+                        type="number"
+                        placeholder="Ej: 8500000"
+                        className="h-8 text-sm bg-white"
+                        value={form.usadoValor}
+                        onChange={(e) => set('usadoValor', e.target.value)}
+                      />
+                    </div>
                   </div>
-                  <p className="text-[11px] text-amber-700/70">
-                    Km y valor InfoAuto se completan desde la ficha del lead.
-                  </p>
+
+                  {usadoPreview ? (
+                    <div className={`rounded-lg border px-3 py-2 ${
+                      usadoPreview.rechazado
+                        ? 'bg-rose-50 border-rose-200/60'
+                        : 'bg-emerald-50 border-emerald-200/60'
+                    }`}>
+                      {usadoPreview.rechazado ? (
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="size-3.5 text-rose-600 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-xs font-semibold text-rose-800">Se cargará como RECHAZADO</p>
+                            <p className="text-[11px] text-rose-700/70">{usadoPreview.rechazoMotivo}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="size-3.5 text-emerald-600 shrink-0" />
+                          <p className="text-xs text-emerald-800">
+                            Se cotizará automáticamente:{' '}
+                            <span className="font-semibold">{formatCurrencyARS(usadoPreview.valorCalculado.toString())}</span>
+                            <span className="text-emerald-700/70"> (−{usadoPreview.descuentoPct}%)</span>
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="flex items-center gap-1 text-[11px] text-amber-700/70">
+                      <Calculator className="size-3" />
+                      Cargá km y valor InfoAuto para cotizar al instante, o completalo después desde la ficha.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

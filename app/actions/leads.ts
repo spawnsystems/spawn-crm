@@ -11,6 +11,7 @@ import {
   pendingCallAtSql, openApptAtSql, openApptTipoSql, usadoValorSql, usadoRechazadoSql, usadoMarcaSql, ventaAtSql, creatorNombreSql,
 } from '@/lib/leads/server-helpers'
 import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATUSES } from '@/lib/leads/constants'
+import { calcularUsado } from '@/lib/cotizador/calc'
 import { getCurrentUserTeamScope, buildScopeWhere } from '@/lib/tenant/teams'
 import { z } from 'zod'
 import { serializeHorarios } from '@/lib/leads/horarios'
@@ -144,6 +145,9 @@ export async function createLead(
     tiene_usado:         data.tiene_usado ?? false,
     usado_marca:         data.tiene_usado ? (data.usado?.marca_modelo ?? null) : null,
     usado_anio:          data.tiene_usado ? (data.usado?.anio ?? null) : null,
+    usado_km:            data.tiene_usado ? (data.usado?.km ?? null) : null,
+    usado_uso:           data.tiene_usado ? (data.usado?.uso ?? null) : null,
+    usado_valor_infoauto: data.tiene_usado ? (data.usado?.base_infoauto?.toString() ?? null) : null,
     observaciones:       data.observaciones ?? null,
     est_value:           data.est_value?.toString() ?? null,
     next_action:         data.next_action ?? null,
@@ -178,6 +182,71 @@ export async function createLead(
     meta:           { nombre: data.nombre, source: data.source, assigned_to: data.assigned_to ?? null },
     visibleToDueno: true,
   })
+
+  // Auto-cotización: si al crear el lead cargaron lo suficiente del usado
+  // (km + valor InfoAuto; año ya es obligatorio), generamos la cotización en el
+  // acto. Si faltan datos, los parciales quedan en el lead (usado_km/uso/valor)
+  // como borrador y el cotizador se completa desde la ficha.
+  if (
+    data.tiene_usado && data.usado &&
+    data.usado.km != null &&
+    data.usado.base_infoauto != null && data.usado.base_infoauto > 0
+  ) {
+    const uso = data.usado.uso ?? 'particular'
+    const result = calcularUsado({
+      baseInfoauto: data.usado.base_infoauto,
+      km:           data.usado.km,
+      anio:         data.usado.anio,
+      uso,
+      provincia:    data.provincia,
+    })
+
+    const [cot] = await q.insert(schema.cotizaciones).values({
+      tenant_id:       tenantId,
+      lead_id:         row.id,
+      marca_modelo:    data.usado.marca_modelo,
+      anio:            data.usado.anio,
+      km:              data.usado.km,
+      uso,
+      base_infoauto:   data.usado.base_infoauto.toString(),
+      descuento_pct:   result.descuentoPct.toString(),
+      valor_calculado: result.valorCalculado.toString(),
+      override_valor:  null,
+      valor_final:     result.valorCalculado.toString(),
+      rechazado:       result.rechazado,
+      rechazo_motivo:  result.rechazoMotivo ?? null,
+      condiciones:     result.condiciones,
+      created_by:      user.id,
+    }).returning({ id: schema.cotizaciones.id })
+
+    const cotDesc = result.rechazado
+      ? (result.rechazoMotivo ?? 'Usado rechazado')
+      : `${data.usado.marca_modelo} — valor de toma $${result.valorCalculado.toLocaleString('es-AR')}`
+    await appendTimeline(
+      tenantId, row.id, user.id,
+      'cotizacion_created',
+      result.rechazado ? 'Usado cotizado — rechazado' : 'Usado cotizado',
+      cotDesc,
+    )
+
+    void logAudit({
+      tenantId,
+      actorId:        user.id,
+      action:         'cotizacion.create',
+      entity:         'cotizacion',
+      entityId:       cot.id,
+      meta: {
+        lead_id:      row.id,
+        marca_modelo: data.usado.marca_modelo,
+        anio:         data.usado.anio,
+        km:           data.usado.km,
+        uso,
+        valor_final:  result.valorCalculado,
+        rechazado:    result.rechazado,
+      },
+      visibleToDueno: true,
+    })
+  }
 
   revalidatePath('/leads')
   revalidatePath('/dashboard')
@@ -930,6 +999,9 @@ export async function getAllLeads() {
     tiene_usado:           schema.leads.tiene_usado,
     usado_marca:           schema.leads.usado_marca,
     usado_anio:            schema.leads.usado_anio,
+    usado_km:              schema.leads.usado_km,
+    usado_uso:             schema.leads.usado_uso,
+    usado_valor_infoauto:  schema.leads.usado_valor_infoauto,
     observaciones:         schema.leads.observaciones,
     status:                schema.leads.status,
     next_action:           schema.leads.next_action,
