@@ -393,6 +393,46 @@ export function DashboardView({
         )}
       </Card>
 
+      {/* Salud de la cartera — dos lentes independientes (alcance + momentum) */}
+      {(attention.sinContactar > 0 || attention.colgados > 0) && (
+        <Card className="p-6">
+          <h3 className="font-semibold mb-1">Salud de la cartera</h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            Dos problemas distintos: a cuántos leads no logramos llegar, y cuántos quedaron sin próximo paso.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Alcance */}
+            <div className={cn('rounded-lg border p-4',
+              attention.sinContactarVencido > 0 ? 'border-destructive/20 bg-destructive-soft/30' : 'border-border')}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Sin contactar</span>
+                <AlertTriangle className={cn('size-4', attention.sinContactarVencido > 0 ? 'text-destructive' : 'text-muted-foreground')} />
+              </div>
+              <div className="mt-2 text-3xl font-semibold tracking-tight">{attention.sinContactar}</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                leads que aún no se lograron contactar
+                {attention.sinContactarVencido > 0 && (
+                  <> · <span className="font-medium text-destructive">{attention.sinContactarVencido} pasaron el plazo</span></>
+                )}
+              </p>
+            </div>
+
+            {/* Momentum */}
+            <div className={cn('rounded-lg border p-4',
+              attention.colgados > 0 ? 'border-amber-200/70 bg-amber-50' : 'border-border')}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Colgados</span>
+                <AlertOctagon className={cn('size-4', attention.colgados > 0 ? 'text-amber-600' : 'text-muted-foreground')} />
+              </div>
+              <div className="mt-2 text-3xl font-semibold tracking-tight">{attention.colgados}</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                ya contactados pero sin próximo paso agendado
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Panel de atención — leads colgados o con acción vencida */}
       {attention.total > 0 && (
         <Card className="p-6">

@@ -22,8 +22,8 @@ import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appo
 
 type Vendedor = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 
-type FilterTab = 'Todos' | 'Sin contactar' | 'En seguimiento' | 'Requieren atención'
-const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'En seguimiento', 'Requieren atención']
+type FilterTab = 'Todos' | 'Sin contactar' | 'Colgados' | 'Requieren atención'
+const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'Colgados', 'Requieren atención']
 
 // Lead enriquecido con los campos de atención que devuelve getMyLeads.
 type MyLead = Awaited<ReturnType<typeof getMyLeads>>[number]
@@ -68,10 +68,14 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
 
   const activeLeads = leads.filter((l) => !isBaja(l.status) && l.status !== 'VENTA')
   const atRiskCount = leads.filter((l) => l.at_risk).length
-  // "Sin contactar" usa el motor de atención (respeta el umbral de primer
-  // contacto y los compromisos futuros), NO el crudo !last_contact_at: un lead
-  // recién creado o con una llamada/cita agendada NO debe contar acá.
-  const sinContactarCount = leads.filter((l) => l.attention_type === 'sin_contactar').length
+  // Dos lentes independientes (ver lib/leads/attention.ts):
+  //   sin contactar = alcance: nunca se logró un contacto efectivo.
+  //   colgado       = momentum: ya contactado pero sin próximo paso agendado.
+  const sinContactarCount   = leads.filter((l) => l.sin_contactar).length
+  // Subconjunto urgente de "sin contactar": pasó el plazo de 1er contacto y
+  // no tiene reintento agendado (lo marca el motor como attention_type).
+  const sinContactarVencido = leads.filter((l) => l.attention_type === 'sin_contactar').length
+  const colgadoCount        = leads.filter((l) => l.colgado).length
   const closedMonth = leads.filter((l) => l.status === 'VENTA').length
   const closeRate   = leads.length > 0 ? Math.round((closedMonth / leads.length) * 100) : 0
 
@@ -81,10 +85,10 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
       const esActivo = !isBaja(l.status) && l.status !== 'VENTA'
       if (!esActivo) return false
       switch (filter) {
-        case 'Sin contactar':     return l.attention_type === 'sin_contactar'
-        case 'En seguimiento':    return ['GESTION', 'HORARIO ASIGNADO', 'ENTREVISTA PACTADA', 'CIERRE'].includes(l.status)
+        case 'Sin contactar':      return l.sin_contactar
+        case 'Colgados':           return l.colgado
         case 'Requieren atención': return l.at_risk
-        default:               return true
+        default:                   return true
       }
     })
 
@@ -133,15 +137,17 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
           icon={<AlertTriangle className="size-4 text-destructive" />}
           label="Sin contactar"
           value={sinContactarCount.toString()}
-          sub="pasaron el plazo de 1er contacto"
-          accent={sinContactarCount > 0 ? 'destructive' : undefined}
+          sub={sinContactarVencido > 0
+            ? `${sinContactarVencido} pasaron el plazo de 1er contacto`
+            : 'todos en plazo o con reintento'}
+          accent={sinContactarVencido > 0 ? 'destructive' : undefined}
         />
         <KpiCard
           icon={<Clock className="size-4 text-destructive" />}
-          label="Requieren atención"
-          value={atRiskCount.toString()}
-          sub="colgados o con acción vencida"
-          accent={atRiskCount > 0 ? 'destructive' : undefined}
+          label="Colgados"
+          value={colgadoCount.toString()}
+          sub="contactados, sin próximo paso"
+          accent={colgadoCount > 0 ? 'destructive' : undefined}
         />
         <KpiCard
           icon={<Target className="size-4 text-primary" />}

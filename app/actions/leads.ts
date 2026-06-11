@@ -1056,6 +1056,11 @@ export async function getAllLeads() {
 
 export interface AttentionSummary {
   total:    number
+  /** Lente alcance: leads activos nunca contactados (con su subconjunto vencido). */
+  sinContactar:        number
+  sinContactarVencido: number
+  /** Lente momentum: leads activos contactados pero sin próximo paso ("colgados"). */
+  colgados:            number
   byType:   { type: AttentionType; label: string; severity: AttentionSeverity; count: number }[]
   bySeller: { name: string; count: number; alta: number }[]
 }
@@ -1063,6 +1068,10 @@ export interface AttentionSummary {
 export async function getAttentionSummary(): Promise<AttentionSummary> {
   const leads = await getAllLeads()
   const flagged = leads.filter((l) => l.at_risk && l.attention_type)
+
+  const sinContactar        = leads.filter((l) => l.sin_contactar).length
+  const sinContactarVencido = leads.filter((l) => l.attention_type === 'sin_contactar').length
+  const colgados            = leads.filter((l) => l.colgado).length
 
   // Conteo por tipo
   const typeCount = new Map<AttentionType, number>()
@@ -1090,7 +1099,7 @@ export async function getAttentionSummary(): Promise<AttentionSummary> {
     .map(([name, v]) => ({ name, count: v.count, alta: v.alta }))
     .sort((a, b) => b.count - a.count)
 
-  return { total: flagged.length, byType, bySeller }
+  return { total: flagged.length, sinContactar, sinContactarVencido, colgados, byType, bySeller }
 }
 
 // ── getAbandonedLeads ─────────────────────────────────────────

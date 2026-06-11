@@ -44,6 +44,11 @@ export interface AttentionFields {
   attention_severity: AttentionSeverity | null
   attention_reason:   string | null
   attention_detail:   string | null
+  // ── Dos lentes independientes (un lead puede estar en una, ambas o ninguna) ──
+  /** Alcance: lead activo del que TODAVÍA no se logró un contacto efectivo. */
+  sin_contactar:      boolean
+  /** Momentum: lead activo YA contactado pero sin próximo paso agendado ("colgado"). */
+  colgado:            boolean
 }
 
 /** Labels legibles por tipo (para filtros, leyendas, paneles). */
@@ -190,6 +195,16 @@ export function attachAttention<T extends AttentionInput>(
   now?: number,
 ): T & AttentionFields {
   const a = computeAttention(lead, cfg, now)
+  const n = now ?? Date.now()
+
+  // Dos lentes independientes del "requiere atención" (que es el paraguas):
+  const activo   = !(lead.status === 'VENTA' || isBaja(lead.status))
+  const contacto = toMs(lead.last_contact_at)
+  const callAt   = toMs(lead.pending_call_at)
+  const apptAt   = toMs(lead.open_appt_at)
+  const tieneFuturo =
+    (callAt !== null && callAt >= n) || (apptAt !== null && apptAt >= n)
+
   return {
     ...lead,
     at_risk:            a.needsAttention,
@@ -197,5 +212,9 @@ export function attachAttention<T extends AttentionInput>(
     attention_severity: a.severity,
     attention_reason:   a.reason,
     attention_detail:   a.detail,
+    // Alcance: activo y nunca contactado efectivamente.
+    sin_contactar:      activo && contacto === null,
+    // Momentum: activo, ya contactado, pero sin llamada/cita a futuro.
+    colgado:            activo && contacto !== null && !tieneFuturo,
   }
 }
