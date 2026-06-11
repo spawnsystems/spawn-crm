@@ -353,7 +353,7 @@ export async function resetMemberPassword(
   })
   if (error) {
     console.error('[resetMemberPassword]', error)
-    return { success: false, error: 'No se pudo enviar el email. Puede ser el límite de envíos de Supabase; probá más tarde.' }
+    return { success: false, error: 'No se pudo enviar el email por el momento. Puede ser un límite de envíos; probá más tarde.' }
   }
 
   void logAudit({
