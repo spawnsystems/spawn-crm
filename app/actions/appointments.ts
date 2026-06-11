@@ -705,9 +705,13 @@ export async function resolveAppointment(
     openVenta = true
 
   } else if (outcome === 'no_prospero') {
-    // La entrevista se hizo (cuenta como contacto) pero no prosperó; la baja
-    // con motivo la registra el diálogo del cliente. No tocamos el estado acá.
+    // La entrevista se hizo (cuenta como contacto) pero no prosperó. Volvemos el
+    // lead a GESTIÓN (seguimiento activo): el diálogo del cliente abre "Dar de
+    // baja" para registrar el motivo. Si el vendedor COMPLETA la baja, ésta
+    // sobrescribe el estado al terminal; si la CANCELA, el lead queda en un
+    // estado limpio y trabajable (no colgado en ENTREVISTA PACTADA sin cita).
     await q.update(schema.leads).set({
+      status:                'GESTION',
       last_contact_at:       new Date(),
       last_contact_critical: false,
       at_risk:               false,
