@@ -35,6 +35,7 @@ export const leads = pgTable('leads', {
   provincia:            text('provincia'),
   horario_preferencia:  text('horario_preferencia'),
   tiene_usado:          boolean('tiene_usado').default(false).notNull(),
+  usado_marca:          text('usado_marca'),           // marca anotada al crear (antes de cotizar)
   observaciones:        text('observaciones'),
 
   // Estado y pipeline

@@ -34,6 +34,7 @@ interface CotizadorDialogProps {
   leadNombre?:   string
   provincia?:    string
   editing?:      EditingCotizacion | null
+  initialMarca?: string   // pre-población cuando se crea la primera cotización
   onCreated?:    () => void
 }
 
@@ -48,7 +49,7 @@ const EMPTY = {
 }
 
 export function CotizadorDialog({
-  open, onOpenChange, leadId, leadNombre, provincia, editing, onCreated,
+  open, onOpenChange, leadId, leadNombre, provincia, editing, initialMarca, onCreated,
 }: CotizadorDialogProps) {
   const [form,      setForm]      = useState(EMPTY)
   const [isPending, startTransition] = useTransition()
@@ -59,7 +60,8 @@ export function CotizadorDialog({
 
   function reset() { setForm(EMPTY) }
 
-  // Al abrir: si es edición, precargar los datos de la cotización; si no, limpiar.
+  // Al abrir: si es edición, precargar los datos de la cotización; si no, limpiar
+  // (pero pre-poblar marca si viene de un lead con auto anotado al crear).
   useEffect(() => {
     if (!open) return
     if (editing) {
@@ -71,9 +73,9 @@ export function CotizadorDialog({
         base_infoauto: editing.base_infoauto != null ? String(Math.round(Number(editing.base_infoauto))) : '',
       })
     } else {
-      setForm(EMPTY)
+      setForm({ ...EMPTY, marca_modelo: initialMarca ?? '' })
     }
-  }, [open, editing])
+  }, [open, editing, initialMarca])
 
   // ── Preview en vivo ───────────────────────────────────────────
   const preview = useMemo(() => {

@@ -650,6 +650,8 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               {/* UsadoCard SIEMPRE visible — si no hay usado muestra botón de agregar */}
               <UsadoCard
                 cotizaciones={cotizaciones}
+                tieneUsado={lead?.tiene_usado ?? false}
+                usadoMarca={lead?.usado_marca ?? null}
                 readOnly={readOnly}
                 onNew={() => { setEditingCotizacion(null); setShowCotizador(true) }}
                 onEdit={(c) => { setEditingCotizacion(c); setShowCotizador(true) }}
@@ -1053,6 +1055,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               leadNombre={lead.nombre}
               provincia={lead.provincia ?? undefined}
               editing={editingCotizacion}
+              initialMarca={!editingCotizacion ? (lead.usado_marca ?? undefined) : undefined}
               onCreated={() => {
                 setShowCotizador(false)
                 setEditingCotizacion(null)
@@ -1143,39 +1146,52 @@ function Section({ icon, title, children }: {
 // Botón "+" en header agrega una para otro auto.
 
 function UsadoCard({
-  cotizaciones, onNew, onEdit, readOnly = false,
+  cotizaciones, tieneUsado, usadoMarca, onNew, onEdit, readOnly = false,
 }: {
   cotizaciones: NonNullable<DetailData>['cotizaciones']
+  tieneUsado:   boolean
+  usadoMarca:   string | null
   onNew:        () => void
   onEdit:       (c: EditingCotizacion) => void
   readOnly?:    boolean
 }) {
   const isEmpty = cotizaciones.length === 0
+  // Tiene auto anotado pero sin cotización completa todavía
+  const pendienteCotizar = isEmpty && tieneUsado
 
   return (
     <div className={cn(
       'rounded-xl border px-4 py-3 h-full',
-      isEmpty ? 'bg-muted/30 border-dashed border-border' : 'bg-amber-50 border-amber-200/60',
+      isEmpty && !tieneUsado
+        ? 'bg-muted/30 border-dashed border-border'
+        : isEmpty
+        ? 'bg-amber-50/40 border-amber-200/60 border-dashed'
+        : 'bg-amber-50 border-amber-200/60',
     )}>
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-2">
         <div className="flex items-center gap-1.5">
-          <Car className={cn('size-4 shrink-0', isEmpty ? 'text-muted-foreground' : 'text-amber-700')} />
-          <span className={cn('text-sm font-semibold', isEmpty ? 'text-muted-foreground' : 'text-amber-800')}>
+          <Car className={cn('size-4 shrink-0', isEmpty && !tieneUsado ? 'text-muted-foreground' : 'text-amber-700')} />
+          <span className={cn('text-sm font-semibold', isEmpty && !tieneUsado ? 'text-muted-foreground' : 'text-amber-800')}>
             Usado en parte de pago
           </span>
         </div>
 
         {readOnly ? null : isEmpty ? (
-          /* Sin cotizaciones → botón para iniciar */
+          /* Sin cotizaciones → botón para iniciar (o completar) */
           <button
             onClick={onNew}
-            title="Agregar usado"
-            aria-label="Agregar usado"
-            className="shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            title={pendienteCotizar ? 'Completar cotización' : 'Agregar usado'}
+            aria-label={pendienteCotizar ? 'Completar cotización' : 'Agregar usado'}
+            className={cn(
+              'shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors',
+              pendienteCotizar
+                ? 'text-amber-700 bg-amber-100 hover:bg-amber-200'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+            )}
           >
             <Plus className="size-3.5" />
-            Agregar
+            {pendienteCotizar ? 'Cotizar' : 'Agregar'}
           </button>
         ) : (
           /* Con cotizaciones → "+" para otro auto */
@@ -1191,7 +1207,25 @@ function UsadoCard({
         )}
       </div>
 
-      {isEmpty ? (
+      {pendienteCotizar ? (
+        /* Tiene auto anotado pero sin cotización — CTA prominente */
+        <div>
+          {usadoMarca && (
+            <p className="text-sm font-medium text-amber-800 mb-1">{usadoMarca}</p>
+          )}
+          <p className="text-xs text-amber-700/80">
+            Falta año, km y valor InfoAuto para calcular el precio de toma.
+          </p>
+          {!readOnly && (
+            <button
+              onClick={onNew}
+              className="mt-2 text-xs font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-900 transition-colors"
+            >
+              Completar cotización →
+            </button>
+          )}
+        </div>
+      ) : isEmpty ? (
         <p className="text-xs text-muted-foreground/70">
           El cliente no tiene un usado por ahora. Si lo consigue, podés cotizarlo acá.
         </p>

@@ -14,7 +14,6 @@ import { statusChangeLabel, statusLabel, isBaja, RESCATABLE_STATUSES, BAJA_STATU
 import { getCurrentUserTeamScope, buildScopeWhere } from '@/lib/tenant/teams'
 import { z } from 'zod'
 import { serializeHorarios } from '@/lib/leads/horarios'
-import { calcularUsado } from '@/lib/cotizador/calc'
 import { activeIndex, terminalBlockReason } from '@/lib/leads/state-machine'
 import { type SlaConfig } from '@/lib/leads/sla'
 import {
@@ -143,6 +142,7 @@ export async function createLead(
     provincia:           data.provincia ?? null,
     horario_preferencia: serializeHorarios(data.horarios ?? []),
     tiene_usado:         data.tiene_usado ?? false,
+    usado_marca:         data.tiene_usado ? (data.usado?.marca_modelo ?? null) : null,
     observaciones:       data.observaciones ?? null,
     est_value:           data.est_value?.toString() ?? null,
     next_action:         data.next_action ?? null,
@@ -161,61 +161,6 @@ export async function createLead(
       .insert(schema.leadSourcesCustom)
       .values({ tenant_id: tenantId, nombre: data.source_custom.trim() })
       .onConflictDoNothing()
-  }
-
-  // Si tiene usado y se cargaron los datos, crear la cotización ya asociada al lead.
-  if (data.tiene_usado && data.usado) {
-    const u = data.usado
-    const result = calcularUsado({
-      baseInfoauto: u.base_infoauto,
-      km:           u.km,
-      anio:         u.anio,
-      uso:          u.uso,
-      provincia:    data.provincia ?? undefined,
-    })
-    const [cotRow] = await dbAdmin.insert(schema.cotizaciones).values({
-      tenant_id:       tenantId,
-      lead_id:         row.id,
-      marca_modelo:    u.marca_modelo ?? null,
-      anio:            u.anio,
-      km:              u.km,
-      uso:             u.uso,
-      base_infoauto:   u.base_infoauto.toString(),
-      descuento_pct:   result.descuentoPct.toString(),
-      valor_calculado: result.valorCalculado.toString(),
-      override_valor:  null,
-      valor_final:     result.valorCalculado.toString(),
-      rechazado:       result.rechazado,
-      rechazo_motivo:  result.rechazoMotivo ?? null,
-      condiciones:     result.condiciones,
-      created_by:      user.id,
-    }).returning({ id: schema.cotizaciones.id })
-    await appendTimeline(
-      tenantId, row.id, user.id,
-      'cotizacion_created',
-      result.rechazado ? 'Usado cotizado — rechazado' : 'Usado cotizado',
-      result.rechazado
-        ? (result.rechazoMotivo ?? undefined)
-        : `Valor de toma estimado: $${result.valorCalculado.toLocaleString('es-AR')}`,
-    )
-    void logAudit({
-      tenantId,
-      actorId:        user.id,
-      action:         'cotizacion.create',
-      entity:         'cotizacion',
-      entityId:       cotRow.id,
-      meta: {
-        lead_id:      row.id,
-        marca_modelo: u.marca_modelo,
-        anio:         u.anio,
-        km:           u.km,
-        uso:          u.uso,
-        valor_final:  result.valorCalculado,
-        rechazado:    result.rechazado,
-        origen:       'alta_lead',
-      },
-      visibleToDueno: true,
-    })
   }
 
   const assignedName = effectiveAssignedTo ? await getVendedorName(effectiveAssignedTo) : null
@@ -982,6 +927,7 @@ export async function getAllLeads() {
     provincia:             schema.leads.provincia,
     horario_preferencia:   schema.leads.horario_preferencia,
     tiene_usado:           schema.leads.tiene_usado,
+    usado_marca:           schema.leads.usado_marca,
     observaciones:         schema.leads.observaciones,
     status:                schema.leads.status,
     next_action:           schema.leads.next_action,

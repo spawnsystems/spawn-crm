@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo, useEffect } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import {
@@ -15,16 +15,15 @@ import {
   SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  UserCircle, Loader2, Car, Plus, X, Clock, Calculator, AlertTriangle, CheckCircle2,
+  UserCircle, Loader2, Car, Plus, X, Clock,
 } from 'lucide-react'
 import { createLead } from '@/app/actions/leads'
 import { getAsignablesParaLead } from '@/app/actions/users'
 import { leadSourceValues } from '@/lib/schemas/leads'
-import { getInitials, formatCurrencyARS } from '@/lib/utils'
+import { getInitials } from '@/lib/utils'
 import { useCurrentUser } from '@/lib/tenant/context'
 import { PROVINCIAS_AR, PROVINCIA_DEFAULT } from '@/lib/ar/provincias'
 import { type HorarioRange, HORARIO_DAYS } from '@/lib/leads/horarios'
-import { calcularUsado, type UsoVehiculo } from '@/lib/cotizador/calc'
 
 const emailSchema = z.string().email('Ingresá un email válido')
 
@@ -33,7 +32,6 @@ const SIN_MODELO   = '__sin_definir__'   // el lead todavía no tiene un modelo 
 const OTRO_SOURCE  = '__otro__'
 const CUSTOM_PREFIX = '__custom__:'
 
-const YEAR_NOW = new Date().getFullYear()
 
 interface Vendedor {
   user_id: string
@@ -67,9 +65,8 @@ const EMPTY = {
   localidad: '', provincia: PROVINCIA_DEFAULT as string,
   horarios: [] as HorarioRange[],
   tiene_usado: false, observaciones: '', assign: '',
-  // Usado en parte de pago (cotizador inline)
-  usadoMarca: '', usadoAnio: String(YEAR_NOW - 2),
-  usadoKm: '', usadoUso: 'particular' as UsoVehiculo, usadoBase: '',
+  // Marca del auto usado — el resto se cotiza desde la ficha del lead
+  usadoMarca: '',
 }
 
 export function NewLeadDialog({
@@ -130,27 +127,6 @@ export function NewLeadDialog({
     setForm((f) => ({ ...f, horarios: f.horarios.filter((_, idx) => idx !== i) }))
   }
 
-  // ── Preview del usado (valor de toma en vivo) ─────────────────
-  const usadoNums = useMemo(() => {
-    const base = parseFloat(form.usadoBase.replace(/\./g, '').replace(',', '.'))
-    const km   = parseInt(form.usadoKm.replace(/\./g, ''), 10)
-    const anio = parseInt(form.usadoAnio, 10)
-    return { base, km, anio }
-  }, [form.usadoBase, form.usadoKm, form.usadoAnio])
-
-  const usadoComplete = !!usadoNums.base && usadoNums.base > 0 && !isNaN(usadoNums.km) && !isNaN(usadoNums.anio)
-
-  const usadoPreview = useMemo(() => {
-    if (!form.tiene_usado || !usadoComplete) return null
-    return calcularUsado({
-      baseInfoauto: usadoNums.base,
-      km:           usadoNums.km,
-      anio:         usadoNums.anio,
-      uso:          form.usadoUso,
-      provincia:    form.provincia,
-    })
-  }, [form.tiene_usado, usadoComplete, usadoNums, form.usadoUso, form.provincia])
-
   function validateEmail(value: string): string | null {
     if (!value.trim()) return null
     const r = emailSchema.safeParse(value.trim())
@@ -187,15 +163,9 @@ export function NewLeadDialog({
     // Rangos válidos (ambos extremos cargados)
     const horariosValidos = form.horarios.filter((r) => r.from && r.to)
 
-    // Usado: si está activo y los datos mínimos están, mandamos la cotización inline
-    const usadoPayload = form.tiene_usado && usadoComplete
-      ? {
-          marca_modelo:  form.usadoMarca.trim() || undefined,
-          anio:          usadoNums.anio,
-          km:            usadoNums.km,
-          uso:           form.usadoUso,
-          base_infoauto: usadoNums.base,
-        }
+    // Usado: si está activo, enviar solo la marca (el resto se cotiza desde la ficha)
+    const usadoPayload = form.tiene_usado && form.usadoMarca.trim()
+      ? { marca_modelo: form.usadoMarca.trim() }
       : undefined
 
     // Parsear el destino de asignación.
@@ -249,6 +219,9 @@ export function NewLeadDialog({
   // el lead podría quedar sin visibilidad para ellos. Supervisor/vendedor no.
   const assignOk = isVendedor || !multiTeam || form.assign !== ''
 
+  // Si tiene_usado activo, la marca es obligatoria
+  const usadoOk = !form.tiene_usado || form.usadoMarca.trim().length >= 1
+
   const canSubmit =
     !!form.nombre.trim() &&
     form.telefono.trim().length >= 6 &&
@@ -257,6 +230,7 @@ export function NewLeadDialog({
     modeloOk &&
     sourceOk &&
     assignOk &&
+    usadoOk &&
     !emailError &&
     !isPending
 
@@ -482,91 +456,27 @@ export function NewLeadDialog({
                 </label>
               </div>
 
-              {/* Cotizador del usado — aparece inline al activar el switch */}
+              {/* Auto usado — solo la marca al crear; el resto se cotiza desde la ficha */}
               {form.tiene_usado && (
-                <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-3">
+                <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800">
-                    <Calculator className="size-3.5" />
-                    Cotización del usado
-                    <span className="font-normal text-amber-700/70">— se calcula con reglas InfoAuto</span>
+                    <Car className="size-3.5" />
+                    Auto en parte de pago
                   </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="col-span-2 space-y-1.5">
-                      <Label className="text-xs">Marca y modelo</Label>
-                      <Input
-                        placeholder="Ej: Toyota Corolla"
-                        className="h-8 text-sm bg-white"
-                        value={form.usadoMarca}
-                        onChange={(e) => set('usadoMarca', e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Año</Label>
-                      <Input
-                        type="number" className="h-8 text-sm bg-white"
-                        placeholder={String(YEAR_NOW - 2)}
-                        value={form.usadoAnio}
-                        onChange={(e) => set('usadoAnio', e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Kilometraje</Label>
-                      <Input
-                        type="number" className="h-8 text-sm bg-white"
-                        placeholder="Ej: 65000"
-                        value={form.usadoKm}
-                        onChange={(e) => set('usadoKm', e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Tipo de uso</Label>
-                      <Select value={form.usadoUso} onValueChange={(v) => set('usadoUso', v as UsoVehiculo)}>
-                        <SelectTrigger className="h-8 text-sm bg-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="particular">Particular</SelectItem>
-                          <SelectItem value="taxi_uber_transporte">Taxi / Uber / Transporte</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Valor InfoAuto</Label>
-                      <Input
-                        type="number" className="h-8 text-sm bg-white"
-                        placeholder="Ej: 8500000"
-                        value={form.usadoBase}
-                        onChange={(e) => set('usadoBase', e.target.value)}
-                      />
-                    </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">
+                      Marca y modelo <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      placeholder="Ej: Toyota Corolla"
+                      className="h-8 text-sm bg-white"
+                      value={form.usadoMarca}
+                      onChange={(e) => set('usadoMarca', e.target.value)}
+                      autoFocus
+                    />
                   </div>
-
-                  {/* Preview en vivo del valor de toma */}
-                  {usadoPreview && (
-                    usadoPreview.rechazado ? (
-                      <div className="flex items-start gap-2 rounded-lg bg-rose-50 border border-rose-200/60 px-3 py-2">
-                        <AlertTriangle className="size-4 text-rose-600 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-sm font-semibold text-rose-800">Auto rechazado</p>
-                          <p className="text-xs text-rose-700/70 mt-0.5">{usadoPreview.rechazoMotivo}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 border border-emerald-200/60 px-3 py-2">
-                        <div className="flex items-center gap-1.5">
-                          <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
-                          <span className="text-xs text-emerald-800">Valor de toma (−{usadoPreview.descuentoPct}%)</span>
-                        </div>
-                        <span className="text-sm font-semibold text-emerald-700">
-                          {formatCurrencyARS(usadoPreview.valorCalculado.toString())}
-                        </span>
-                      </div>
-                    )
-                  )}
-
                   <p className="text-[11px] text-amber-700/70">
-                    Podés dejarlo vacío y cotizar más tarde desde la ficha del lead.
+                    El año, km y valor InfoAuto se completan desde la ficha del lead.
                   </p>
                 </div>
               )}
