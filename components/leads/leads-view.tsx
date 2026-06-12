@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/status-badge'
 import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
 import { NewLeadDialog } from '@/components/leads/new-lead-dialog'
@@ -12,7 +13,7 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
   AlertTriangle, MessageCircle, Phone, ChevronRight, Clock, Target, Plus,
-  ArrowUp, ArrowDown, CalendarCheck, PhoneCall, Car,
+  ArrowUp, ArrowDown, CalendarCheck, PhoneCall, Car, Search,
 } from 'lucide-react'
 import type { Lead } from '@/lib/db'
 import { getVendedoresDelTenant } from '@/app/actions/users'
@@ -22,8 +23,8 @@ import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appo
 
 type Vendedor = Awaited<ReturnType<typeof getVendedoresDelTenant>>[number]
 
-type FilterTab = 'Todos' | 'Sin contactar' | 'Colgados' | 'Requieren atención'
-const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'Colgados', 'Requieren atención']
+type FilterTab = 'Todos' | 'Sin contactar' | 'Colgados' | 'Requieren atención' | 'En gestión'
+const FILTERS: FilterTab[] = ['Todos', 'Sin contactar', 'Colgados', 'Requieren atención', 'En gestión']
 
 // Lead enriquecido con los campos de atención que devuelve getMyLeads.
 type MyLead = Awaited<ReturnType<typeof getMyLeads>>[number]
@@ -43,6 +44,7 @@ interface LeadsViewProps {
 
 export function LeadsView({ initialLeads, vendedores, modelos, customSources = [], canCreate }: LeadsViewProps) {
   const [leads,       setLeads]       = useState<MyLead[]>(initialLeads)
+  const [search,      setSearch]      = useState('')
   const [filter,      setFilter]      = useState<FilterTab>('Todos')
   const [openLeadId,  setOpenLeadId]  = useState<string | null>(null)
   const [showNewLead, setShowNewLead] = useState(false)
@@ -76,18 +78,36 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
   // no tiene reintento agendado (lo marca el motor como attention_type).
   const sinContactarVencido = leads.filter((l) => l.attention_type === 'sin_contactar').length
   const colgadoCount        = leads.filter((l) => l.colgado).length
+  const gestionCount        = leads.filter((l) => l.status === 'GESTION').length
   const closedMonth = leads.filter((l) => l.status === 'VENTA').length
   const closeRate   = leads.length > 0 ? Math.round((closedMonth / leads.length) * 100) : 0
 
   const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
     const base = leads.filter((l) => {
       // Mis Leads siempre muestra solo activos — bajas y ventas van a /historial
       const esActivo = !isBaja(l.status) && l.status !== 'VENTA'
       if (!esActivo) return false
+
+      // Buscador: nombre, modelo, origen, contacto y ubicación
+      if (q) {
+        const matches =
+          l.nombre.toLowerCase().includes(q) ||
+          (l.modelo ?? '').toLowerCase().includes(q) ||
+          sourceLabel(l.source, l.source_custom).toLowerCase().includes(q) ||
+          (l.telefono ?? '').includes(q) ||
+          (l.email ?? '').toLowerCase().includes(q) ||
+          (l.localidad ?? '').toLowerCase().includes(q) ||
+          (l.provincia ?? '').toLowerCase().includes(q) ||
+          (l.usado_marca ?? '').toLowerCase().includes(q)
+        if (!matches) return false
+      }
+
       switch (filter) {
         case 'Sin contactar':      return l.sin_contactar
         case 'Colgados':           return l.colgado
         case 'Requieren atención': return l.at_risk
+        case 'En gestión':         return l.status === 'GESTION'
         default:                   return true
       }
     })
@@ -106,10 +126,10 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
       const cmp = aTime - bTime
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [leads, filter, sortKey, sortDir])
+  }, [leads, search, filter, sortKey, sortDir])
 
-  // Reset a página 1 cuando cambia filtro o sort
-  useEffect(() => { setPage(1) }, [filter, sortKey, sortDir])
+  // Reset a página 1 cuando cambia búsqueda, filtro o sort
+  useEffect(() => { setPage(1) }, [search, filter, sortKey, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -157,6 +177,17 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
         />
       </div>
 
+      {/* Search bar */}
+      <div className="relative max-w-sm mb-4">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+        <Input
+          placeholder="Buscar nombre, modelo, teléfono, email..."
+          className="pl-8 h-9 text-sm"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       {/* Filter tabs + sort controls */}
       <div className="flex items-center justify-between border-b border-border mb-5">
         <div className="flex items-center gap-1.5">
@@ -175,6 +206,11 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
               {f === 'Requieren atención' && atRiskCount > 0 && (
                 <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
                   {atRiskCount}
+                </span>
+              )}
+              {f === 'En gestión' && gestionCount > 0 && (
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold text-muted-foreground">
+                  {gestionCount}
                 </span>
               )}
             </button>
@@ -205,7 +241,9 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
         ))}
         {filtered.length === 0 && (
           <div className="py-12 text-center text-sm text-muted-foreground">
-            No hay leads en esta categoría.
+            {search.trim()
+              ? `Sin resultados para "${search.trim()}".`
+              : 'No hay leads en esta categoría.'}
           </div>
         )}
       </div>
