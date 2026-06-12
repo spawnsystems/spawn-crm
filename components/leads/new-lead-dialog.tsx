@@ -23,7 +23,7 @@ import { leadSourceValues } from '@/lib/schemas/leads'
 import { calcularUsado, type UsoVehiculo } from '@/lib/cotizador/calc'
 import { getInitials, formatCurrencyARS } from '@/lib/utils'
 import { useCurrentUser } from '@/lib/tenant/context'
-import { PROVINCIAS_AR, PROVINCIA_DEFAULT } from '@/lib/ar/provincias'
+import { PROVINCIAS_AR } from '@/lib/ar/provincias'
 import { type HorarioRange, HORARIO_DAYS } from '@/lib/leads/horarios'
 
 const emailSchema = z.string().email('Ingresá un email válido')
@@ -32,6 +32,7 @@ const OTRO_MODELO  = '__otro__'
 const SIN_MODELO   = '__sin_definir__'   // el lead todavía no tiene un modelo definido
 const OTRO_SOURCE  = '__otro__'
 const CUSTOM_PREFIX = '__custom__:'
+const SIN_PROVINCIA = '__sin_provincia__'  // provincia desconocida al ingresar el lead
 
 
 interface Vendedor {
@@ -63,7 +64,7 @@ interface NewLeadDialogProps {
 const EMPTY = {
   nombre: '', telefono: '', email: '', modelo: '', modeloCustom: '',
   source: '' as string, sourceCustom: '',
-  localidad: '', provincia: PROVINCIA_DEFAULT as string,
+  localidad: '', provincia: '' as string,
   horarios: [] as HorarioRange[],
   tiene_usado: false, observaciones: '', assign: '',
   // Usado: marca y año obligatorios; km/uso/valor InfoAuto opcionales. Si se
@@ -197,8 +198,8 @@ export function NewLeadDialog({
         modelo:              modeloFinal || undefined,
         source:              sourceFinal,
         source_custom:       sourceCustom  || undefined,
-        localidad:           form.localidad,
-        provincia:           form.provincia,
+        localidad:           form.localidad.trim() || undefined,
+        provincia:           form.provincia || undefined,
         horarios:            horariosValidos.length ? horariosValidos : undefined,
         tiene_usado:         form.tiene_usado,
         usado:               usadoPayload,
@@ -256,8 +257,6 @@ export function NewLeadDialog({
   const canSubmit =
     !!form.nombre.trim() &&
     form.telefono.trim().length >= 6 &&
-    form.localidad.trim().length >= 2 &&
-    form.provincia.trim().length >= 2 &&
     modeloOk &&
     sourceOk &&
     assignOk &&
@@ -317,22 +316,28 @@ export function NewLeadDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="nl-localidad">Localidad <span className="text-destructive">*</span></Label>
+                <Label htmlFor="nl-localidad">Localidad</Label>
                 <Input
                   id="nl-localidad"
-                  placeholder="Ej: Mar del Plata"
+                  placeholder="Opcional — si no se sabe, dejalo vacío"
                   value={form.localidad}
                   onChange={(e) => set('localidad', e.target.value)}
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label>Provincia <span className="text-destructive">*</span></Label>
-                <Select value={form.provincia} onValueChange={(v) => set('provincia', v)}>
+                <Label>Provincia</Label>
+                <Select
+                  value={form.provincia || undefined}
+                  onValueChange={(v) => set('provincia', v === SIN_PROVINCIA ? '' : v)}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar provincia..." />
+                    <SelectValue placeholder="Sin especificar" />
                   </SelectTrigger>
                   <SelectContent className="max-h-72">
+                    <SelectItem value={SIN_PROVINCIA}>
+                      <span className="text-muted-foreground">Sin especificar</span>
+                    </SelectItem>
                     {PROVINCIAS_AR.map((p) => (
                       <SelectItem key={p} value={p}>{p}</SelectItem>
                     ))}

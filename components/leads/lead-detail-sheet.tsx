@@ -30,7 +30,7 @@ import {
   UserCircle, Plus, RotateCcw, UserPlus, UserCheck, ArrowRight,
   CalendarCheck, Trophy, LifeBuoy, AlertTriangle, CalendarX,
   ArrowRightLeft, PhoneCall, PhoneIncoming, PhoneOff, MinusCircle, Clock3, ChevronDown, Trash2, Calculator,
-  Video, Building2, Handshake,
+  Video, Building2, Handshake, MapPin,
 } from 'lucide-react'
 import {
   addNote, deleteNote, toggleTask, getLeadDetail,
@@ -44,6 +44,7 @@ import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresParaTraspaso } from '@/app/actions/users'
 import { getActiveModelNames } from '@/app/actions/modelos'
 import { leadSourceValues } from '@/lib/schemas/leads'
+import { PROVINCIAS_AR } from '@/lib/ar/provincias'
 import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appointments'
 import { isBaja } from '@/lib/leads/constants'
 import { useCurrentUser } from '@/lib/tenant/context'
@@ -54,6 +55,7 @@ import { formatHorarios } from '@/lib/leads/horarios'
 // Sentinelas del selector de modelo (igual que en NewLeadDialog)
 const SIN_MODELO  = '__sin_definir__'
 const OTRO_MODELO = '__otro__'
+const SIN_PROVINCIA = '__sin_provincia__'   // provincia desconocida
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -395,6 +397,8 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
         nombre:      editForm.nombre,
         telefono:    editForm.telefono ?? undefined,
         email:       editForm.email    ?? undefined,
+        localidad:   editForm.localidad ?? undefined,
+        provincia:   editForm.provincia ?? undefined,
         source:      editForm.source,
         next_action: editForm.next_action ?? undefined,
         est_value:   parseNumeric(editForm.est_value),
@@ -472,6 +476,11 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                     {lead.email && (
                       <span className="inline-flex items-center gap-1.5">
                         <Mail className="size-3.5" />{lead.email}
+                      </span>
+                    )}
+                    {(lead.localidad || lead.provincia) && (
+                      <span className="inline-flex items-center gap-1.5" title="Ubicación">
+                        <MapPin className="size-3.5" />{[lead.localidad, lead.provincia].filter(Boolean).join(', ')}
                       </span>
                     )}
                     {formatHorarios(lead.horario_preferencia) && (
@@ -690,6 +699,34 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                       onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
                       className="h-8 text-sm"
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Localidad</Label>
+                    <Input
+                      value={editForm.localidad ?? ''}
+                      onChange={(e) => setEditForm((f) => ({ ...f, localidad: e.target.value }))}
+                      placeholder="Sin especificar"
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Provincia</Label>
+                    <Select
+                      value={editForm.provincia || undefined}
+                      onValueChange={(v) => setEditForm((f) => ({ ...f, provincia: v === SIN_PROVINCIA ? '' : v }))}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Sin especificar" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-72">
+                        <SelectItem value={SIN_PROVINCIA}>
+                          <span className="text-muted-foreground">Sin especificar</span>
+                        </SelectItem>
+                        {PROVINCIAS_AR.map((p) => (
+                          <SelectItem key={p} value={p}>{p}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Origen</Label>

@@ -54,8 +54,10 @@ export const createLeadSchema = z.object({
   modelo:               z.string().optional(),
   source:               z.enum(leadSourceValues, { errorMap: () => ({ message: 'Seleccioná el origen del lead' }) }),
   source_custom:        z.string().optional(),
-  localidad:            z.string().min(2, 'La localidad es requerida'),
-  provincia:            z.string().min(2, 'La provincia es requerida'),
+  // Opcionales: muchas veces no se conocen al ingresar el lead. Se completan
+  // luego desde la ficha. Mejor vacío que un dato inventado.
+  localidad:            z.string().optional(),
+  provincia:            z.string().optional(),
   // Rangos horarios; se serializan a JSON en la columna text horario_preferencia.
   horarios:             z.array(horarioRangeSchema).optional(),
   tiene_usado:          z.boolean().default(false),
