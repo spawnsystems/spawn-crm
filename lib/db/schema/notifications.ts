@@ -16,6 +16,8 @@ export const leadTransfers = pgTable('lead_transfers', {
   lead_id:      uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),
   from_user_id: uuid('from_user_id').notNull().references(() => usuarios.id, { onDelete: 'cascade' }),
   to_user_id:   uuid('to_user_id').notNull().references(() => usuarios.id, { onDelete: 'cascade' }),
+  // Quién debe aprobar: supervisor del equipo → gerente → dueño (resuelto al crear).
+  approver_id:  uuid('approver_id').references(() => usuarios.id, { onDelete: 'set null' }),
   status:       transferStatusEnum('status').notNull().default('pendiente'),
   motivo:       text('motivo'),
   responded_at: timestamp('responded_at', { withTimezone: true }),

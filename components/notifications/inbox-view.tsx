@@ -25,8 +25,8 @@ import {
   ArrowRightLeft,
 } from 'lucide-react'
 import {
-  getMyTransferRequests,
-  acceptTransfer,
+  getTransfersToApprove,
+  approveTransfer,
   rejectTransfer,
   getMySentTransfers,
   cancelTransfer,
@@ -40,7 +40,7 @@ import { StatusBadge } from '@/components/status-badge'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
-type TransferRequest = Awaited<ReturnType<typeof getMyTransferRequests>>[number]
+type TransferRequest = Awaited<ReturnType<typeof getTransfersToApprove>>[number]
 type SentTransfer    = Awaited<ReturnType<typeof getMySentTransfers>>[number]
 type Notification    = Awaited<ReturnType<typeof getMyNotifications>>[number]
 
@@ -108,12 +108,13 @@ function TransferCard({
   const [rejectOpen, setRejectOpen]  = useState(false)
 
   const fromName = transfer.from_alias || transfer.from_nombre || 'Vendedor'
+  const toName   = transfer.to_alias   || transfer.to_nombre   || 'otro vendedor'
 
-  function handleAccept() {
+  function handleApprove() {
     startTransition(async () => {
-      const res = await acceptTransfer(transfer.id)
+      const res = await approveTransfer(transfer.id)
       if (!res.success) { toast.error(res.error); return }
-      toast.success('Traspaso aceptado — el lead es tuyo')
+      toast.success(`Traspaso aprobado — el lead pasó a ${toName}`)
       onDone()
     })
   }
@@ -141,7 +142,9 @@ function TransferCard({
               {transfer.lead_nombre ?? 'Lead sin nombre'}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Solicita <span className="font-medium text-foreground">{fromName}</span>
+              <span className="font-medium text-foreground">{fromName}</span>
+              {' → '}
+              <span className="font-medium text-foreground">{toName}</span>
               {' · '}
               {formatDistanceToNow(new Date(transfer.created_at), { locale: es, addSuffix: true })}
             </p>
@@ -167,14 +170,14 @@ function TransferCard({
         <div className="flex gap-2">
           <Button
             size="sm"
-            onClick={handleAccept}
+            onClick={handleApprove}
             disabled={isPending}
             className="gap-1.5 flex-1"
           >
             {isPending
               ? <Loader2 className="size-3.5 animate-spin" />
               : <Check className="size-3.5" />}
-            Aceptar
+            Aprobar
           </Button>
           <Button
             size="sm"
@@ -226,7 +229,7 @@ function SentTransferCard({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{transfer.lead_nombre ?? 'Lead'}</p>
         <p className="text-xs text-muted-foreground">
-          Esperando respuesta de <span className="font-medium">{toName}</span>
+          A <span className="font-medium">{toName}</span> · esperando aprobación del supervisor
         </p>
       </div>
       <Button
@@ -264,6 +267,7 @@ function NotificationItem({
 
   const kindIcon = () => {
     if (notification.kind === 'transfer_request')  return <ArrowRightLeft className="size-3.5 text-primary" />
+    if (notification.kind === 'transfer_approved') return <Check className="size-3.5 text-emerald-600" />
     if (notification.kind === 'transfer_accepted') return <Check className="size-3.5 text-emerald-600" />
     if (notification.kind === 'transfer_rejected') return <X className="size-3.5 text-rose-600" />
     return <Inbox className="size-3.5 text-muted-foreground" />
@@ -323,7 +327,7 @@ export function InboxView({
   const refresh = useCallback(() => {
     startTransition(async () => {
       const [t, s, n] = await Promise.all([
-        getMyTransferRequests(),
+        getTransfersToApprove(),
         getMySentTransfers(),
         getMyNotifications(),
       ])
@@ -355,7 +359,7 @@ export function InboxView({
       <section>
         <div className="flex items-center gap-2 mb-3">
           <ArrowRightLeft className="size-4 text-primary" />
-          <h2 className="text-sm font-semibold">Traspasos pendientes</h2>
+          <h2 className="text-sm font-semibold">Traspasos para aprobar</h2>
           {hasPending && (
             <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white">
               {transfers.length}
@@ -372,7 +376,7 @@ export function InboxView({
         ) : (
           <div className="flex flex-col items-center gap-2 py-8 rounded-xl border border-dashed">
             <ArrowRightLeft className="size-8 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">Sin traspasos pendientes</p>
+            <p className="text-sm text-muted-foreground">Sin traspasos para aprobar</p>
           </div>
         )}
       </section>

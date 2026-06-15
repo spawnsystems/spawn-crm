@@ -1,13 +1,13 @@
 import { Inbox } from 'lucide-react'
 import { InboxView } from '@/components/notifications/inbox-view'
-import { getMyTransferRequests, getMySentTransfers } from '@/app/actions/transfers'
+import { getTransfersToApprove, getMySentTransfers } from '@/app/actions/transfers'
 import { getMyNotifications } from '@/app/actions/notifications'
 
 export const metadata = { title: 'Bandeja — Spawn CRM' }
 
 export default async function BandejaPage() {
   const [transfers, sent, notifications] = await Promise.all([
-    getMyTransferRequests(),
+    getTransfersToApprove(),
     getMySentTransfers(),
     getMyNotifications(),
   ])

@@ -197,6 +197,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
   const [showCotizador,    setShowCotizador]    = useState(false)
   const [editingCotizacion, setEditingCotizacion] = useState<EditingCotizacion | null>(null)
   const [showTransfer,     setShowTransfer]     = useState(false)
+  const [showReassign,     setShowReassign]     = useState(false)
   const [showScheduleCall, setShowScheduleCall] = useState(false)
   // Registro de llamada: { callId } para una agendada, { leadId } para ad-hoc.
   const [registerTarget,   setRegisterTarget]   = useState<{ callId?: string; leadId?: string } | null>(null)
@@ -413,19 +414,6 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
     })
   }
 
-  function handleAssign(vendedorId: string | null) {
-    if (!lead) return
-    startTransition(async () => {
-      const res = await assignLead(lead.id, vendedorId)
-      if (res.success) {
-        setDetail((d) => d ? { ...d, lead: { ...d.lead, assigned_to: vendedorId } } : d)
-        toast.success(vendedorId ? 'Lead asignado' : 'Lead enviado a Bandeja General')
-      } else {
-        toast.error(res.error)
-      }
-    })
-  }
-
   // ── Render ─────────────────────────────────────────────────────
 
   return (
@@ -566,39 +554,28 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                     )}
                   </div>
 
-                  {/* Vendedor asignado */}
+                  {/* Vendedor asignado — display de solo lectura. La reasignación
+                      (supervisor+) se hace con el botón "Reasignar"; el vendedor
+                      con "Transferir" (pide aprobación). */}
                   {currentUser.rol === 'vendedor' ? (
                     <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                       <UserCircle className="size-3.5 shrink-0" />
                       <span>Asignado a vos</span>
                     </div>
-                  ) : vendedores.length > 0 ? (
-                    <div className="mt-2 flex items-center gap-1.5">
-                      <UserCircle className="size-3.5 text-muted-foreground shrink-0" />
-                      <Select
-                        value={lead.assigned_to ?? '__none__'}
-                        onValueChange={(v) => handleAssign(v === '__none__' ? null : v)}
-                        disabled={isPending}
-                      >
-                        <SelectTrigger className="h-7 text-xs w-auto min-w-[150px] max-w-[220px] border-dashed">
-                          <SelectValue placeholder="Sin asignar" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">
-                            <span className="text-muted-foreground italic">Sin asignar</span>
-                          </SelectItem>
-                          {vendedores.map((v) => {
-                            const name = v.alias || v.nombre || v.user_id
-                            return (
-                              <SelectItem key={v.user_id} value={v.user_id}>
-                                {name}
-                              </SelectItem>
-                            )
-                          })}
-                        </SelectContent>
-                      </Select>
+                  ) : (
+                    <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <UserCircle className="size-3.5 shrink-0" />
+                      {(() => {
+                        const v = vendedores.find((x) => x.user_id === lead.assigned_to)
+                        const name = v ? (v.alias || v.nombre || v.user_id) : null
+                        return name ? (
+                          <span>Asignado a <span className="font-medium text-foreground">{name}</span></span>
+                        ) : (
+                          <span className="italic">Sin asignar</span>
+                        )
+                      })()}
                     </div>
-                  ) : null}
+                  )}
                 </div>
 
                 {/* Quick-action buttons */}
@@ -617,18 +594,33 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                       </a>
                     </Button>
                   )}
-                  {/* Transferir — solo si el lead aún está activo */}
+                  {/* Mover el lead — un solo control según el rol:
+                      · vendedor   → "Transferir" (pide aprobación del supervisor)
+                      · supervisor+ → "Reasignar" (inmediato, sin aprobación) */}
                   {!isBaja(lead.status) && lead.status !== 'VENTA' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 mt-1"
-                      onClick={() => setShowTransfer(true)}
-                      title="Transferir este lead a otro vendedor"
-                    >
-                      <ArrowRightLeft className="size-3.5" />
-                      Transferir
-                    </Button>
+                    currentUser.rol === 'vendedor' ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 mt-1"
+                        onClick={() => setShowTransfer(true)}
+                        title="Transferir este lead a otro vendedor (requiere aprobación del supervisor)"
+                      >
+                        <ArrowRightLeft className="size-3.5" />
+                        Transferir
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 border-indigo-200 mt-1"
+                        onClick={() => setShowReassign(true)}
+                        title="Reasignar este lead a otro vendedor de tu equipo"
+                      >
+                        <UserCheck className="size-3.5" />
+                        Reasignar
+                      </Button>
+                    )
                   )}
                   {/* Dar de baja — solo si el lead aún está activo */}
                   {!isBaja(lead.status) && lead.status !== 'VENTA' && (
@@ -1110,7 +1102,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               }}
             />
 
-            {/* ── Transfer dialog ── */}
+            {/* ── Transfer dialog (vendedor) ── */}
             <TransferDialog
               open={showTransfer}
               onOpenChange={setShowTransfer}
@@ -1120,6 +1112,20 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               vendedores={vendedores}
               onDone={() => {
                 setShowTransfer(false)
+                refreshAll()
+              }}
+            />
+
+            {/* ── Reassign dialog (supervisor+) ── */}
+            <ReassignDialog
+              open={showReassign}
+              onOpenChange={setShowReassign}
+              leadId={lead.id}
+              leadNombre={lead.nombre}
+              assignedTo={lead.assigned_to ?? null}
+              vendedores={vendedores}
+              onDone={() => {
+                setShowReassign(false)
                 refreshAll()
               }}
             />
@@ -1591,6 +1597,102 @@ function TransferDialog({
               ? <Loader2 className="size-4 animate-spin" />
               : <ArrowRightLeft className="size-4" />}
             Solicitar traspaso
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── ReassignDialog ────────────────────────────────────────────────────────────
+// Para supervisor+: reasigna el lead al instante (sin aprobación), a un vendedor
+// de su alcance o a la Bandeja General.
+
+const SIN_ASIGNAR = '__none__'
+
+function ReassignDialog({
+  open, onOpenChange, leadId, leadNombre, assignedTo, vendedores, onDone,
+}: {
+  open:         boolean
+  onOpenChange: (v: boolean) => void
+  leadId:       string
+  leadNombre:   string
+  assignedTo:   string | null
+  vendedores:   Vendedor[]
+  onDone:       () => void
+}) {
+  const [toUserId,  setToUserId]      = useState('')
+  const [isPending, startTransition]  = useTransition()
+
+  // No ofrecer al vendedor ya asignado
+  const candidates = vendedores.filter((v) => v.user_id !== assignedTo)
+
+  function handleSubmit() {
+    if (!toUserId) { toast.error('Seleccioná una opción'); return }
+    const target = toUserId === SIN_ASIGNAR ? null : toUserId
+    startTransition(async () => {
+      const res = await assignLead(leadId, target)
+      if (!res.success) { toast.error(res.error); return }
+      toast.success(target ? 'Lead reasignado' : 'Lead enviado a Bandeja General')
+      setToUserId('')
+      onDone()
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) setToUserId(''); onOpenChange(v) }}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <UserCheck className="size-4 text-indigo-600" />
+            Reasignar lead
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          <p className="text-sm text-muted-foreground">
+            Elegí a quién asignar{' '}
+            <span className="font-semibold text-foreground">{leadNombre}</span>.
+            El cambio es inmediato, no requiere aprobación.
+          </p>
+
+          <div className="space-y-1.5">
+            <Label>Asignar a *</Label>
+            <Select value={toUserId} onValueChange={setToUserId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar..." />
+              </SelectTrigger>
+              <SelectContent>
+                {candidates.map((v) => (
+                  <SelectItem key={v.user_id} value={v.user_id}>
+                    {v.alias || v.nombre || v.user_id}
+                  </SelectItem>
+                ))}
+                <SelectItem value={SIN_ASIGNAR}>
+                  <span className="text-muted-foreground italic">Sin asignar (Bandeja General)</span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isPending}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!toUserId || isPending}
+            className="gap-1.5"
+          >
+            {isPending
+              ? <Loader2 className="size-4 animate-spin" />
+              : <UserCheck className="size-4" />}
+            Reasignar
           </Button>
         </DialogFooter>
       </DialogContent>
