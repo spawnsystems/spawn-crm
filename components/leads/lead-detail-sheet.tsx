@@ -133,9 +133,9 @@ function buildAgenda(
     })
   }
 
-  // 2) Llamadas pendientes (sin registrar)
+  // 2) Llamadas pendientes (sin registrar NI canceladas)
   for (const c of calls) {
-    if (c.realizada_at) continue
+    if (c.realizada_at || c.canceled_at) continue
     const d = new Date(c.scheduled_at)
     items.push({
       kind: 'call', id: c.id, date: d,

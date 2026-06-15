@@ -295,9 +295,13 @@ export async function registrarVenta(input: unknown): Promise<ActionResult<{ id:
       .where(and(eq(schema.leads.id, data.lead_id), forTenant(schema.leads)))
 
     // Cancelar llamadas pendientes y cita activa: la venta cierra el ciclo,
-    // no tiene sentido que queden en el aire.
-    void cancelPendingCalls(tenantId, data.lead_id, user.id)
-    void cancelActiveCita(tenantId, data.lead_id, user.id)
+    // no tiene sentido que queden en el aire. Se AWAITEAN (antes `void`): en
+    // serverless el fire-and-forget puede no completarse y dejar una llamada
+    // vencida contando pese a estar el lead vendido.
+    await Promise.all([
+      cancelPendingCalls(tenantId, data.lead_id, user.id),
+      cancelActiveCita(tenantId, data.lead_id, user.id),
+    ])
 
     await appendTimeline(
       tenantId, data.lead_id, user.id,

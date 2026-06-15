@@ -620,9 +620,14 @@ export async function darDeBaja(input: unknown): Promise<ActionResult<void>> {
     .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
 
   // Cancelar llamadas pendientes y cita activa: no tiene sentido que queden
-  // vivas si el lead ya está dado de baja.
-  void cancelPendingCalls(tenantId, leadId, user.id)
-  void cancelActiveCita(tenantId, leadId, user.id)
+  // vivas si el lead ya está dado de baja. Se AWAITEAN (antes eran fire-and-forget
+  // con `void`): en serverless el runtime puede cortar la ejecución al retornar
+  // y dejar la cancelación sin aplicar, con lo que una llamada vencida seguía
+  // contando como tal pese a estar el lead en baja.
+  await Promise.all([
+    cancelPendingCalls(tenantId, leadId, user.id),
+    cancelActiveCita(tenantId, leadId, user.id),
+  ])
 
   await appendTimeline(
     tenantId, leadId, user.id,
