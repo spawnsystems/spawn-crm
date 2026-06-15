@@ -15,6 +15,7 @@ import {
 import { assignLead, reactivateFromRescue, type getAbandonedLeads } from '@/app/actions/leads'
 import type { getVendedoresDelTenant } from '@/app/actions/users'
 import { StatusBadge } from '@/components/status-badge'
+import { RescueDetailSheet } from '@/components/rescue/rescue-detail-sheet'
 import { isBaja } from '@/lib/leads/constants'
 
 type LeadRow = Awaited<ReturnType<typeof getAbandonedLeads>>[number]
@@ -30,6 +31,7 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
   const [leads,            setLeads]            = useState<LeadRow[]>(initialLeads)
   const [reassignLead,     setReassignLead]     = useState<LeadRow | null>(null)
   const [selectedVendedor, setSelectedVendedor] = useState('')
+  const [detailLead,       setDetailLead]       = useState<LeadRow | null>(null)
   const [isPending,        startTransition]     = useTransition()
   const [page,             setPage]             = useState(1)
 
@@ -42,6 +44,7 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
       if (res.success) {
         toast.success('Lead reactivado', { description: 'Volvió a GESTIÓN — asignalo a un vendedor.' })
         setLeads((ls) => ls.filter((l) => l.id !== leadId))
+        setDetailLead((d) => d?.id === leadId ? null : d)
       } else {
         toast.error(res.error)
       }
@@ -50,13 +53,15 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
 
   function handleReassign() {
     if (!reassignLead || !selectedVendedor) return
+    const leadId = reassignLead.id
     startTransition(async () => {
-      const res = await assignLead(reassignLead.id, selectedVendedor)
+      const res = await assignLead(leadId, selectedVendedor)
       if (res.success) {
         toast.success('Lead reasignado')
-        setLeads((ls) => ls.filter((l) => l.id !== reassignLead.id))
+        setLeads((ls) => ls.filter((l) => l.id !== leadId))
         setReassignLead(null)
         setSelectedVendedor('')
+        setDetailLead((d) => d?.id === leadId ? null : d)
       } else {
         toast.error(res.error)
       }
@@ -106,6 +111,7 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
                 key={lead.id}
                 lead={lead}
                 isPending={isPending}
+                onView={() => setDetailLead(lead)}
                 onReassign={() => setReassignLead(lead)}
                 onReactivate={() => handleReactivate(lead.id)}
               />
@@ -154,15 +160,25 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Detalle del lead (solo lectura) con acciones de rescate */}
+      <RescueDetailSheet
+        lead={detailLead}
+        onClose={() => setDetailLead(null)}
+        onReassign={(l) => setReassignLead(l)}
+        onReactivate={(id) => handleReactivate(id)}
+        isPending={isPending}
+      />
     </div>
   )
 }
 
 // ── Lead card ─────────────────────────────────────────────────────
 
-function RescueCard({ lead, isPending, onReassign, onReactivate }: {
+function RescueCard({ lead, isPending, onView, onReassign, onReactivate }: {
   lead:         LeadRow
   isPending:    boolean
+  onView:       () => void
   onReassign:   () => void
   onReactivate: () => void
 }) {
@@ -176,10 +192,17 @@ function RescueCard({ lead, isPending, onReassign, onReactivate }: {
   const enBaja         = isBaja(lead.status)
 
   return (
-    <div className={cn(
-      'relative rounded-xl border bg-card overflow-hidden hover:shadow-md transition-shadow pl-[4px]',
-      enBaja ? 'border-rose-200/60' : 'border-amber-200/60',
-    )}>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onView}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onView() } }}
+      className={cn(
+        'relative rounded-xl border bg-card overflow-hidden hover:shadow-md transition-shadow pl-[4px] cursor-pointer',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+        enBaja ? 'border-rose-200/60' : 'border-amber-200/60',
+      )}
+    >
       <div className={cn('absolute left-0 top-0 bottom-0 w-[4px]', enBaja ? 'bg-rose-500/60' : 'bg-amber-500/60')} />
       <div className="p-5">
         {/* Row 1 */}
@@ -234,7 +257,7 @@ function RescueCard({ lead, isPending, onReassign, onReactivate }: {
             size="sm"
             variant="outline"
             className="gap-1.5"
-            onClick={onReassign}
+            onClick={(e) => { e.stopPropagation(); onReassign() }}
             disabled={isPending}
           >
             <UserPlus className="size-3.5" />
@@ -243,7 +266,7 @@ function RescueCard({ lead, isPending, onReassign, onReactivate }: {
           <Button
             size="sm"
             className="gap-1.5"
-            onClick={onReactivate}
+            onClick={(e) => { e.stopPropagation(); onReactivate() }}
             disabled={isPending}
           >
             <RotateCcw className="size-3.5" />
