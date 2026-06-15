@@ -149,6 +149,20 @@ export async function addMemberToEquipo(
       ),
     )
 
+  // Y sus citas: el equipo_id está denormalizado en lead_appointments y la
+  // sección de citas del supervisor filtra por él. Sin este backfill, las citas
+  // creadas antes de asignarle el equipo quedan huérfanas (equipo_id stale) y el
+  // supervisor no las ve, aunque el dueño sí.
+  await dbAdmin
+    .update(schema.leadAppointments)
+    .set({ equipo_id: equipoId })
+    .where(
+      and(
+        eq(schema.leadAppointments.tenant_id, tenantId),
+        eq(schema.leadAppointments.vendedor_id, userId),
+      ),
+    )
+
   revalidatePath('/equipo')
   return { success: true, data: undefined }
 }
