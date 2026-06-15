@@ -639,6 +639,22 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               </div>
             </SheetHeader>
 
+            {/* ── Observación de carga ── */}
+            {/* Comentario que dejó quien cargó el lead (dueño/supervisor/gerente).
+                Se guarda en leads.observaciones pero antes no se mostraba en ningún
+                lado: el vendedor asignado nunca lo veía. Acá lo surfaceamos. */}
+            {lead.observaciones && (
+              <div className="px-6 pt-4">
+                <div className="rounded-lg border border-amber-200/60 bg-amber-50 px-4 py-3">
+                  <div className="flex items-center gap-1.5 mb-1 text-xs font-semibold text-amber-800">
+                    <MessageCircle className="size-3.5" />
+                    Observación de quien cargó el lead
+                  </div>
+                  <p className="text-sm text-amber-900/80 whitespace-pre-wrap">{lead.observaciones}</p>
+                </div>
+              </div>
+            )}
+
             {/* ── Acción principal + Usado (siempre lado a lado en pantallas grandes) ── */}
             <div className="px-6 pt-4 mb-4 grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               {/* wrapper para que el fragment de NextActionCard sea un solo ítem del grid */}
