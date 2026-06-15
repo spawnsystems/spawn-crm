@@ -219,7 +219,9 @@ export function RescueDetailSheet({
             </div>
 
             {/* ── Footer acciones ── */}
-            <div className="sticky bottom-0 border-t border-border bg-card p-4 flex items-center justify-end gap-2">
+            {/* z-20: los puntos del timeline usan z-10 y, sin esto, le pasan por
+                encima al footer sticky (se ven flotando sobre los botones). */}
+            <div className="sticky bottom-0 z-20 border-t border-border bg-card p-4 flex items-center justify-end gap-2">
               <Button
                 variant="outline"
                 className="gap-1.5"
