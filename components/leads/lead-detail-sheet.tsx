@@ -49,7 +49,7 @@ import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appo
 import { isBaja } from '@/lib/leads/constants'
 import { useCurrentUser } from '@/lib/tenant/context'
 import type { Lead } from '@/lib/db'
-import { cn, parseNumeric, safeRefetch, fmtDayMonthAR, toBADate, formatCurrencyARS } from '@/lib/utils'
+import { cn, parseNumeric, safeRefetch, fmtDayMonthAR, toBADate, formatCurrencyARS, baInputToISO, baInputFromNow } from '@/lib/utils'
 import { formatHorarios } from '@/lib/leads/horarios'
 
 // Sentinelas del selector de modelo (igual que en NewLeadDialog)
@@ -1821,10 +1821,7 @@ function ScheduleCallDialog({
   // Default: mañana a las 10:00 (formato datetime-local)
   useEffect(() => {
     if (open && !scheduledAt) {
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      tomorrow.setHours(10, 0, 0, 0)
-      setScheduledAt(tomorrow.toISOString().slice(0, 16))
+      setScheduledAt(baInputFromNow(1, 10))
     }
   }, [open])
 
@@ -1833,7 +1830,7 @@ function ScheduleCallDialog({
     startTransition(async () => {
       const res = await scheduleCall({
         leadId,
-        scheduledAt: new Date(scheduledAt).toISOString(),
+        scheduledAt: baInputToISO(scheduledAt),
         notasPrevias: notas.trim() || undefined,
       })
       if (!res.success) { toast.error(res.error); return }
@@ -2007,18 +2004,8 @@ function RegisterCallDialog({
   // Defaults al abrir el dialog: próxima llamada en 3 días, cita en 2 días
   useEffect(() => {
     if (!open) return
-    if (!nextCallAt) {
-      const d = new Date()
-      d.setDate(d.getDate() + 3)
-      d.setHours(10, 0, 0, 0)
-      setNextCallAt(d.toISOString().slice(0, 16))
-    }
-    if (!apptAt) {
-      const d = new Date()
-      d.setDate(d.getDate() + 2)
-      d.setHours(11, 0, 0, 0)
-      setApptAt(d.toISOString().slice(0, 16))
-    }
+    if (!nextCallAt) setNextCallAt(baInputFromNow(3, 10))
+    if (!apptAt)     setApptAt(baInputFromNow(2, 11))
   }, [open])
 
   function reset() {
@@ -2033,10 +2020,7 @@ function RegisterCallDialog({
   function handleSelectOutcome(v: CallOutcome) {
     setOutcome(v)
     if (v === 'no_contesto' && withinAttempts && !retryAt) {
-      const d = new Date()
-      d.setDate(d.getDate() + 1)
-      d.setHours(10, 0, 0, 0)
-      setRetryAt(d.toISOString().slice(0, 16))
+      setRetryAt(baInputFromNow(1, 10))
     }
   }
 
@@ -2063,8 +2047,8 @@ function RegisterCallDialog({
       // nextCallAt) y para no_contesto si el vendedor cargó un reintento
       // opcional (usa retryAt).
       const nextCallISO =
-        outcome === 'proxima_llamada' && nextCallAt ? new Date(nextCallAt).toISOString()
-        : outcome === 'no_contesto' && retryAt      ? new Date(retryAt).toISOString()
+        outcome === 'proxima_llamada' && nextCallAt ? baInputToISO(nextCallAt)
+        : outcome === 'no_contesto' && retryAt      ? baInputToISO(retryAt)
         : undefined
 
       const res = await registerCall({
@@ -2074,7 +2058,7 @@ function RegisterCallDialog({
         proximaLlamadaAt: nextCallISO,
         appointment: outcome === 'cita'
           ? {
-              scheduled_at: new Date(apptAt).toISOString(),
+              scheduled_at: baInputToISO(apptAt),
               tipo:         apptTipo,
               duration_min: apptDur,
               lugar:        apptLugar.trim() || undefined,

@@ -41,6 +41,50 @@ export function toBADate(date: Date | string | number): Date {
 }
 
 /**
+ * Convierte el valor de un <input type="datetime-local"> — que el usuario SIEMPRE
+ * entiende como horario de Buenos Aires — al instante UTC correcto (ISO string),
+ * sin depender del timezone del navegador. AR = UTC-3 fijo (sin horario de verano).
+ *
+ * "2026-06-18T18:00" (18 hs en BA) → "2026-06-18T21:00:00.000Z"
+ *
+ * Usar SIEMPRE para leer datetime-local antes de mandarlo al server, en vez de
+ * `new Date(value)` (que interpreta el string en el TZ del navegador y se
+ * desfasa si la PC del vendedor no está en horario argentino).
+ */
+export function baInputToISO(local: string): string {
+  if (!local) return ''
+  // Acepta "YYYY-MM-DDTHH:mm" o con segundos; le anexamos el offset fijo de AR.
+  const withSeconds = local.length === 16 ? `${local}:00` : local
+  return new Date(`${withSeconds}-03:00`).toISOString()
+}
+
+/**
+ * Inverso de baInputToISO: convierte un instante a "YYYY-MM-DDTHH:mm" con la hora
+ * de pared de Buenos Aires, para usarlo como value/default de un
+ * <input type="datetime-local">. Independiente del timezone del navegador.
+ */
+export function dateToBAInput(date: Date | string | number): string {
+  const d = toBADate(date)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/**
+ * Default para un <input type="datetime-local"> calculado como "hoy en BA + N días
+ * a la hora HH:mm de Buenos Aires". Independiente del timezone del navegador, así
+ * el valor sugerido siempre es una hora argentina real (no la del navegador).
+ *
+ *   baInputFromNow(1, 10) → mañana 10:00 BA → "2026-06-19T10:00"
+ */
+export function baInputFromNow(addDays: number, hour: number, minute = 0): string {
+  const base = toBADate(new Date())          // componentes de pared BA (fake-local)
+  base.setDate(base.getDate() + addDays)
+  base.setHours(hour, minute, 0, 0)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}T${pad(base.getHours())}:${pad(base.getMinutes())}`
+}
+
+/**
  * "15/06" — día y mes en horario Buenos Aires.
  */
 export function fmtDayMonthAR(date: Date | string | number): string {

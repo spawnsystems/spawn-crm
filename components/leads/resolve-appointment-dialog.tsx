@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { cn } from '@/lib/utils'
+import { cn, baInputToISO, baInputFromNow } from '@/lib/utils'
 import {
   Trophy, TrendingUp, CalendarPlus, UserX, ThumbsDown,
   Video, Building2, Handshake, Phone, Loader2, X,
@@ -80,13 +80,8 @@ const TIPO_TILES: {
 
 const DURATIONS = [30, 60, 90, 120] as const
 
-// datetime-local helper a partir de "ahora + N días" a una hora fija
-function defaultLocal(addDays: number, hour: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() + addDays)
-  d.setHours(hour, 0, 0, 0)
-  return d.toISOString().slice(0, 16)
-}
+// datetime-local default "ahora + N días" a una hora fija, en horario BA.
+const defaultLocal = baInputFromNow
 
 // ── Props ─────────────────────────────────────────────────────────
 
@@ -161,7 +156,7 @@ export function ResolveAppointmentDialog({
       (outcome === 'avanzo' || outcome === 'otra_reunion')
         ? {
             kind,
-            scheduled_at: new Date(nextAt).toISOString(),
+            scheduled_at: baInputToISO(nextAt),
             ...(kind === 'cita'
               ? { tipo: nextTipo, duration_min: nextDur, lugar: nextLugar.trim() || undefined }
               : {}),
@@ -173,7 +168,7 @@ export function ResolveAppointmentDialog({
         outcome,
         notes:       notes.trim() || undefined,
         nextAction,
-        retryCallAt: outcome === 'no_show' && retryAt ? new Date(retryAt).toISOString() : undefined,
+        retryCallAt: outcome === 'no_show' && retryAt ? baInputToISO(retryAt) : undefined,
       })
       if (!res.success) { toast.error(res.error); return }
 

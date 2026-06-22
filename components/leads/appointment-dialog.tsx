@@ -17,7 +17,7 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
-import { cn } from '@/lib/utils'
+import { cn, baInputToISO } from '@/lib/utils'
 import { CalendarIcon, Loader2, Video, Building2, Handshake } from 'lucide-react'
 import { createAppointment } from '@/app/actions/appointments'
 import {
@@ -100,10 +100,12 @@ export function AppointmentDialog({
   function handleSubmit() {
     if (!date) { toast.error('Elegí una fecha para la cita'); return }
 
-    // Combine date + time into a single Date
-    const [hh, mm] = time.split(':').map(Number)
-    const scheduledAt = new Date(date)
-    scheduledAt.setHours(hh ?? 10, mm ?? 0, 0, 0)
+    // Combinar fecha (del calendario) + hora en un instante de Buenos Aires,
+    // independiente del timezone del navegador. La hora que elige el usuario es
+    // SIEMPRE horario argentino.
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const localBA = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${time}`
+    const scheduledAt = new Date(baInputToISO(localBA))
 
     if (scheduledAt.getTime() <= Date.now()) {
       toast.error('La fecha y hora deben ser en el futuro')

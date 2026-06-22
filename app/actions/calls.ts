@@ -11,6 +11,7 @@ import { advanceStatus, isTerminal, terminalBlockReason } from '@/lib/leads/stat
 import { isBaja } from '@/lib/leads/constants'
 import { appointmentTipoValues, APPOINTMENT_TIPO_LABEL } from '@/lib/schemas/appointments'
 import { logAudit } from '@/lib/audit/log'
+import { toBADate } from '@/lib/utils'
 import type { ActionResult } from './auth'
 
 const BA_TZ = 'America/Argentina/Buenos_Aires'
@@ -123,7 +124,7 @@ export async function scheduleCall(
     })
     .returning({ id: schema.leadCalls.id })
 
-  const fechaLabel = format(new Date(scheduledAt), "d 'de' MMM 'a las' HH:mm", { locale: es })
+  const fechaLabel = format(toBADate(scheduledAt), "d 'de' MMM 'a las' HH:mm", { locale: es })
   await appendTimeline(
     tenantId, leadId, user.id,
     'call_scheduled',
@@ -272,7 +273,7 @@ export async function registerCall(
       created_by:   user.id,
       scheduled_at: new Date(whenISO),
     })
-    const fechaLabel = format(new Date(whenISO), "d 'de' MMM 'a las' HH:mm", { locale: es })
+    const fechaLabel = format(toBADate(whenISO), "d 'de' MMM 'a las' HH:mm", { locale: es })
     await appendTimeline(
       tenantId, leadId, user.id,
       'call_scheduled',
