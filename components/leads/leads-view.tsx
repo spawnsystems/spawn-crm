@@ -13,11 +13,11 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
   AlertTriangle, MessageCircle, Phone, ChevronRight, Clock, Target, Plus,
-  ArrowUp, ArrowDown, CalendarCheck, PhoneCall, Car, Search,
+  ArrowUp, ArrowDown, CalendarCheck, PhoneCall, Car, Search, ChevronDown, Inbox,
 } from 'lucide-react'
 import type { Lead } from '@/lib/db'
 import { getVendedoresDelTenant } from '@/app/actions/users'
-import { getMyLeads } from '@/app/actions/leads'
+import { getMyLeads, getUnassignedLeads } from '@/app/actions/leads'
 import { STATUS_ORDER, isBaja, sourceLabel, modeloLabel } from '@/lib/leads/constants'
 import { APPOINTMENT_TIPO_LABEL, type AppointmentTipo } from '@/lib/schemas/appointments'
 
@@ -36,14 +36,16 @@ const PAGE_SIZE = 20
 
 interface LeadsViewProps {
   initialLeads: MyLead[]
+  initialUnassigned?: MyLead[]
   vendedores: Vendedor[]
   modelos: string[]
   customSources?: string[]
   canCreate: boolean
 }
 
-export function LeadsView({ initialLeads, vendedores, modelos, customSources = [], canCreate }: LeadsViewProps) {
+export function LeadsView({ initialLeads, initialUnassigned = [], vendedores, modelos, customSources = [], canCreate }: LeadsViewProps) {
   const [leads,       setLeads]       = useState<MyLead[]>(initialLeads)
+  const [unassigned,  setUnassigned]  = useState<MyLead[]>(initialUnassigned)
   const [search,      setSearch]      = useState('')
   const [filter,      setFilter]      = useState<FilterTab>('Todos')
   const [openLeadId,  setOpenLeadId]  = useState<string | null>(null)
@@ -51,10 +53,13 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
   const [sortKey,     setSortKey]     = useState<SortKey>('last_contact_at')
   const [sortDir,     setSortDir]     = useState<SortDir>('asc')
   const [page,        setPage]        = useState(1)
+  const [showUnassigned, setShowUnassigned] = useState(true)
 
   function refresh() {
     void safeRefetch(() => getMyLeads(), 'No se pudieron actualizar tus leads')
       .then((next) => { if (next) setLeads(next) })
+    void safeRefetch(() => getUnassignedLeads(), 'No se pudieron actualizar los leads sin asignar')
+      .then((next) => { if (next) setUnassigned(next) })
   }
 
   function toggleSort(key: SortKey) {
@@ -150,6 +155,16 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
           </Button>
         )}
       </div>
+
+      {/* Sin asignar — bandeja de distribución (solo aparece si hay leads para repartir) */}
+      {unassigned.length > 0 && (
+        <UnassignedPanel
+          leads={unassigned}
+          open={showUnassigned}
+          onToggle={() => setShowUnassigned((v) => !v)}
+          onOpenLead={(id) => setOpenLeadId(id)}
+        />
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-3 gap-4 mb-6">
@@ -281,6 +296,82 @@ export function LeadsView({ initialLeads, vendedores, modelos, customSources = [
 }
 
 // ── Sub-components ────────────────────────────────────────────────
+
+// ── UnassignedPanel ───────────────────────────────────────────
+// Tabla colapsable con los leads SIN asignar que el usuario puede distribuir
+// (floating para dueño/gerente; bandeja del equipo para el supervisor). Cada fila
+// abre la ficha del lead para asignarlo (Reasignar).
+
+function UnassignedPanel({
+  leads, open, onToggle, onOpenLead,
+}: {
+  leads:      MyLead[]
+  open:       boolean
+  onToggle:   () => void
+  onOpenLead: (id: string) => void
+}) {
+  return (
+    <Card className="mb-6 overflow-hidden border-amber-200/70 bg-amber-50/30 p-0">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left transition-colors hover:bg-amber-50/60"
+      >
+        <div className="flex items-center gap-2">
+          <Inbox className="size-4 text-amber-700" />
+          <span className="text-sm font-semibold text-amber-900">Sin asignar</span>
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-200 px-1.5 text-[11px] font-semibold text-amber-800">
+            {leads.length}
+          </span>
+          <span className="text-xs text-muted-foreground hidden sm:inline">— esperando que los distribuyas</span>
+        </div>
+        <ChevronDown className={cn('size-4 text-amber-700 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="border-t border-amber-200/60">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <th className="px-5 py-2 text-left font-medium">Lead</th>
+                <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Modelo</th>
+                <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Origen</th>
+                <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Ingresó</th>
+                <th className="px-5 py-2 text-right font-medium">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leads.map((l) => (
+                <tr
+                  key={l.id}
+                  onClick={() => onOpenLead(l.id)}
+                  className="cursor-pointer border-t border-amber-200/40 transition-colors hover:bg-amber-50/70"
+                >
+                  <td className="px-5 py-2.5">
+                    <div className="font-medium">{l.nombre}</div>
+                    <div className="text-[11px] text-muted-foreground/80">
+                      {[l.localidad, l.provincia].filter(Boolean).join(', ') || 'Sin ubicación'}
+                      {l.tiene_usado && <span className="ml-1.5 text-amber-700">· Usado</span>}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 hidden md:table-cell text-muted-foreground">{modeloLabel(l.modelo)}</td>
+                  <td className="px-3 py-2.5 hidden lg:table-cell text-muted-foreground">{sourceLabel(l.source, l.source_custom)}</td>
+                  <td className="px-3 py-2.5 hidden lg:table-cell text-muted-foreground whitespace-nowrap">
+                    {formatRelative(new Date(l.created_at))}
+                  </td>
+                  <td className="px-5 py-2.5 text-right">
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700">
+                      Asignar <ChevronRight className="size-3.5" />
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
 
 function KpiCard({ icon, label, value, sub, accent }: {
   icon: React.ReactNode

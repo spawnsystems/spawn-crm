@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { dbAdmin, schema } from '@/lib/db'
-import { eq, and, desc, inArray, or, isNotNull, sql, getTableColumns } from 'drizzle-orm'
+import { eq, and, desc, inArray, or, isNull, isNotNull, sql, getTableColumns } from 'drizzle-orm'
 import { createLeadSchema, updateLeadSchema, bajaSchema } from '@/lib/schemas/leads'
 import { logAudit } from '@/lib/audit/log'
 import {
@@ -469,8 +469,9 @@ export async function assignLead(
 
   let equipoId: string | null
   if (!vendedorId) {
-    // Desasignar → Bandeja General.
-    equipoId = null
+    // Desasignar. Supervisor → el lead vuelve a SU equipo (a su "Sin asignar"),
+    // no escala hacia arriba. Dueño/gerente → bandeja general (floating).
+    equipoId = user.rol === 'supervisor' ? lead.equipo_id : null
   } else if (vendedorId === user.id) {
     // Autoasignación del jefe (supervisor/gerente/dueño): el lead queda a su
     // nombre y CONSERVA el equipo del lead, así sigue visible en el tablero del
@@ -511,7 +512,7 @@ export async function assignLead(
     tenantId, leadId, user.id,
     'reassigned',
     !vendedorId
-      ? 'Enviado a Bandeja General'
+      ? (user.rol === 'supervisor' ? 'Devuelto a Sin asignar del equipo' : 'Enviado a Bandeja General')
       : vendedorId === user.id
       ? `Autoasignado por ${vendedorName}`
       : `Asignado a ${vendedorName}`,
@@ -530,6 +531,69 @@ export async function assignLead(
   revalidatePath('/leads')
   revalidatePath('/all-leads')
   revalidatePath('/rescate')
+  return { success: true, data: undefined }
+}
+
+// ── assignLeadToTeam ──────────────────────────────────────────
+// Deriva un lead a un EQUIPO (sin asignar a un vendedor todavía): queda en la
+// bandeja "Sin asignar" de ese equipo para que su supervisor lo distribuya.
+// Solo dueño/gerente: es el paso de "bajar" un lead floating a un equipo.
+
+export async function assignLeadToTeam(
+  leadId:   string,
+  equipoId: string,
+): Promise<ActionResult<void>> {
+  const { user, tenantId, q, forTenant } = await requireTenant()
+
+  if (!['dueno', 'gerente', 'platform_admin'].includes(user.rol)) {
+    return { success: false, error: 'Sin permisos para derivar leads a un equipo' }
+  }
+
+  const lead = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
+  if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
+
+  // El equipo destino debe estar en el alcance del que deriva y estar activo.
+  const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
+  const inScope = scope.type === 'all'
+    || (scope.type === 'teams' && scope.equipoIds.includes(equipoId))
+  if (!inScope) {
+    return { success: false, error: 'No podés derivar el lead a un equipo fuera de tu alcance.' }
+  }
+
+  const team = await dbAdmin
+    .select({ id: schema.equipos.id, nombre: schema.equipos.nombre })
+    .from(schema.equipos)
+    .where(and(
+      eq(schema.equipos.id, equipoId),
+      eq(schema.equipos.tenant_id, tenantId),
+      eq(schema.equipos.activo, true),
+    ))
+    .limit(1)
+  if (!team[0]) return { success: false, error: 'Equipo no encontrado' }
+
+  await q.update(schema.leads)
+    .set({ assigned_to: null, equipo_id: equipoId, updated_by: user.id })
+    .where(and(eq(schema.leads.id, leadId), forTenant(schema.leads)))
+
+  await appendTimeline(
+    tenantId, leadId, user.id,
+    'reassigned',
+    `Derivado al equipo ${team[0].nombre} (sin asignar)`,
+  )
+
+  void logAudit({
+    tenantId,
+    actorId:        user.id,
+    action:         'lead.assign',
+    entity:         'lead',
+    entityId:       leadId,
+    meta:           { equipo_id: equipoId, equipo_nombre: team[0].nombre },
+    visibleToDueno: true,
+  })
+
+  revalidatePath('/leads')
+  revalidatePath('/all-leads')
+  revalidatePath('/pipeline')
   return { success: true, data: undefined }
 }
 
@@ -974,6 +1038,57 @@ export async function getMyLeads() {
   ])
 
   return rows.map((l) => deriveAttention(l, sla))
+}
+
+// ── getUnassignedLeads ────────────────────────────────────────
+// Leads SIN asignar a una persona (assigned_to IS NULL), para la tabla
+// colapsable "Sin asignar" de Mis Leads. Visibilidad por rol (no usa
+// buildScopeWhere; es una bandeja de distribución con reglas propias):
+//   dueño / admin → leads sin equipo (floating, bandeja general)
+//   gerente       → leads sin equipo (floating) — los de equipo son del supervisor
+//   supervisor    → leads sin asignar de SU equipo
+//   vendedor      → ninguno (no distribuye; recibe leads ya asignados)
+// Un lead asignado a un vendedor o a un jefe sale de acá (ya tiene dueño).
+
+export async function getUnassignedLeads() {
+  const { user, tenantId } = await requireTenant()
+  if (user.rol === 'vendedor') return []
+
+  const where = [
+    eq(schema.leads.tenant_id, tenantId),
+    isNull(schema.leads.assigned_to),
+  ]
+
+  if (user.rol === 'supervisor') {
+    const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
+    if (scope.type !== 'team') return []
+    where.push(eq(schema.leads.equipo_id, scope.equipoId))
+  } else {
+    // dueño / gerente / platform_admin → floating (sin equipo)
+    where.push(isNull(schema.leads.equipo_id))
+  }
+
+  const [rows, sla] = await Promise.all([
+    dbAdmin
+      .select({
+        ...getTableColumns(schema.leads),
+        pending_call_at: pendingCallAtSql,
+        open_appt_at:    openApptAtSql,
+        open_appt_tipo:  openApptTipoSql,
+        usado_valor:     usadoValorSql,
+        usado_rechazado: usadoRechazadoSql,
+        usado_marca:     usadoMarcaSql,
+      })
+      .from(schema.leads)
+      .where(and(...where))
+      .orderBy(desc(schema.leads.created_at)),
+    getTenantSlaConfig(tenantId),
+  ])
+
+  // Solo activos — un lead sin asignar dado de baja/vendido no se distribuye.
+  return rows
+    .filter((l) => !isBaja(l.status) && l.status !== 'VENTA')
+    .map((l) => deriveAttention(l, sla))
 }
 
 // Adjunta el estado de atención derivado (sin trigger). Reemplaza al viejo

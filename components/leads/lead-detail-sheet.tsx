@@ -22,7 +22,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { NextActionCard } from '@/components/leads/next-action-card'
 import { LeadStatusStepper } from '@/components/leads/lead-status-stepper'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel,
 } from '@/components/ui/select'
 import {
   Phone, Mail, Car, CheckCircle2, Circle, CalendarIcon, FileText,
@@ -34,14 +34,14 @@ import {
 } from 'lucide-react'
 import {
   addNote, deleteNote, toggleTask, getLeadDetail,
-  updateLead, addTask, assignLead, setLeadModelo,
+  updateLead, addTask, assignLead, assignLeadToTeam, setLeadModelo,
 } from '@/app/actions/leads'
 import { requestTransfer } from '@/app/actions/transfers'
 import { scheduleCall, registerCall } from '@/app/actions/calls'
 import { BajaDialog } from '@/components/leads/baja-dialog'
 import { CotizadorDialog, type EditingCotizacion } from '@/components/cotizador/cotizador-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
-import { getVendedoresParaTraspaso } from '@/app/actions/users'
+import { getVendedoresParaTraspaso, getAsignablesParaLead } from '@/app/actions/users'
 import { getActiveModelNames } from '@/app/actions/modelos'
 import { leadSourceValues } from '@/lib/schemas/leads'
 import { PROVINCIAS_AR } from '@/lib/ar/provincias'
@@ -182,6 +182,8 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
   const [nextAppointment, setNextAppointment] = useState<Appointment>(null)
   const [loading,         setLoading]         = useState(false)
   const [vendedores,      setVendedores]      = useState<Vendedor[]>([])
+  // Equipos a los que el jefe puede derivar (solo dueño/gerente; vacío para el resto)
+  const [teams,           setTeams]           = useState<{ id: string; nombre: string }[]>([])
   const [newNote,         setNewNote]         = useState('')
   const [newTask,         setNewTask]         = useState('')
   const [taskDueAt,       setTaskDueAt]       = useState<Date | undefined>()
@@ -223,13 +225,21 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
       getNextAppointmentForLead(leadId),
       getVendedoresParaTraspaso(),
       getActiveModelNames(),
+      getAsignablesParaLead(),
     ])
-      .then(([d, appt, v, mods]) => {
+      .then(([d, appt, v, mods, asig]) => {
         if (cancelled) return
         setDetail(d)
         setNextAppointment(appt)
         setVendedores(v)
         setModelos(mods)
+        // Derivar a equipo: solo dueño/gerente (scope all/teams). Supervisor
+        // tiene un solo equipo → no tiene sentido "derivar a su propio equipo".
+        setTeams(
+          asig.scope === 'all' || asig.scope === 'teams'
+            ? asig.equipos.map((e) => ({ id: e.id, nombre: e.nombre }))
+            : [],
+        )
         if (d) setEditForm(d.lead)
       })
       .catch((err) => {
@@ -1138,6 +1148,7 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
               leadNombre={lead.nombre}
               assignedTo={lead.assigned_to ?? null}
               vendedores={vendedores}
+              teams={teams}
               onDone={() => {
                 setShowReassign(false)
                 refreshAll()
@@ -1623,9 +1634,10 @@ function TransferDialog({
 // de su alcance o a la Bandeja General.
 
 const SIN_ASIGNAR = '__none__'
+const TEAM_PREFIX = 'team:'
 
 function ReassignDialog({
-  open, onOpenChange, leadId, leadNombre, assignedTo, vendedores, onDone,
+  open, onOpenChange, leadId, leadNombre, assignedTo, vendedores, teams = [], onDone,
 }: {
   open:         boolean
   onOpenChange: (v: boolean) => void
@@ -1633,6 +1645,7 @@ function ReassignDialog({
   leadNombre:   string
   assignedTo:   string | null
   vendedores:   Vendedor[]
+  teams?:       { id: string; nombre: string }[]
   onDone:       () => void
 }) {
   const currentUser = useCurrentUser()
@@ -1646,8 +1659,19 @@ function ReassignDialog({
 
   function handleSubmit() {
     if (!toUserId) { toast.error('Seleccioná una opción'); return }
-    const target = toUserId === SIN_ASIGNAR ? null : toUserId
     startTransition(async () => {
+      // Derivar a un equipo (queda sin asignar en la bandeja de ese equipo).
+      if (toUserId.startsWith(TEAM_PREFIX)) {
+        const equipoId = toUserId.slice(TEAM_PREFIX.length)
+        const res = await assignLeadToTeam(leadId, equipoId)
+        if (!res.success) { toast.error(res.error); return }
+        const teamName = teams.find((t) => t.id === equipoId)?.nombre
+        toast.success(teamName ? `Derivado al equipo ${teamName}` : 'Lead derivado al equipo')
+        setToUserId('')
+        onDone()
+        return
+      }
+      const target = toUserId === SIN_ASIGNAR ? null : toUserId
       const res = await assignLead(leadId, target)
       if (!res.success) { toast.error(res.error); return }
       toast.success(
@@ -1692,13 +1716,37 @@ function ReassignDialog({
                     </span>
                   </SelectItem>
                 )}
-                {candidates.map((v) => (
-                  <SelectItem key={v.user_id} value={v.user_id}>
-                    {v.alias || v.nombre || v.user_id}
-                  </SelectItem>
-                ))}
+                {/* Derivar a un equipo (queda sin asignar para que lo distribuya
+                    su supervisor). Solo dueño/gerente reciben equipos. */}
+                {teams.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel className="text-[11px] uppercase tracking-wide">Derivar a un equipo</SelectLabel>
+                    {teams.map((t) => (
+                      <SelectItem key={t.id} value={`${TEAM_PREFIX}${t.id}`}>
+                        <span className="flex items-center gap-2">
+                          <UserCheck className="size-4 text-muted-foreground" />
+                          {t.nombre}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {candidates.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel className="text-[11px] uppercase tracking-wide">Vendedores</SelectLabel>
+                    {candidates.map((v) => (
+                      <SelectItem key={v.user_id} value={v.user_id}>
+                        {v.alias || v.nombre || v.user_id}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
                 <SelectItem value={SIN_ASIGNAR}>
-                  <span className="text-muted-foreground italic">Sin asignar (Bandeja General)</span>
+                  <span className="text-muted-foreground italic">
+                    {currentUser.rol === 'supervisor'
+                      ? 'Quitar asignación (vuelve a Sin asignar del equipo)'
+                      : 'Sin asignar (Bandeja General)'}
+                  </span>
                 </SelectItem>
               </SelectContent>
             </Select>

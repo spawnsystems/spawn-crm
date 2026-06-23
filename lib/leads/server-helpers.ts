@@ -250,7 +250,10 @@ export async function assertLeadAccess(
     case 'all':
       return lead
     case 'teams':
-      return lead.equipo_id && scope.equipoIds.includes(lead.equipo_id) ? lead : null
+      // Floating (sin equipo): es la bandeja general que el gerente comparte con
+      // el dueño en "Sin asignar"; puede gestionarlo (tomarlo, derivarlo).
+      if (lead.equipo_id === null) return lead
+      return scope.equipoIds.includes(lead.equipo_id) ? lead : null
     case 'team':
       return lead.equipo_id === scope.equipoId ? lead : null
     case 'self':
