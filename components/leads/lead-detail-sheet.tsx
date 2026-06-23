@@ -565,15 +565,13 @@ export function LeadDetailSheet({ leadId, onClose, onStatusChange, onLeadsRefres
                   ) : (
                     <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                       <UserCircle className="size-3.5 shrink-0" />
-                      {(() => {
-                        const v = vendedores.find((x) => x.user_id === lead.assigned_to)
-                        const name = v ? (v.alias || v.nombre || v.user_id) : null
-                        return name ? (
-                          <span>Asignado a <span className="font-medium text-foreground">{name}</span></span>
-                        ) : (
-                          <span className="italic">Sin asignar</span>
-                        )
-                      })()}
+                      {lead.assigned_to === currentUser.id ? (
+                        <span>Asignado a <span className="font-medium text-foreground">vos</span></span>
+                      ) : lead.asignado_nombre ? (
+                        <span>Asignado a <span className="font-medium text-foreground">{lead.asignado_nombre}</span></span>
+                      ) : (
+                        <span className="italic">Sin asignar</span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1637,11 +1635,14 @@ function ReassignDialog({
   vendedores:   Vendedor[]
   onDone:       () => void
 }) {
+  const currentUser = useCurrentUser()
   const [toUserId,  setToUserId]      = useState('')
   const [isPending, startTransition]  = useTransition()
 
   // No ofrecer al vendedor ya asignado
   const candidates = vendedores.filter((v) => v.user_id !== assignedTo)
+  // El jefe puede quedarse el lead para trabajarlo (salvo que ya sea suyo).
+  const canSelfAssign = assignedTo !== currentUser.id
 
   function handleSubmit() {
     if (!toUserId) { toast.error('Seleccioná una opción'); return }
@@ -1649,7 +1650,11 @@ function ReassignDialog({
     startTransition(async () => {
       const res = await assignLead(leadId, target)
       if (!res.success) { toast.error(res.error); return }
-      toast.success(target ? 'Lead reasignado' : 'Lead enviado a Bandeja General')
+      toast.success(
+        !target ? 'Lead enviado a Bandeja General'
+        : target === currentUser.id ? 'Te asignaste el lead'
+        : 'Lead reasignado',
+      )
       setToUserId('')
       onDone()
     })
@@ -1679,6 +1684,14 @@ function ReassignDialog({
                 <SelectValue placeholder="Seleccionar..." />
               </SelectTrigger>
               <SelectContent>
+                {canSelfAssign && (
+                  <SelectItem value={currentUser.id}>
+                    <span className="flex items-center gap-2 font-medium">
+                      <UserCircle className="size-4 text-primary" />
+                      Asignármelo a mí
+                    </span>
+                  </SelectItem>
+                )}
                 {candidates.map((v) => (
                   <SelectItem key={v.user_id} value={v.user_id}>
                     {v.alias || v.nombre || v.user_id}

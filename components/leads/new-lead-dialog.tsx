@@ -51,6 +51,7 @@ type Asignables = Awaited<ReturnType<typeof getAsignablesParaLead>>
 const ASSIGN_UNASSIGNED = 'unassigned'
 const ASSIGN_TEAM_PREFIX = 'team:'
 const ASSIGN_VEND_PREFIX = 'vendedor:'
+const ASSIGN_SELF = 'self'   // el jefe (supervisor/gerente/dueño) se autoasigna el lead
 
 interface NewLeadDialogProps {
   open: boolean
@@ -183,7 +184,9 @@ export function NewLeadDialog({
     // Parsear el destino de asignación.
     let assignedTo: string | undefined
     let equipoId:   string | undefined
-    if (form.assign.startsWith(ASSIGN_VEND_PREFIX)) {
+    if (form.assign === ASSIGN_SELF) {
+      assignedTo = currentUser.id   // el jefe se queda el lead para trabajarlo
+    } else if (form.assign.startsWith(ASSIGN_VEND_PREFIX)) {
       assignedTo = form.assign.slice(ASSIGN_VEND_PREFIX.length)
     } else if (form.assign.startsWith(ASSIGN_TEAM_PREFIX)) {
       equipoId = form.assign.slice(ASSIGN_TEAM_PREFIX.length)
@@ -679,6 +682,15 @@ export function NewLeadDialog({
                     <SelectValue placeholder={multiTeam ? 'Elegí equipo o vendedor...' : 'Sin asignar...'} />
                   </SelectTrigger>
                   <SelectContent className="max-h-80">
+                    {/* Autoasignación: el jefe se queda el lead para trabajarlo él.
+                        Aparece en su "Mis Leads". */}
+                    <SelectItem value={ASSIGN_SELF}>
+                      <span className="flex items-center gap-2 font-medium">
+                        <UserCircle className="size-4 text-primary" />
+                        Asignármelo a mí
+                      </span>
+                    </SelectItem>
+
                     {/* Bandeja sin asignar:
                         - supervisor → queda en su equipo (lo deriva luego)
                         - dueño/admin → bandeja general del tenant */}

@@ -83,9 +83,23 @@ export async function createLead(
     }
   }
 
+  // ¿El jefe (supervisor/gerente/dueño) se está autoasignando el lead al crearlo?
+  const isSelfAssign = effectiveAssignedTo !== null
+    && effectiveAssignedTo === user.id
+    && user.rol !== 'vendedor'
+
   // Resolver el equipo del lead.
   let equipoId: string | null = null
-  if (effectiveAssignedTo) {
+  if (isSelfAssign) {
+    // El lead queda a nombre del jefe y dentro de su equipo de alcance (si tiene
+    // uno solo). Dueño / gerente con varios equipos → sin equipo: igual lo ve en
+    // "Mis Leads" por estar asignado a él.
+    if (creatorScope?.type === 'team') {
+      equipoId = creatorScope.equipoId
+    } else if (creatorScope?.type === 'teams' && creatorScope.equipoIds.length === 1) {
+      equipoId = creatorScope.equipoIds[0]
+    }
+  } else if (effectiveAssignedTo) {
     // Asignado a un vendedor → equipo = el del vendedor.
     const member = await dbAdmin
       .select({ equipo_id: schema.tenantMembers.equipo_id })
@@ -448,19 +462,44 @@ export async function assignLead(
     return { success: false, error: 'Sin permisos para asignar leads' }
   }
 
-  let equipoId: string | null = null
-  if (vendedorId) {
+  // El que asigna debe poder VER el lead según su rol/equipo (no solo el tenant).
+  // Bloquea tocar leads de otro equipo aunque se conozca el ID.
+  const lead = await assertLeadAccess(leadId, user.id, user.rol, tenantId)
+  if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
+
+  let equipoId: string | null
+  if (!vendedorId) {
+    // Desasignar → Bandeja General.
+    equipoId = null
+  } else if (vendedorId === user.id) {
+    // Autoasignación del jefe (supervisor/gerente/dueño): el lead queda a su
+    // nombre y CONSERVA el equipo del lead, así sigue visible en el tablero del
+    // equipo y para los roles superiores. Aparece en "Mis Leads" por estar
+    // asignado a él (getMyLeads filtra por assigned_to).
+    equipoId = lead.equipo_id
+  } else {
+    // Asignar a otra persona: solo a un VENDEDOR dentro del alcance del que asigna.
     const member = await dbAdmin
-      .select({ equipo_id: schema.tenantMembers.equipo_id })
+      .select({ rol: schema.tenantMembers.rol, equipo_id: schema.tenantMembers.equipo_id })
       .from(schema.tenantMembers)
-      .where(
-        and(
-          eq(schema.tenantMembers.tenant_id, tenantId),
-          eq(schema.tenantMembers.user_id, vendedorId),
-        ),
-      )
+      .where(and(
+        eq(schema.tenantMembers.tenant_id, tenantId),
+        eq(schema.tenantMembers.user_id, vendedorId),
+      ))
       .limit(1)
-    equipoId = member[0]?.equipo_id ?? null
+    if (!member[0] || member[0].rol !== 'vendedor') {
+      return { success: false, error: 'Solo podés asignar el lead a vos mismo o a un vendedor de tu equipo.' }
+    }
+    const targetTeam = member[0].equipo_id
+    const scope = await getCurrentUserTeamScope(user.id, tenantId, user.rol)
+    const inScope =
+      scope.type === 'all' ||
+      (scope.type === 'team'  && targetTeam === scope.equipoId) ||
+      (scope.type === 'teams' && !!targetTeam && scope.equipoIds.includes(targetTeam))
+    if (!inScope) {
+      return { success: false, error: 'No podés asignar el lead a un vendedor de otro equipo.' }
+    }
+    equipoId = targetTeam
   }
 
   await q.update(schema.leads)
@@ -471,7 +510,11 @@ export async function assignLead(
   await appendTimeline(
     tenantId, leadId, user.id,
     'reassigned',
-    vendedorName ? `Asignado a ${vendedorName}` : 'Enviado a Bandeja General',
+    !vendedorId
+      ? 'Enviado a Bandeja General'
+      : vendedorId === user.id
+      ? `Autoasignado por ${vendedorName}`
+      : `Asignado a ${vendedorName}`,
   )
 
   void logAudit({
@@ -1353,5 +1396,17 @@ export async function getLeadDetail(leadId: string) {
 
   const creator_nombre = creatorRow[0]?.alias || creatorRow[0]?.nombre || null
 
-  return { lead: { ...lead[0], creator_nombre }, notes, timeline, tasks, calls, cotizaciones, anyAppointment: appts.length > 0 }
+  // Nombre del responsable asignado (puede ser un vendedor o un jefe que se
+  // autoasignó el lead). Se resuelve siempre, no depende de la lista de vendedores.
+  const asignadoRow = lead[0].assigned_to
+    ? await dbAdmin
+        .select({ nombre: schema.usuarios.nombre, alias: schema.usuarios.alias })
+        .from(schema.usuarios)
+        .where(eq(schema.usuarios.id, lead[0].assigned_to))
+        .limit(1)
+    : []
+
+  const asignado_nombre = asignadoRow[0]?.alias || asignadoRow[0]?.nombre || null
+
+  return { lead: { ...lead[0], creator_nombre, asignado_nombre }, notes, timeline, tasks, calls, cotizaciones, anyAppointment: appts.length > 0 }
 }
