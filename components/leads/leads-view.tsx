@@ -53,7 +53,7 @@ export function LeadsView({ initialLeads, initialUnassigned = [], vendedores, mo
   const [sortKey,     setSortKey]     = useState<SortKey>('last_contact_at')
   const [sortDir,     setSortDir]     = useState<SortDir>('asc')
   const [page,        setPage]        = useState(1)
-  const [showUnassigned, setShowUnassigned] = useState(true)
+  const [showUnassigned, setShowUnassigned] = useState(false)
 
   function refresh() {
     void safeRefetch(() => getMyLeads(), 'No se pudieron actualizar tus leads')
@@ -156,16 +156,6 @@ export function LeadsView({ initialLeads, initialUnassigned = [], vendedores, mo
         )}
       </div>
 
-      {/* Sin asignar — bandeja de distribución (solo aparece si hay leads para repartir) */}
-      {unassigned.length > 0 && (
-        <UnassignedPanel
-          leads={unassigned}
-          open={showUnassigned}
-          onToggle={() => setShowUnassigned((v) => !v)}
-          onOpenLead={(id) => setOpenLeadId(id)}
-        />
-      )}
-
       {/* KPIs */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <KpiCard
@@ -191,6 +181,16 @@ export function LeadsView({ initialLeads, initialUnassigned = [], vendedores, mo
           sub={`${closedMonth} ventas / ${leads.length} leads`}
         />
       </div>
+
+      {/* Sin asignar — bandeja de distribución (debajo de las métricas, contraída por defecto) */}
+      {unassigned.length > 0 && (
+        <UnassignedPanel
+          leads={unassigned}
+          open={showUnassigned}
+          onToggle={() => setShowUnassigned((v) => !v)}
+          onOpenLead={(id) => setOpenLeadId(id)}
+        />
+      )}
 
       {/* Search bar */}
       <div className="relative max-w-sm mb-4">
@@ -311,24 +311,24 @@ function UnassignedPanel({
   onOpenLead: (id: string) => void
 }) {
   return (
-    <Card className="mb-6 overflow-hidden border-amber-200/70 bg-amber-50/30 p-0">
+    <Card className="mb-6 overflow-hidden border-2 border-amber-400 bg-amber-50 shadow-sm p-0">
       <button
         onClick={onToggle}
-        className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left transition-colors hover:bg-amber-50/60"
+        className="flex w-full items-center justify-between gap-3 bg-amber-100 px-5 py-3 text-left transition-colors hover:bg-amber-200/70"
       >
         <div className="flex items-center gap-2">
           <Inbox className="size-4 text-amber-700" />
           <span className="text-sm font-semibold text-amber-900">Sin asignar</span>
-          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-200 px-1.5 text-[11px] font-semibold text-amber-800">
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-bold text-white shadow-sm">
             {leads.length}
           </span>
-          <span className="text-xs text-muted-foreground hidden sm:inline">— esperando que los distribuyas</span>
+          <span className="text-xs text-amber-800/80 hidden sm:inline">— esperando que los distribuyas</span>
         </div>
         <ChevronDown className={cn('size-4 text-amber-700 transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
-        <div className="border-t border-amber-200/60">
+        <div className="border-t-2 border-amber-300">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
