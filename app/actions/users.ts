@@ -9,6 +9,7 @@ import { getCurrentUserTeamScope } from '@/lib/tenant/teams'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { logAudit } from '@/lib/audit/log'
 import { startOfTodayAR } from '@/lib/utils'
+import { releaseMemberWorkload, revokeAuthIfOrphaned, restoreAuthAccess } from '@/lib/members/offboarding'
 import type { ActionResult } from './auth'
 import type { AppRole } from '@/lib/auth/get-current-user'
 
@@ -246,16 +247,27 @@ export async function deactivateMember(memberId: string): Promise<ActionResult<v
       ),
     )
 
+  // Liberar su trabajo (leads → "Sin asignar", citas/traspasos cancelados) y,
+  // si no le queda ninguna membresía activa, revocarle el acceso.
+  const released = await releaseMemberWorkload(tenantId, memberId, user.id)
+  await revokeAuthIfOrphaned(memberId)
+
   void logAudit({
     tenantId,
     actorId:        user.id,
     action:         'user.deactivate',
     entity:         'user',
     entityId:       memberId,
+    meta: {
+      leads_liberados:     released.leads,
+      citas_canceladas:    released.appointments,
+      traspasos_cancelados: released.transfers,
+    },
     visibleToDueno: true,
   })
 
   revalidatePath('/equipo')
+  revalidatePath('/leads')
   return { success: true, data: undefined }
 }
 
@@ -276,6 +288,10 @@ export async function reactivateMember(memberId: string): Promise<ActionResult<v
         eq(schema.tenantMembers.user_id, memberId),
       ),
     )
+
+  // Devolverle el acceso (quita baneo + usuarios.activo=true) por si al darlo de
+  // baja había quedado huérfano y se le revocó el login.
+  await restoreAuthAccess(memberId)
 
   revalidatePath('/equipo')
   return { success: true, data: undefined }

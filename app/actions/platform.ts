@@ -8,6 +8,7 @@ import { getCurrentUser } from '@/lib/auth/get-current-user'
 import { dbAdmin, schema } from '@/lib/db'
 import { eq, count, and } from 'drizzle-orm'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { releaseMemberWorkload } from '@/lib/members/offboarding'
 import type { ActionResult } from './auth'
 import type { AppRole } from '@/lib/auth/get-current-user'
 
@@ -403,6 +404,9 @@ export async function deactivateMemberAdmin(
       eq(schema.tenantMembers.user_id, userId),
     ))
 
+  // Liberar leads (→ "Sin asignar"), cancelar citas/traspasos pendientes.
+  await releaseMemberWorkload(tenantId, userId, user.id)
+
   revalidatePath(`/platform/tenants/${tenantId}`)
   return { success: true, data: undefined }
 }
@@ -586,6 +590,9 @@ export async function deactivateUserAdmin(
         eq(schema.tenantMembers.tenant_id, tenantId),
       )),
   ])
+
+  // Liberar leads (→ "Sin asignar"), cancelar citas/traspasos pendientes.
+  await releaseMemberWorkload(tenantId, userId, user.id)
 
   revalidatePath('/platform/users')
   return { success: true, data: undefined }

@@ -36,6 +36,34 @@ export async function signIn(
     return { success: false, error: 'Error al iniciar sesión. Intentá de nuevo.' }
   }
 
+  // Bloquear el ingreso de cuentas sin NINGUNA membresía activa (echados o aún no
+  // activados), salvo platform_admins. El acceso a datos ya estaba cerrado por el
+  // filtro activo=true, pero así ni siquiera llegan a la pantalla "Cuenta pendiente".
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) {
+    const [perfil] = await dbAdmin
+      .select({ is_platform_admin: schema.usuarios.is_platform_admin })
+      .from(schema.usuarios)
+      .where(eq(schema.usuarios.id, user.id))
+      .limit(1)
+
+    if (!perfil?.is_platform_admin) {
+      const activa = await dbAdmin
+        .select({ uid: schema.tenantMembers.user_id })
+        .from(schema.tenantMembers)
+        .where(and(
+          eq(schema.tenantMembers.user_id, user.id),
+          eq(schema.tenantMembers.activo, true),
+        ))
+        .limit(1)
+
+      if (activa.length === 0) {
+        await supabase.auth.signOut()
+        return { success: false, error: 'Tu cuenta no tiene acceso activo. Contactá con tu administrador.' }
+      }
+    }
+  }
+
   redirect('/')
 }
 
