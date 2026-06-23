@@ -22,7 +22,7 @@ import { StatusBadge } from '@/components/status-badge'
 import { NextActionCard } from '@/components/leads/next-action-card'
 import { LeadStatusStepper } from '@/components/leads/lead-status-stepper'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
   Phone, Mail, Car, CheckCircle2, Circle, CalendarIcon, FileText,
@@ -34,12 +34,13 @@ import {
 } from 'lucide-react'
 import {
   addNote, deleteNote, toggleTask, getLeadDetail,
-  updateLead, addTask, assignLead, assignLeadToTeam, setLeadModelo,
+  updateLead, addTask, setLeadModelo,
 } from '@/app/actions/leads'
 import { requestTransfer } from '@/app/actions/transfers'
 import { scheduleCall, registerCall } from '@/app/actions/calls'
 import { BajaDialog } from '@/components/leads/baja-dialog'
 import { CotizadorDialog, type EditingCotizacion } from '@/components/cotizador/cotizador-dialog'
+import { ReassignDialog } from '@/components/leads/reassign-dialog'
 import { getNextAppointmentForLead } from '@/app/actions/appointments'
 import { getVendedoresParaTraspaso, getAsignablesParaLead } from '@/app/actions/users'
 import { getActiveModelNames } from '@/app/actions/modelos'
@@ -1622,154 +1623,6 @@ function TransferDialog({
               ? <Loader2 className="size-4 animate-spin" />
               : <ArrowRightLeft className="size-4" />}
             Solicitar traspaso
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ── ReassignDialog ────────────────────────────────────────────────────────────
-// Para supervisor+: reasigna el lead al instante (sin aprobación), a un vendedor
-// de su alcance o a la Bandeja General.
-
-const SIN_ASIGNAR = '__none__'
-const TEAM_PREFIX = 'team:'
-
-function ReassignDialog({
-  open, onOpenChange, leadId, leadNombre, assignedTo, vendedores, teams = [], onDone,
-}: {
-  open:         boolean
-  onOpenChange: (v: boolean) => void
-  leadId:       string
-  leadNombre:   string
-  assignedTo:   string | null
-  vendedores:   Vendedor[]
-  teams?:       { id: string; nombre: string }[]
-  onDone:       () => void
-}) {
-  const currentUser = useCurrentUser()
-  const [toUserId,  setToUserId]      = useState('')
-  const [isPending, startTransition]  = useTransition()
-
-  // No ofrecer al vendedor ya asignado
-  const candidates = vendedores.filter((v) => v.user_id !== assignedTo)
-  // El jefe puede quedarse el lead para trabajarlo (salvo que ya sea suyo).
-  const canSelfAssign = assignedTo !== currentUser.id
-
-  function handleSubmit() {
-    if (!toUserId) { toast.error('Seleccioná una opción'); return }
-    startTransition(async () => {
-      // Derivar a un equipo (queda sin asignar en la bandeja de ese equipo).
-      if (toUserId.startsWith(TEAM_PREFIX)) {
-        const equipoId = toUserId.slice(TEAM_PREFIX.length)
-        const res = await assignLeadToTeam(leadId, equipoId)
-        if (!res.success) { toast.error(res.error); return }
-        const teamName = teams.find((t) => t.id === equipoId)?.nombre
-        toast.success(teamName ? `Derivado al equipo ${teamName}` : 'Lead derivado al equipo')
-        setToUserId('')
-        onDone()
-        return
-      }
-      const target = toUserId === SIN_ASIGNAR ? null : toUserId
-      const res = await assignLead(leadId, target)
-      if (!res.success) { toast.error(res.error); return }
-      toast.success(
-        !target ? 'Lead enviado a Bandeja General'
-        : target === currentUser.id ? 'Te asignaste el lead'
-        : 'Lead reasignado',
-      )
-      setToUserId('')
-      onDone()
-    })
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) setToUserId(''); onOpenChange(v) }}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <UserCheck className="size-4 text-indigo-600" />
-            Reasignar lead
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4 py-1">
-          <p className="text-sm text-muted-foreground">
-            Elegí a quién asignar{' '}
-            <span className="font-semibold text-foreground">{leadNombre}</span>.
-            El cambio es inmediato, no requiere aprobación.
-          </p>
-
-          <div className="space-y-1.5">
-            <Label>Asignar a *</Label>
-            <Select value={toUserId} onValueChange={setToUserId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar..." />
-              </SelectTrigger>
-              <SelectContent>
-                {canSelfAssign && (
-                  <SelectItem value={currentUser.id}>
-                    <span className="flex items-center gap-2 font-medium">
-                      <UserCircle className="size-4 text-primary" />
-                      Asignármelo a mí
-                    </span>
-                  </SelectItem>
-                )}
-                {/* Derivar a un equipo (queda sin asignar para que lo distribuya
-                    su supervisor). Solo dueño/gerente reciben equipos. */}
-                {teams.length > 0 && (
-                  <SelectGroup>
-                    <SelectLabel className="text-[11px] uppercase tracking-wide">Derivar a un equipo</SelectLabel>
-                    {teams.map((t) => (
-                      <SelectItem key={t.id} value={`${TEAM_PREFIX}${t.id}`}>
-                        <span className="flex items-center gap-2">
-                          <UserCheck className="size-4 text-muted-foreground" />
-                          {t.nombre}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                )}
-                {candidates.length > 0 && (
-                  <SelectGroup>
-                    <SelectLabel className="text-[11px] uppercase tracking-wide">Vendedores</SelectLabel>
-                    {candidates.map((v) => (
-                      <SelectItem key={v.user_id} value={v.user_id}>
-                        {v.alias || v.nombre || v.user_id}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                )}
-                <SelectItem value={SIN_ASIGNAR}>
-                  <span className="text-muted-foreground italic">
-                    {currentUser.rol === 'supervisor'
-                      ? 'Quitar asignación (vuelve a Sin asignar del equipo)'
-                      : 'Sin asignar (Bandeja General)'}
-                  </span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isPending}
-          >
-            Cancelar
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!toUserId || isPending}
-            className="gap-1.5"
-          >
-            {isPending
-              ? <Loader2 className="size-4 animate-spin" />
-              : <UserCheck className="size-4" />}
-            Reasignar
           </Button>
         </DialogFooter>
       </DialogContent>

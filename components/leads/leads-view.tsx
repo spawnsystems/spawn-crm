@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/status-badge'
 import { LeadDetailSheet } from '@/components/leads/lead-detail-sheet'
 import { NewLeadDialog } from '@/components/leads/new-lead-dialog'
+import { ReassignDialog } from '@/components/leads/reassign-dialog'
 import { Paginator } from '@/components/ui/paginator'
 import { cn, formatRelative, safeRefetch, toBADate, formatCurrencyARS } from '@/lib/utils'
 import { format } from 'date-fns'
@@ -38,12 +39,13 @@ interface LeadsViewProps {
   initialLeads: MyLead[]
   initialUnassigned?: MyLead[]
   vendedores: Vendedor[]
+  teams?: { id: string; nombre: string }[]
   modelos: string[]
   customSources?: string[]
   canCreate: boolean
 }
 
-export function LeadsView({ initialLeads, initialUnassigned = [], vendedores, modelos, customSources = [], canCreate }: LeadsViewProps) {
+export function LeadsView({ initialLeads, initialUnassigned = [], vendedores, teams = [], modelos, customSources = [], canCreate }: LeadsViewProps) {
   const [leads,       setLeads]       = useState<MyLead[]>(initialLeads)
   const [unassigned,  setUnassigned]  = useState<MyLead[]>(initialUnassigned)
   const [search,      setSearch]      = useState('')
@@ -54,6 +56,8 @@ export function LeadsView({ initialLeads, initialUnassigned = [], vendedores, mo
   const [sortDir,     setSortDir]     = useState<SortDir>('asc')
   const [page,        setPage]        = useState(1)
   const [showUnassigned, setShowUnassigned] = useState(false)
+  // Lead de la tabla "Sin asignar" que se está por asignar (abre el form directo)
+  const [assignTarget,   setAssignTarget]   = useState<MyLead | null>(null)
 
   function refresh() {
     void safeRefetch(() => getMyLeads(), 'No se pudieron actualizar tus leads')
@@ -189,6 +193,7 @@ export function LeadsView({ initialLeads, initialUnassigned = [], vendedores, mo
           open={showUnassigned}
           onToggle={() => setShowUnassigned((v) => !v)}
           onOpenLead={(id) => setOpenLeadId(id)}
+          onAssign={(lead) => setAssignTarget(lead)}
         />
       )}
 
@@ -291,6 +296,20 @@ export function LeadsView({ initialLeads, initialUnassigned = [], vendedores, mo
         customSources={customSources}
         onCreated={refresh}
       />
+
+      {/* Asignar directo desde la tabla "Sin asignar" (sin abrir la ficha) */}
+      {assignTarget && (
+        <ReassignDialog
+          open={!!assignTarget}
+          onOpenChange={(v) => { if (!v) setAssignTarget(null) }}
+          leadId={assignTarget.id}
+          leadNombre={assignTarget.nombre}
+          assignedTo={assignTarget.assigned_to ?? null}
+          vendedores={vendedores}
+          teams={teams}
+          onDone={() => { setAssignTarget(null); refresh() }}
+        />
+      )}
     </div>
   )
 }
@@ -299,32 +318,34 @@ export function LeadsView({ initialLeads, initialUnassigned = [], vendedores, mo
 
 // ── UnassignedPanel ───────────────────────────────────────────
 // Tabla colapsable con los leads SIN asignar que el usuario puede distribuir
-// (floating para dueño/gerente; bandeja del equipo para el supervisor). Cada fila
-// abre la ficha del lead para asignarlo (Reasignar).
+// (floating para dueño/gerente; bandeja del equipo para el supervisor). El botón
+// "Asignar" abre directo el formulario de asignación; el resto de la fila abre la
+// ficha del lead para verlo.
 
 function UnassignedPanel({
-  leads, open, onToggle, onOpenLead,
+  leads, open, onToggle, onOpenLead, onAssign,
 }: {
   leads:      MyLead[]
   open:       boolean
   onToggle:   () => void
   onOpenLead: (id: string) => void
+  onAssign:   (lead: MyLead) => void
 }) {
   return (
     <Card className="mb-6 overflow-hidden border-2 border-amber-400 bg-amber-50 shadow-sm p-0">
       <button
         onClick={onToggle}
-        className="flex w-full items-center justify-between gap-3 bg-amber-100 px-5 py-3 text-left transition-colors hover:bg-amber-200/70"
+        className="flex w-full items-center justify-between gap-3 bg-amber-100 px-6 py-4 text-left transition-colors hover:bg-amber-200/70"
       >
-        <div className="flex items-center gap-2">
-          <Inbox className="size-4 text-amber-700" />
-          <span className="text-sm font-semibold text-amber-900">Sin asignar</span>
-          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-bold text-white shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <Inbox className="size-5 text-amber-700" />
+          <span className="text-base font-semibold text-amber-900">Sin asignar</span>
+          <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-amber-500 px-2 text-xs font-bold text-white shadow-sm">
             {leads.length}
           </span>
-          <span className="text-xs text-amber-800/80 hidden sm:inline">— esperando que los distribuyas</span>
+          <span className="text-sm text-amber-800/80 hidden sm:inline">— esperando que los distribuyas</span>
         </div>
-        <ChevronDown className={cn('size-4 text-amber-700 transition-transform', open && 'rotate-180')} />
+        <ChevronDown className={cn('size-5 text-amber-700 transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
@@ -332,11 +353,11 @@ function UnassignedPanel({
           <table className="w-full text-sm">
             <thead>
               <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th className="px-5 py-2 text-left font-medium">Lead</th>
+                <th className="px-6 py-2 text-left font-medium">Lead</th>
                 <th className="px-3 py-2 text-left font-medium hidden md:table-cell">Modelo</th>
                 <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Origen</th>
                 <th className="px-3 py-2 text-left font-medium hidden lg:table-cell">Ingresó</th>
-                <th className="px-5 py-2 text-right font-medium">Acción</th>
+                <th className="px-6 py-2 text-right font-medium">Acción</th>
               </tr>
             </thead>
             <tbody>
@@ -346,7 +367,7 @@ function UnassignedPanel({
                   onClick={() => onOpenLead(l.id)}
                   className="cursor-pointer border-t border-amber-200/40 transition-colors hover:bg-amber-50/70"
                 >
-                  <td className="px-5 py-2.5">
+                  <td className="px-6 py-2.5">
                     <div className="font-medium">{l.nombre}</div>
                     <div className="text-[11px] text-muted-foreground/80">
                       {[l.localidad, l.provincia].filter(Boolean).join(', ') || 'Sin ubicación'}
@@ -358,10 +379,14 @@ function UnassignedPanel({
                   <td className="px-3 py-2.5 hidden lg:table-cell text-muted-foreground whitespace-nowrap">
                     {formatRelative(new Date(l.created_at))}
                   </td>
-                  <td className="px-5 py-2.5 text-right">
-                    <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700">
+                  <td className="px-6 py-2.5 text-right">
+                    <Button
+                      size="sm"
+                      className="h-7 gap-1 bg-amber-600 hover:bg-amber-700 text-white"
+                      onClick={(e) => { e.stopPropagation(); onAssign(l) }}
+                    >
                       Asignar <ChevronRight className="size-3.5" />
-                    </span>
+                    </Button>
                   </td>
                 </tr>
               ))}
