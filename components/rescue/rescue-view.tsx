@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Paginator } from '@/components/ui/paginator'
 import { cn, formatCurrencyARS } from '@/lib/utils'
@@ -21,6 +21,8 @@ import { isBaja } from '@/lib/leads/constants'
 type LeadRow = Awaited<ReturnType<typeof getAbandonedLeads>>[number]
 
 const PAGE_SIZE = 10
+const FILTER_ALL = '__all__'
+const FILTER_SIN = '__sin__'   // leads sin vendedor asignado
 
 interface RescueViewProps {
   initialLeads: LeadRow[]
@@ -34,9 +36,46 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
   const [detailLead,       setDetailLead]       = useState<LeadRow | null>(null)
   const [isPending,        startTransition]     = useTransition()
   const [page,             setPage]             = useState(1)
+  const [filterVendedor,   setFilterVendedor]   = useState(FILTER_ALL)
 
-  const totalPages = Math.max(1, Math.ceil(leads.length / PAGE_SIZE))
-  const paginated  = leads.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // Opciones del filtro derivadas de los propios leads de rescate (no de la lista
+  // de vendedores activos): así respeta la jerarquía automáticamente (los leads ya
+  // vienen scopeados por getAbandonedLeads) e incluye vendedores dados de baja que
+  // todavía tengan leads acá.
+  const { vendedoresEnRescate, haySinAsignar } = useMemo(() => {
+    const map = new Map<string, string>()
+    let sinAsignar = false
+    for (const l of leads) {
+      if (!l.assigned_to) { sinAsignar = true; continue }
+      if (!map.has(l.assigned_to)) {
+        map.set(l.assigned_to, l.vendedor_alias || l.vendedor_nombre || l.assigned_to)
+      }
+    }
+    const arr = Array.from(map, ([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+    return { vendedoresEnRescate: arr, haySinAsignar: sinAsignar }
+  }, [leads])
+
+  const filtered = useMemo(() => {
+    if (filterVendedor === FILTER_ALL) return leads
+    if (filterVendedor === FILTER_SIN) return leads.filter((l) => !l.assigned_to)
+    return leads.filter((l) => l.assigned_to === filterVendedor)
+  }, [leads, filterVendedor])
+
+  // Si el vendedor filtrado ya no tiene leads en rescate (lo reasignaron todo),
+  // volvemos a "Todos" para no quedar mirando una lista vacía.
+  useEffect(() => {
+    if (filterVendedor === FILTER_ALL || filterVendedor === FILTER_SIN) return
+    if (!vendedoresEnRescate.some((v) => v.id === filterVendedor)) {
+      setFilterVendedor(FILTER_ALL)
+    }
+  }, [vendedoresEnRescate, filterVendedor])
+
+  // Reset a página 1 cuando cambia el filtro
+  useEffect(() => { setPage(1) }, [filterVendedor])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function handleReactivate(leadId: string) {
     startTransition(async () => {
@@ -82,26 +121,49 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
         </p>
       </div>
 
-      {/* Contador */}
-      <div className="mb-5 text-sm text-muted-foreground">
-        {leads.length === 0
-          ? 'No hay leads en rescate.'
-          : `${leads.length} lead${leads.length !== 1 ? 's' : ''} para rescatar`}
+      {/* Contador + filtro por vendedor */}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-muted-foreground">
+          {filtered.length === 0
+            ? (leads.length === 0 ? 'No hay leads en rescate.' : 'Ningún lead para este filtro.')
+            : `${filtered.length} lead${filtered.length !== 1 ? 's' : ''} para rescatar`}
+        </div>
+
+        {leads.length > 0 && (
+          <Select value={filterVendedor} onValueChange={setFilterVendedor}>
+            <SelectTrigger className={cn('h-9 w-auto min-w-[180px] max-w-[260px] text-sm', filterVendedor !== FILTER_ALL && 'border-primary text-primary')}>
+              <SelectValue placeholder="Filtrar por vendedor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={FILTER_ALL}>Todos los vendedores</SelectItem>
+              {haySinAsignar && (
+                <SelectItem value={FILTER_SIN}>
+                  <span className="text-muted-foreground italic">Sin vendedor asignado</span>
+                </SelectItem>
+              )}
+              {vendedoresEnRescate.map((v) => (
+                <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <Paginator
         page={page}
         totalPages={totalPages}
-        totalItems={leads.length}
+        totalItems={filtered.length}
         pageSize={PAGE_SIZE}
         onPageChange={setPage}
         className="mb-4"
       />
 
       {/* Lead cards */}
-      {leads.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="py-16 text-center text-sm text-muted-foreground border-2 border-dashed rounded-xl">
-          🎉 Ningún lead inactivo. Todo bajo control.
+          {leads.length === 0
+            ? '🎉 Ningún lead inactivo. Todo bajo control.'
+            : 'No hay leads en rescate de este vendedor.'}
         </div>
       ) : (
         <>
@@ -120,7 +182,7 @@ export function RescueView({ initialLeads, vendedores }: RescueViewProps) {
           <Paginator
             page={page}
             totalPages={totalPages}
-            totalItems={leads.length}
+            totalItems={filtered.length}
             pageSize={PAGE_SIZE}
             onPageChange={setPage}
             className="mt-4"
