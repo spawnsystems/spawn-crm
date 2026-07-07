@@ -168,13 +168,13 @@ export function NewLeadDialog({
     // Rangos válidos (ambos extremos cargados)
     const horariosValidos = form.horarios.filter((r) => r.from && r.to)
 
-    // Usado: marca y año obligatorios; km/uso/valor opcionales. Lo que se haya
-    // cargado viaja: si alcanza para cotizar (km + valor), el server genera la
-    // cotización automáticamente; si no, queda como borrador en el lead.
-    const usadoPayload = form.tiene_usado && form.usadoMarca.trim() && !isNaN(usadoAnioNum)
+    // Usado: SOLO marca y modelo es obligatoria; año/km/uso/valor opcionales. Lo
+    // que se haya cargado viaja: si alcanza para cotizar (año + km + valor), el
+    // server genera la cotización automáticamente; si no, queda como borrador.
+    const usadoPayload = form.tiene_usado && form.usadoMarca.trim()
       ? {
           marca_modelo:  form.usadoMarca.trim(),
-          anio:          usadoAnioNum,
+          anio:          !isNaN(usadoAnioNum) ? usadoAnioNum : undefined,
           km:            !isNaN(usadoKmNum) ? usadoKmNum : undefined,
           uso:           form.usadoUso,
           base_infoauto: usadoValorNum > 0 ? usadoValorNum : undefined,
@@ -234,14 +234,13 @@ export function NewLeadDialog({
   // el lead podría quedar sin visibilidad para ellos. Supervisor/vendedor no.
   const assignOk = isVendedor || !multiTeam || form.assign !== ''
 
-  // Si tiene_usado activo, marca y año son obligatorios; km/valor son opcionales.
+  // Si tiene_usado activo, SOLO la marca y modelo es obligatoria; año/km/valor
+  // son opcionales (si están, se cotiza automáticamente).
   const usadoAnioNum  = parseInt(form.usadoAnio, 10)
   const usadoKmNum    = parseInt(form.usadoKm.replace(/\./g, ''), 10)
   const usadoValorNum = parseFloat(form.usadoValor.replace(/\./g, '').replace(',', '.'))
-  const usadoOk = !form.tiene_usado || (
-    form.usadoMarca.trim().length >= 1 &&
-    !isNaN(usadoAnioNum) && usadoAnioNum >= 1960 && usadoAnioNum <= new Date().getFullYear() + 1
-  )
+  const usadoAnioOk   = isNaN(usadoAnioNum) || (usadoAnioNum >= 1960 && usadoAnioNum <= new Date().getFullYear() + 1)
+  const usadoOk = !form.tiene_usado || (form.usadoMarca.trim().length >= 1 && usadoAnioOk)
 
   // Preview en vivo: si cargaron km + valor InfoAuto, mostramos la cotización
   // que se generará automáticamente al crear el lead.
@@ -281,7 +280,7 @@ export function NewLeadDialog({
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Contacto</p>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
-                <Label htmlFor="nl-nombre">Nombre completo *</Label>
+                <Label htmlFor="nl-nombre">Nombre completo <span className="text-destructive">*</span></Label>
                 <Input
                   id="nl-nombre"
                   placeholder="Ej: Martín Rodríguez"
@@ -440,7 +439,7 @@ export function NewLeadDialog({
               <div className="col-span-2 space-y-1.5">
                 <Label className="flex items-center gap-1.5">
                   <Car className="size-3.5 text-muted-foreground" />
-                  Modelo de interés
+                  Modelo de interés <span className="text-destructive">*</span>
                 </Label>
                 <Select
                   value={form.modelo}
@@ -517,9 +516,7 @@ export function NewLeadDialog({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">
-                        Año <span className="text-destructive">*</span>
-                      </Label>
+                      <Label className="text-xs">Año</Label>
                       <Input
                         type="number"
                         placeholder={String(new Date().getFullYear() - 2)}

@@ -21,6 +21,17 @@ const createCotizacionSchema = z.object({
   provincia:    z.string().optional(),
 })
 
+// Guarda el usado como BORRADOR en el lead (sin crear cotización). Se usa cuando
+// en el cotizador solo se cargó marca/modelo (no alcanza para calcular el valor).
+const saveUsadoDraftSchema = z.object({
+  leadId:        z.string().uuid(),
+  marca_modelo:  z.string().min(1, 'La marca y modelo es requerida').max(150),
+  anio:          z.number().int().min(1900).max(new Date().getFullYear() + 1).optional(),
+  km:            z.number().int().min(0).optional(),
+  uso:           z.enum(['particular', 'taxi_uber_transporte']).optional(),
+  base_infoauto: z.number().positive().optional(),
+})
+
 const updateCotizacionSchema = z.object({
   id:           z.string().uuid(),
   marca_modelo: z.string().max(150).optional(),
@@ -126,6 +137,46 @@ export async function createCotizacion(input: unknown): Promise<ActionResult<{ i
   revalidatePath('/leads')
   revalidatePath('/all-leads')
   return { success: true, data: { id: row.id, result } }
+}
+
+// ── saveUsadoDraft ──────────────────────────────────────────────────────────
+// Guarda el auto usado como borrador en el lead (marca obligatoria; año/km/uso/
+// valor opcionales) sin crear una cotización. Es el caso "todavía no sé todo,
+// pero anoto el auto". Aparece como usado "pendiente de cotizar" en la ficha.
+
+export async function saveUsadoDraft(input: unknown): Promise<ActionResult<void>> {
+  const { user, tenantId } = await requireTenant()
+
+  const parsed = saveUsadoDraftSchema.safeParse(input)
+  if (!parsed.success) return { success: false, error: parsed.error.issues[0].message }
+  const data = parsed.data
+
+  const lead = await assertLeadAccess(data.leadId, user.id, user.rol, tenantId)
+  if (!lead) return { success: false, error: 'No tenés acceso a este lead' }
+
+  await dbAdmin
+    .update(schema.leads)
+    .set({
+      tiene_usado:          true,
+      usado_marca:          data.marca_modelo,
+      usado_anio:           data.anio ?? null,
+      usado_km:             data.km ?? null,
+      usado_uso:            data.uso ?? null,
+      usado_valor_infoauto: data.base_infoauto != null ? data.base_infoauto.toString() : null,
+      updated_by:           user.id,
+    })
+    .where(and(eq(schema.leads.id, data.leadId), eq(schema.leads.tenant_id, tenantId)))
+
+  await appendTimeline(
+    tenantId, data.leadId, user.id,
+    'usado_added',
+    'Usado anotado (pendiente de cotizar)',
+    data.marca_modelo,
+  )
+
+  revalidatePath('/leads')
+  revalidatePath('/all-leads')
+  return { success: true, data: undefined }
 }
 
 // ── updateCotizacion ──────────────────────────────────────────────────────────

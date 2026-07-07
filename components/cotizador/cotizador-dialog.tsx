@@ -14,7 +14,7 @@ import {
 import { Loader2, Calculator, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { cn, formatCurrencyARS } from '@/lib/utils'
 import { calcularUsado, type UsoVehiculo } from '@/lib/cotizador/calc'
-import { createCotizacion, updateCotizacion } from '@/app/actions/cotizaciones'
+import { createCotizacion, updateCotizacion, saveUsadoDraft } from '@/app/actions/cotizaciones'
 
 // Cotización existente a editar (modo edición). Si se pasa, el dialog
 // actualiza esa cotización en vez de crear una nueva.
@@ -48,7 +48,7 @@ const YEAR_NOW = new Date().getFullYear()
 
 const EMPTY = {
   marca_modelo:  '',
-  anio:          String(YEAR_NOW - 2),
+  anio:          '',   // opcional: vacío por defecto (no guardar un año adivinado)
   km:            '',
   uso:           'particular' as UsoVehiculo,
   base_infoauto: '',
@@ -74,7 +74,7 @@ export function CotizadorDialog({
     if (editing) {
       setForm({
         marca_modelo:  editing.marca_modelo ?? '',
-        anio:          editing.anio != null ? String(editing.anio) : String(YEAR_NOW - 2),
+        anio:          editing.anio != null ? String(editing.anio) : '',
         km:            editing.km != null ? String(editing.km) : '',
         uso:           (editing.uso as UsoVehiculo) || 'particular',
         base_infoauto: editing.base_infoauto != null ? String(Math.round(Number(editing.base_infoauto))) : '',
@@ -102,43 +102,61 @@ export function CotizadorDialog({
   }, [form, provincia])
 
   function handleSubmit() {
+    const marca = form.marca_modelo.trim()
+    if (!marca) { toast.error('Ingresá al menos la marca y modelo'); return }
+
     const base = parseFloat(form.base_infoauto.replace(/\./g, '').replace(',', '.'))
     const km   = parseInt(form.km.replace(/\./g, ''), 10)
     const anio = parseInt(form.anio, 10)
-
-    if (!base || isNaN(km) || isNaN(anio)) {
-      toast.error('Completá al menos: valor InfoAuto, km y año')
-      return
-    }
+    // Hay datos suficientes para calcular el valor de toma
+    const puedeCotizar = base > 0 && !isNaN(km) && !isNaN(anio)
 
     startTransition(async () => {
-      const res = editing
-        ? await updateCotizacion({
-            id:            editing.id,
-            marca_modelo:  form.marca_modelo || undefined,
-            anio, km, uso: form.uso, base_infoauto: base, provincia,
-          })
-        : await createCotizacion({
-            lead_id:       leadId,
-            marca_modelo:  form.marca_modelo || undefined,
-            anio, km, uso: form.uso, base_infoauto: base, provincia,
-          })
-
-      if (!res.success) { toast.error(res.error); return }
-
-      const verb = editing ? 'actualizada' : 'guardada'
-      if (res.data.result.rechazado) {
-        toast.warning(`Cotización ${verb} — auto RECHAZADO`)
-      } else {
-        toast.success(`Cotización ${verb}`)
+      // Editar una cotización ya calculada: necesita los datos completos.
+      if (editing) {
+        if (!puedeCotizar) { toast.error('Para editar la cotización completá año, km y valor InfoAuto'); return }
+        const res = await updateCotizacion({
+          id: editing.id, marca_modelo: marca, anio, km, uso: form.uso, base_infoauto: base, provincia,
+        })
+        if (!res.success) { toast.error(res.error); return }
+        toast[res.data.result.rechazado ? 'warning' : 'success'](
+          res.data.result.rechazado ? 'Cotización actualizada — auto RECHAZADO' : 'Cotización actualizada',
+        )
+        reset(); onOpenChange(false); onCreated?.()
+        return
       }
-      reset()
-      onOpenChange(false)
-      onCreated?.()
+
+      // Crear: si alcanza, cotización completa; si no, se anota el auto (borrador).
+      if (puedeCotizar) {
+        const res = await createCotizacion({
+          lead_id: leadId, marca_modelo: marca, anio, km, uso: form.uso, base_infoauto: base, provincia,
+        })
+        if (!res.success) { toast.error(res.error); return }
+        toast[res.data.result.rechazado ? 'warning' : 'success'](
+          res.data.result.rechazado ? 'Cotización guardada — auto RECHAZADO' : 'Cotización guardada',
+        )
+        reset(); onOpenChange(false); onCreated?.()
+        return
+      }
+
+      // Solo marca (u otros parciales) → guardar el auto como borrador en el lead.
+      if (!leadId) { toast.error('Completá año, km y valor InfoAuto para cotizar'); return }
+      const res = await saveUsadoDraft({
+        leadId,
+        marca_modelo:  marca,
+        anio:          !isNaN(anio) ? anio : undefined,
+        km:            !isNaN(km) ? km : undefined,
+        uso:           form.uso,
+        base_infoauto: base > 0 ? base : undefined,
+      })
+      if (!res.success) { toast.error(res.error); return }
+      toast.success('Usado anotado — completá los datos para cotizar')
+      reset(); onOpenChange(false); onCreated?.()
     })
   }
 
-  const canSubmit = form.base_infoauto.trim() && form.km.trim() && form.anio.trim() && !isPending
+  // Solo la marca y modelo es obligatoria (el resto se completa después).
+  const canSubmit = form.marca_modelo.trim().length >= 1 && !isPending
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v) }}>
@@ -155,16 +173,17 @@ export function CotizadorDialog({
           {/* Datos del vehículo */}
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2 space-y-1.5">
-              <Label>Marca y modelo</Label>
+              <Label>Marca y modelo <span className="text-destructive">*</span></Label>
               <Input
                 placeholder="Ej: Toyota Corolla"
                 value={form.marca_modelo}
                 onChange={(e) => set('marca_modelo', e.target.value)}
+                autoFocus
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label>Año *</Label>
+              <Label>Año</Label>
               <Input
                 type="number"
                 placeholder={String(YEAR_NOW - 2)}
@@ -174,7 +193,7 @@ export function CotizadorDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label>Kilometraje *</Label>
+              <Label>Kilometraje</Label>
               <Input
                 type="number"
                 placeholder="Ej: 65000"
@@ -184,7 +203,7 @@ export function CotizadorDialog({
             </div>
 
             <div className="col-span-2 space-y-1.5">
-              <Label>Tipo de uso *</Label>
+              <Label>Tipo de uso</Label>
               <Select value={form.uso} onValueChange={(v) => set('uso', v)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -199,14 +218,16 @@ export function CotizadorDialog({
 
           {/* Valor InfoAuto */}
           <div className="space-y-1.5">
-            <Label>Valor InfoAuto *</Label>
+            <Label>Valor InfoAuto</Label>
             <Input
               type="number"
               placeholder="Ej: 8500000"
               value={form.base_infoauto}
               onChange={(e) => set('base_infoauto', e.target.value)}
             />
-            <p className="text-[11px] text-muted-foreground">Ingresá el valor base de InfoAuto</p>
+            <p className="text-[11px] text-muted-foreground">
+              Con año + km + valor InfoAuto se calcula el precio de toma. Si no, se anota el auto y lo cotizás después.
+            </p>
           </div>
 
           {/* Preview en vivo */}
@@ -254,7 +275,7 @@ export function CotizadorDialog({
           </Button>
           <Button onClick={handleSubmit} disabled={!canSubmit} className="gap-1.5">
             {isPending ? <Loader2 className="size-4 animate-spin" /> : <Calculator className="size-4" />}
-            {editing ? 'Guardar cambios' : 'Guardar cotización'}
+            {editing ? 'Guardar cambios' : preview ? 'Guardar cotización' : 'Guardar usado'}
           </Button>
         </DialogFooter>
       </DialogContent>

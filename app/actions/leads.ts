@@ -198,11 +198,12 @@ export async function createLead(
   })
 
   // Auto-cotización: si al crear el lead cargaron lo suficiente del usado
-  // (km + valor InfoAuto; año ya es obligatorio), generamos la cotización en el
-  // acto. Si faltan datos, los parciales quedan en el lead (usado_km/uso/valor)
-  // como borrador y el cotizador se completa desde la ficha.
+  // (año + km + valor InfoAuto), generamos la cotización en el acto. Si faltan
+  // datos, los parciales quedan en el lead (usado_marca/anio/km/uso/valor) como
+  // borrador y el cotizador se completa desde la ficha.
   if (
     data.tiene_usado && data.usado &&
+    data.usado.anio != null &&
     data.usado.km != null &&
     data.usado.base_infoauto != null && data.usado.base_infoauto > 0
   ) {
